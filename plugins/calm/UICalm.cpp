@@ -58,10 +58,13 @@ public:
         grRangeBtn->tip = "Scale of the reduction curve hanging from the top";
 
         if (auto* p = static_cast<PluginCalm*>(pluginPtr())) plug = p;
-        const double sr = sampleRate() > 0 ? sampleRate() : 48000.0;
-        pre.setup(sr); post.setup(sr);
-        pre.setRange(kLo, kHi); post.setRange(kLo, kHi);
+        setupAnalyzers(plug && plug->getSampleRate() > 0 ? plug->getSampleRate() : (sampleRate() > 0 ? sampleRate() : 48000.0));
         updateEnabled();
+    }
+    ~UICalm() override
+    {
+        // closing the editor mid-hold must not leave the plugin listening to one band
+        if (plug) plug->auditionOn.store(false, std::memory_order_release);
     }
 
 protected:
@@ -162,14 +165,26 @@ protected:
         char b[32]; std::snprintf(b, sizeof b, "%.0f ms", 1000.0 * lat / sr);
         return b;
     }
-    // A hidden, non-automatable audition parameter: tell the host (edit begin/end) but keep it out of undo.
-    void setHidden(int i, float v)
+    // Alt-listen / node solo: straight to the plugin's atomics (region first, then on), never through parameters
+    void pushAudition(bool on)
     {
-        if (spec(i).clamp(v) == value(i)) return;
-        editParameter((uint32_t)i, true);
-        setParam(i, v);
-        editParameter((uint32_t)i, false);
+        audF = spec(kAuditionFreq).clamp(audF);
+        audQ = pump::clampv(audQ, 0.3f, 12.0f);
+        if (!plug) return;
+        plug->auditionFreq.store(audF, std::memory_order_relaxed);
+        plug->auditionQ.store(audQ, std::memory_order_relaxed);
+        plug->auditionRegion.store(audRegion, std::memory_order_relaxed);
+        plug->auditionOn.store(on, std::memory_order_release);
     }
+    // the analyzers' FFT size and bin frequencies follow the sample rate
+    void setupAnalyzers(double sr)
+    {
+        if (sr <= 0.0 || sr == anaRate) return;
+        anaRate = sr;
+        pre.setup(sr); post.setup(sr);
+        pre.setRange(kLo, kHi); post.setRange(kLo, kHi);
+    }
+    void onSampleRateChanged(double sr) override { setupAnalyzers(sr); }
     void setGrRange(float r)
     {
         grRange = r;
@@ -187,6 +202,7 @@ protected:
     void tick(float dt) override
     {
         if (!plug) return;
+        setupAnalyzers(plug->getSampleRate());
         for (int c = 0; c < 2; ++c)
         {
             const float pk = pump::gainToDbF(plug->outPeak[c].exchange(0.0f));
@@ -386,8 +402,8 @@ protected:
         // Alt-listen / node solo: shade everything but the auditioned region
         if (dmode == dmAudition || dmode == dmSoloNode)
         {
-            const double f = value(kAuditionFreq), q = value(kAuditionQ);
-            const int region = (int)value(kAuditionRegion);
+            const double f = audF, q = audQ;
+            const int region = audRegion;
             float x0 = display.x, x1 = display.r();
             if (region == pump::Audition::kBand)
             {
@@ -489,20 +505,20 @@ protected:
                 // solo this node's band while the button is held
                 soloNode = n;
                 const NodeType t = nodeType(n);
-                setHidden(kAuditionRegion, (float)(t == kNodeLowShelf ? pump::Audition::kBelow : (t == kNodeHighShelf ? pump::Audition::kAbove : pump::Audition::kBand)));
-                setHidden(kAuditionFreq, nodeFreq(n));
-                setHidden(kAuditionQ, std::max(0.3f, nodeQ(n)));
-                setHidden(kAudition, 1.0f);
+                audRegion = t == kNodeLowShelf ? pump::Audition::kBelow : (t == kNodeHighShelf ? pump::Audition::kAbove : pump::Audition::kBand);
+                audF = nodeFreq(n);
+                audQ = std::max(0.3f, nodeQ(n));
+                pushAudition(true);
                 dmode = dmSoloNode;
                 setStatus("Solo: only node " + std::to_string(n + 1) + "'s region (release to return)");
                 return true;
             }
             dmode = dmAudition;
-            setHidden(kAuditionRegion, (float)pump::Audition::kBand);
-            setHidden(kAuditionQ, listenQ);
-            setHidden(kAuditionFreq, (float)fOfX(x));
-            setHidden(kAudition, 1.0f);
-            setStatus("Listening around " + spec(kAuditionFreq).format(value(kAuditionFreq)) + "  (drag: sweep, wheel: width)");
+            audRegion = pump::Audition::kBand;
+            audQ = listenQ;
+            audF = (float)fOfX(x);
+            pushAudition(true);
+            setStatus("Listening around " + spec(kAuditionFreq).format(audF) + "  (drag: sweep, wheel: width)");
             return true;
         }
         if (n >= 0)
@@ -542,8 +558,9 @@ protected:
         switch (dmode)
         {
         case dmAudition:
-            setHidden(kAuditionFreq, (float)fOfX(std::max(display.x, std::min(display.r(), x))));
-            setStatus("Listening around " + spec(kAuditionFreq).format(value(kAuditionFreq)) + "  (wheel: width)");
+            audF = (float)fOfX(std::max(display.x, std::min(display.r(), x)));
+            pushAudition(true);
+            setStatus("Listening around " + spec(kAuditionFreq).format(audF) + "  (wheel: width)");
             return;
         case dmFocus: {
             const int pi = dragEdge == 0 ? kFocusLow : kFocusHigh;
@@ -587,7 +604,7 @@ protected:
             endGroup();
             break;
         case dmFocus: endEdit(dragEdge == 0 ? kFocusLow : kFocusHigh); break;
-        case dmAudition: case dmSoloNode: setHidden(kAudition, 0.0f); setStatus(""); break;
+        case dmAudition: case dmSoloNode: pushAudition(false); setStatus(""); break;
         default: break;
         }
         dmode = dmNone;
@@ -620,8 +637,9 @@ protected:
         if (dmode == dmAudition)
         {
             // wheel up = narrower
-            listenQ = pump::clampv(value(kAuditionQ) * std::pow(2.0f, dir * (shift ? 0.05f : 0.25f)), 0.3f, 12.0f);
-            setHidden(kAuditionQ, listenQ);
+            listenQ = pump::clampv(audQ * std::pow(2.0f, dir * (shift ? 0.05f : 0.25f)), 0.3f, 12.0f);
+            audQ = listenQ;
+            pushAudition(true);
             char b[64]; std::snprintf(b, sizeof b, "Listen width: Q %.2f  (wheel up: narrower)", listenQ); setStatus(b);
             saveUi();
             return true;
@@ -757,6 +775,9 @@ private:
     float lvl[2] = { -120.0f, -120.0f }, hold[2] = { -120.0f, -120.0f }, holdT[2] = { 0.0f, 0.0f };
     float red[2][Engine::kUiPoints] = {};
     float grNow = 0.0f, grRange = 12.0f, listenQ = 2.0f;
+    float audF = 1000.0f, audQ = 2.0f;               // Alt-listen / solo region (sent to the plugin's atomics)
+    int audRegion = pump::Audition::kBand;
+    double anaRate = 0.0;                             // sample rate the analyzers are set up for
     int sel = -1, hover = -1, hoverEdge = -1, dragNode = -1, dragEdge = -1, soloNode = 0;
     CalmDragMode dmode = dmNone;
     float origF = 1000, origG = 0, origQ = 1, lastX = 0, lastY = 0, effX = 0, effY = 0, qBaseY = 0, mouseX = -1, mouseY = -1;

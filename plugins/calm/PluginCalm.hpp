@@ -24,6 +24,13 @@ public:
     int latencyNow() const { return engine.latency(); }
     int stereoMode() const { return engine.settings().stereo; }
 
+    // Alt-hold listen and node solo, driven by the editor while the mouse button is held (never host parameters:
+    // not saved with the session, not undone, not touched by host echoes). The UI writes the region first, then
+    // auditionOn; false = off.
+    std::atomic<bool> auditionOn { false };
+    std::atomic<float> auditionFreq { 1000.0f }, auditionQ { 2.0f };
+    std::atomic<int> auditionRegion { pump::Audition::kBand };
+
 protected:
     const char* getLabel() const override { return "pump_calm"; }
     const char* getDescription() const override { return "Dynamic resonance suppressor: finds and calms harsh, ringing frequencies as they happen."; }
@@ -35,7 +42,10 @@ protected:
         engine.prepare(sr);
         bypass.prepare(sr, engine.sizeFor(3) + 16, Engine::kMaxChunk);
         audition.prepare(sr);
-        lastLatency = -1;
+        // report the latency now (constructor and activation): hosts, CLAP especially, read it before the first block
+        lastLatency = engine.latency();
+        setLatency((uint32_t)lastLatency);
+        bypass.setLatency(lastLatency);
     }
     void activate() override { prepareAll(); }
     void sampleRateChanged(double) override { prepareAll(); }
@@ -80,17 +90,28 @@ protected:
             const int lat = engine.latency();
             if (lat != lastLatency) { setLatency((uint32_t)lat); bypass.setLatency(lat); lastLatency = lat; }
             bypass.capture(l, r, n);
+            // the bypass keeps the input as it came; everything after it hears a NaN / Inf sample as silence
+            pump::sanitizeBlock(l, n);
+            pump::sanitizeBlock(r, n);
             float il = 0.0f, ir = 0.0f;
             for (int i = 0; i < n; ++i) { preRing.push(0.5f * (l[i] + r[i])); il = std::max(il, std::fabs(l[i])); ir = std::max(ir, std::fabs(r[i])); }
             inPeak[0].setMax(il); inPeak[1].setMax(ir);
             engine.process(l, r, n);
             const int lat2 = engine.latency();
             if (lat2 != lastLatency) { setLatency((uint32_t)lat2); bypass.setLatency(lat2); lastLatency = lat2; }
-            audition.set(pv(kAudition) >= 0.5f, pv(kAuditionFreq), pv(kAuditionQ), (pump::Audition::Region)pump::clampv((int)pv(kAuditionRegion), 0, 2));
+            const bool aud = auditionOn.load(std::memory_order_acquire);
+            audition.set(aud, auditionFreq.load(std::memory_order_relaxed), auditionQ.load(std::memory_order_relaxed),
+                         (pump::Audition::Region)pump::clampv(auditionRegion.load(std::memory_order_relaxed), 0, 2));
             audition.process(l, r, n);
             bypass.apply(l, r, n, pv(kBypass) >= 0.5f);
             float pl = 0.0f, pr = 0.0f;
-            for (int i = 0; i < n; ++i) { postRing.push(0.5f * (l[i] + r[i])); pl = std::max(pl, std::fabs(l[i])); pr = std::max(pr, std::fabs(r[i])); }
+            for (int i = 0; i < n; ++i)
+            {
+                // never hand a non-finite sample to the host (a NaN input while bypassed, or a state that went bad)
+                if (!std::isfinite(l[i])) l[i] = 0.0f;
+                if (!std::isfinite(r[i])) r[i] = 0.0f;
+                postRing.push(0.5f * (l[i] + r[i])); pl = std::max(pl, std::fabs(l[i])); pr = std::max(pr, std::fabs(r[i]));
+            }
             outPeak[0].setMax(pl); outPeak[1].setMax(pr);
             done += (uint32_t)n;
         }

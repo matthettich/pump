@@ -1,5 +1,6 @@
 // pump METER engine: EBU Tech 3341 / 3342 cases (momentary, short-term, integrated with gating, LRA, true peak),
-// PLR / PSR, correlation / balance / RMS, history, reset behaviour, and bit-exact pass-through.
+// PLR / PSR, correlation / balance / RMS, history (and the window the UI shows), reset behaviour, NaN / Inf input,
+// and bit-exact pass-through.
 #include "../plugins/meter/MeterEngine.hpp"
 #include <cstdio>
 #include <random>
@@ -163,6 +164,27 @@ static void history()
     CHECK(n == 120, "12 s -> %u history points (10 per second)", n);
     const float last = e.histS.at(e.histS.position() - 1), lastI = e.histI.at(e.histI.position() - 1);
     CHECK(std::fabs(last + 18.0f) < 0.1f && std::fabs(lastI + 18.0f) < 0.1f, "last points: short-term %.2f, integrated %.2f LUFS", last, lastI);
+
+    // the window the UI draws: always the newest points, each where the time axis says it is, however long it runs
+    // (the ring holds 54 min; views are 1..30 min)
+    bool allOk = true;
+    for (double minutes : { 0.0, 53.0, 54.0, 105.0, 120.0, 1800.0 })
+    {
+        ScopeRing r(1 << 15);
+        for (int i = 0; i < 777; ++i) r.push(-1.0f);   // points before the reset
+        const uint32_t start = r.position();
+        const uint32_t pts = (uint32_t)std::lround(minutes * 60.0 * Engine::kHistRate);
+        for (uint32_t i = 0; i < pts; ++i) r.push((float)i);   // value = index since the reset
+        for (int view : { 600, 1800, 6000, 18000 })
+        {
+            const HistoryWindow w = historyWindow(r.position(), start, r.capacity(), view);
+            const uint32_t want = std::min<uint32_t>(pts, (uint32_t)view);
+            bool ok = w.count == (int)want && w.first == pts - want;
+            for (int i = 0; ok && i < w.count; ++i) ok = r.at(w.base + (uint32_t)i) == (float)(w.first + (uint32_t)i);
+            if (!ok) { allOk = false; printf("  window wrong after %.0f min, view %d: count %d first %u\n", minutes, view, w.count, w.first); }
+        }
+    }
+    CHECK(allOk, "history window: newest points, right time axis after 0 min, 53 min, 54 min, 105 min, 2 h and 30 h (all four views)");
 }
 
 static void resets()
@@ -184,6 +206,38 @@ static void resets()
     CHECK(std::fabs(I(e) - i1) < 1e-6 && e.resetHighWater() == 1.0f, "lower counter (undo): no reset, high water %.0f", e.resetHighWater());
     e.setResetCounter(e.resetHighWater() + 1.0f);
     CHECK(!std::isfinite(I(e)) && e.resetCount.load() == c0 + 2, "high water + 1: reset");
+    // RMS, correlation and balance start over too (on a reset and on prepare / re-activation)
+    for (int how = 0; how < 2; ++how)
+    {
+        f.sine(-20, 2.0);
+        if (how == 0) e.setResetCounter(e.resetHighWater() + 1.0f); else e.prepare(48000);
+        const float z = 0.0f;
+        e.process(&z, &z, 1);
+        CHECK(e.out.rmsDb[0].load() < -100.0f && e.out.silent.load() && e.out.correlation.load() == 0.0f,
+              "%s: RMS %.0f dBFS, correlation %.2f right after (no -20 dBFS sine left in the averages)", how == 0 ? "reset" : "prepare", e.out.rmsDb[0].load(), e.out.correlation.load());
+    }
+}
+
+static void badInput()
+{
+    printf("NaN / Inf input\n");
+    // a NaN or Inf sample is measured as silence: nothing may stick at NaN, and integrated loudness keeps moving
+    Engine e; e.prepare(48000); Feeder f(e);
+    f.sine(-20, 4.0);
+    {
+        std::vector<float> l(512, 0.0f), r(512, 0.0f);
+        l[5] = NAN; r[9] = INFINITY; l[100] = -INFINITY; r[200] = NAN;
+        e.process(l.data(), r.data(), 512);
+    }
+    f.sine(-20, 2.0);
+    const float rms = e.out.rmsDb[0].load(), corr = e.out.correlation.load(), bal = e.out.balance.load(), tp = e.out.truePeak.load(), i1 = I(e);
+    CHECK(std::fabs(rms + 23.01f) < 0.1f && corr > 0.999f && std::fabs(bal) < 0.01f && std::fabs(tp + 20.0f) < 0.3f && std::fabs(M(e) + 20.0f) < 0.1f && std::fabs(i1 + 20.0f) < 0.2f,
+          "2 s after NaN / Inf samples: RMS %.2f dBFS, correlation %+.3f, balance %+.2f dB, TP %.2f dBTP, M %.2f, I %.2f LUFS", rms, corr, bal, tp, M(e), i1);
+    f.sine(-26, 20.0);
+    const float i2 = I(e);
+    CHECK(i2 < i1 - 2.0f && std::isfinite(i2) && std::fabs(M(e) + 26.0f) < 0.1f, "integrated keeps moving: %.2f -> %.2f LUFS after 20 s at -26 dBFS", i1, i2);
+    const float pk = gainToDbF(e.peak[0].exchange(0.0f)), tpk = gainToDbF(e.tpPeak[1].exchange(0.0f));
+    CHECK(std::isfinite(pk) && std::isfinite(tpk), "peak feeds finite (%.2f dBFS, TP %.2f dBTP)", pk, tpk);
 }
 
 static void passThrough()
@@ -215,6 +269,7 @@ int main()
     stereo();
     history();
     resets();
+    badInput();
     passThrough();
     printf(fails ? "\n%d FAILED\n" : "\nall passed\n", fails);
     return fails ? 1 : 0;
