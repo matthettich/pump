@@ -198,10 +198,14 @@ public:
         const float binHz = (float)(sr / N);
         const float decay = 30.0f * dt * speed;   // dB per frame fall
         const float rise = std::min(1.0f, 0.55f * speed * dt * 60.0f);
+        const double nyq = 0.5 * sr;
         for (int p = 0; p < kPoints; ++p)
         {
             const double f0 = fLo * std::pow(fHi / fLo, (double)p / kPoints);
             const double f1 = fLo * std::pow(fHi / fLo, (double)(p + 1) / kPoints);
+            // nothing exists above Nyquist (e.g. a 20 kHz-24 kHz range at 44.1 kHz): fall to the floor, never
+            // extrapolate the top bins
+            if (f0 >= nyq) { db[p] = std::max(-140.0f, db[p] - decay); continue; }
             int k0 = (int)std::floor(f0 / binHz), k1 = (int)std::ceil(f1 / binHz);
             k0 = std::max(1, k0); k1 = std::min(N / 2 - 1, std::max(k1, k0 + 1));
             float m = 0.0f;
@@ -523,6 +527,7 @@ public:
     }
 
     // Override points
+    virtual void onSampleRateChanged(double) {}    // re-setup analyzers etc. (the host changed the rate)
     virtual void layout() {}                       // place controls (logical coords)
     virtual void drawBody() {}                     // screens and graphs (before controls)
     virtual void drawOverlay() {}                  // after controls
@@ -648,6 +653,7 @@ protected:
         else if (std::strcmp(key, "ui") == 0) { fUiState = value ? value : ""; loadUiState(fUiState); }
         repaint();
     }
+    void sampleRateChanged(double newRate) override { onSampleRateChanged(newRate); repaint(); }
     void uiIdle() override
     {
         const double now = nowSeconds();

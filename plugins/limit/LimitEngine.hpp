@@ -144,9 +144,11 @@ public:
     }
     // These change the latency: the engine reconfigures (short mute + fade) when they change.
     // (before any audio has run since prepare() there is nothing to fade)
-    void setLookahead(float ms) { if (ms != lookMs) { lookMs = ms; configure(started); } }
-    void setTruePeak(bool on) { if (on != truePeak) { truePeak = on; configure(started); } }
-    void setOversampling(int idx) { idx = clampv(idx, 0, 3); if (idx != osIdx) { osIdx = idx; configure(started); } }
+    // While audio runs a change is applied after a 5 ms fade-out (then a mute for the new latency and a fade-in),
+    // and not at all when the rounded lookahead, the factor and the detector stay the same.
+    void setLookahead(float ms) { if (ms != lookMs) { lookMs = ms; requestConfigure(); } }
+    void setTruePeak(bool on) { if (on != truePeak) { truePeak = on; requestConfigure(); } }
+    void setOversampling(int idx) { idx = clampv(idx, 0, 3); if (idx != osIdx) { osIdx = idx; requestConfigure(); } }
 
     int latency() const { return latencyTotal; }
     int oversamplingFactor() const { return F; }
@@ -162,7 +164,11 @@ public:
         applyTargets(false);
         if (coefDirty) updateCoefs();
         if (n > 0) started = true;
-        for (int off = 0; off < n; off += kChunk) chunk(L + off, R + off, std::min(kChunk, n - off));
+        for (int off = 0; off < n; off += kChunk)
+        {
+            handlePendingConfigure();
+            chunk(L + off, R + off, std::min(kChunk, n - off));
+        }
     }
 
     // Static helpers for tests
@@ -176,8 +182,33 @@ public:
 
 private:
     // ------------------------------------------------------------------------------------------------- config
+    void requestConfigure()
+    {
+        if (!started) { pendingCfg = false; configure(false); return; }
+        const int newL = std::max(2, (int)std::lround(lookMs * 0.001 * sr));
+        const int newF = osIdx == 0 ? 1 : (1 << osIdx);
+        pendingCfg = !(newL == Lbase && newF == F && truePeak == cfgTruePeak);
+    }
+    void handlePendingConfigure()
+    {
+        const int ramp = std::max(1, (int)(0.005 * sr));
+        if (pendingCfg)
+        {
+            // already silent (muted or faded out): switch now
+            if (muteLeft > 0 || (!fade.isSmoothing() && fade.current() <= 0.0)) { pendingCfg = false; configure(true); }
+            else if (fade.getTarget() != 0.0) { fade.setRamp(ramp); fade.setTarget(0.0); }
+        }
+        else if (fade.getTarget() == 0.0 && muteLeft == 0) { fade.setRamp(ramp); fade.setTarget(1.0); }   // change undone mid fade
+    }
+    static inline float sanitize(float x)
+    {
+        if (!(std::fabs(x) < 1e6f)) return 0.0f;   // NaN, Inf, absurd values
+        return std::fabs(x) < 1e-30f ? 0.0f : x;
+    }
+
     void configure(bool runtime)
     {
+        cfgTruePeak = truePeak;
         F = osIdx == 0 ? 1 : (1 << osIdx);
         os = osIdx == 0 ? nullptr : &ovs[osIdx - 1];
         if (os) os->reset();
@@ -289,6 +320,8 @@ private:
     // ------------------------------------------------------------------------------------------------- audio
     void chunk(float* L, float* R, int n)
     {
+        // a NaN/Inf from upstream would otherwise stick in every filter and envelope until re-activation
+        for (int i = 0; i < n; ++i) { L[i] = sanitize(L[i]); R[i] = sanitize(R[i]); }
         // input metering (raw input)
         meterIn.process(L, R, n);
         {
@@ -486,7 +519,7 @@ private:
             y0 = clampv(y0, -ceil, ceil);
             y1 = clampv(y1, -ceil, ceil);
             if (muteLeft > 0) { --muteLeft; y0 = y1 = 0.0f; }
-            else if (fade.isSmoothing()) { const float f = (float)fade.next(); y0 *= f; y1 *= f; }
+            else if (fade.isSmoothing() || fade.current() < 1.0) { const float f = (float)fade.next(); y0 *= f; y1 *= f; }
             L[i] = y0; R[i] = y1;
             opl = std::max(opl, std::fabs(y0)); opr = std::max(opr, std::fabs(y1));
             // display history
@@ -506,6 +539,13 @@ private:
         }
         outPeak[0].setMax(opl); outPeak[1].setMax(opr);
         samplePeakOut = std::max(samplePeakOut, std::max(opl, opr));
+        // backstop: no envelope may stay non-finite (inputs are sanitized, so this should never trigger)
+        for (int c = 0; c < 2; ++c)
+            if (!std::isfinite(env[c]) || !std::isfinite(avg[c]) || !std::isfinite(levEnv[c]) || !std::isfinite(levPow[c]))
+                env[c] = avg[c] = levEnv[c] = levPow[c] = 0.0f;
+        if (!std::isfinite(trFast) || !std::isfinite(trPow) || !std::isfinite(trEnv)) trFast = trPow = trEnv = 0.0f;
+        if (!std::isfinite(dcY1[0]) || !std::isfinite(dcY1[1])) dcX1[0] = dcX1[1] = dcY1[0] = dcY1[1] = 0.0;
+        if (!std::isfinite(senv)) senv = 1.0f;
         meterOut.process(L, R, n);
         loudCount += n;
         if (loudCount >= loudPublishEvery)
@@ -537,6 +577,7 @@ private:
     float gainDb = 0.0f, ceilDb = -1.0f, attackPct = 50.0f, releaseMs = 100.0f, lookMs = 5.0f, linkTrans = 0.75f, linkRel = 1.0f;
     int style = kAllround, osIdx = 1, ditherMode = 0, ditherBits = 24;
     bool truePeak = true, dcOn = false, unity = false, coefDirty = true, started = false;
+    bool pendingCfg = false, cfgTruePeak = true;
 
     // structure
     int F = 2, Lbase = 240, Los = 480, Sos = 60, M = 0, Dmain = 480, Ds = 0, Ls = 29, osLat = 0, latencyTotal = 0, maxLos = 0;
