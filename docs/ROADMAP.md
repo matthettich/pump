@@ -100,3 +100,21 @@ more design or DPF work; listed roughly by impact.
 - Ctrl/Cmd-clicking the only selected node doesn't deselect it; the preset name stays in the header after undoing a
   preset load.
 - `dynOffset`/`latencyNow` are plain reads of audio-thread data (formally a race; display only).
+
+## Known issues from the review of the other plugins (2026-10-23)
+
+Found by independent reviews of COMP, LIMIT, METER, CALM, TONE, BAND, WIDE and HEAT. The confirmed bugs were fixed
+(NaN recovery everywhere, LIMIT reconfiguration clicks, METER history after 53 minutes, CALM stereo-mode switching,
+BAND detection switching, momentary listen states moved off host parameters, latency at activation, AU latency
+notifications, bypass crossfade on latency changes). Deferred:
+
+- **CPU spikes at small buffers.** CALM runs a whole STFT frame inside one host block (about 1 ms at 96 kHz / FFT 8192
+  in M/S, 1.8 ms at 192 kHz, against a 0.67 / 0.33 ms budget at 64-sample buffers, although the average load is only
+  2-7 %). The multiband plugins' linear-phase convolution does all its work every 512 samples. Spreading the work over
+  hops (or alternating channels per hop) would smooth both.
+- **Offline renders with automated crossovers in Linear mode** aren't sample-reproducible: kernels are designed on a
+  worker thread and arrive on wall-clock time. Needs DPF to pass the offline flag (VST3 `setupProcessing` TODO) and a
+  synchronous design path while rendering.
+- **LIMIT input metering** computes input true peak and LRA that the UI never shows (about 1.5 % of a core at 48 kHz).
+- **VST3 single-component mode** (DPF with direct UI access): a value the host sets on the controller reads back the
+  old value until the next process call (Steinberg's validator logs this for bypass; it doesn't fail).
