@@ -4,6 +4,7 @@
 #include "EQParams.hpp"
 #include "EQEngine.hpp"
 #include "dsp/Bypass.hpp"
+#include "dsp/Audition.hpp"
 
 START_NAMESPACE_DISTRHO
 
@@ -32,6 +33,7 @@ protected:
     {
         engine.prepare(getSampleRate(), (int)getBufferSize());
         bypass.prepare(getSampleRate(), 1 << 17, (int)std::max<uint32_t>(getBufferSize(), 8192));
+        audition.prepare(getSampleRate());
         syncAll();
         lastLatency = -1;
     }
@@ -101,6 +103,8 @@ protected:
             bypass.capture(l, r, n);
             for (int i = 0; i < n; ++i) preRing.push(0.5f * (l[i] + r[i]));
             engine.process(l, r, n);
+            audition.set(pv(kAudition) >= 0.5f, pv(kAuditionFreq), pv(kAuditionQ));
+            audition.process(l, r, n);
             bypass.apply(l, r, n, pv(kBypass) >= 0.5f);
             for (int i = 0; i < n; ++i) postRing.push(0.5f * (l[i] + r[i]));
             done += (uint32_t)n;
@@ -109,6 +113,7 @@ protected:
 
 private:
     pump::BypassMixer bypass;
+    pump::Audition audition;
     int lastLatency = -1;
 
     DISTRHO_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PluginEQ)

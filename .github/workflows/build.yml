@@ -17,7 +17,7 @@ jobs:
   tests:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with: { submodules: recursive }
       - name: DSP tests
         run: make tests
@@ -25,7 +25,7 @@ jobs:
   windows:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with: { submodules: recursive }
       - name: Install MinGW (posix threads)
         run: |
@@ -33,9 +33,11 @@ jobs:
           sudo apt-get install -y -qq g++-mingw-w64-x86-64-posix gcc-mingw-w64-x86-64-posix binutils-mingw-w64-x86-64
       - name: Build (cross-compile for Windows x64)
         run: |
+          set -o pipefail
           make -j4 WINDOWS=true \
             CC=x86_64-w64-mingw32-gcc-posix CXX=x86_64-w64-mingw32-g++-posix \
-            AR=x86_64-w64-mingw32-ar WINDRES=x86_64-w64-mingw32-windres PKG_CONFIG=false
+            AR=x86_64-w64-mingw32-ar WINDRES=x86_64-w64-mingw32-windres PKG_CONFIG=false 2>&1 | tee build.log \
+            || { grep -E "error|Error|undefined reference|No rule" build.log | head -12 | while IFS= read -r l; do echo "::error::$l"; done; exit 1; }
       - name: Package
         run: |
           mkdir -p dist/pump-windows
@@ -50,14 +52,16 @@ jobs:
   macos:
     runs-on: macos-14
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with: { submodules: recursive }
       - name: Build (universal)
         run: |
           export CFLAGS="-arch x86_64 -arch arm64 -mmacosx-version-min=10.15"
           export CXXFLAGS="-arch x86_64 -arch arm64 -mmacosx-version-min=10.15"
           export LDFLAGS="-arch x86_64 -arch arm64 -mmacosx-version-min=10.15"
-          make -j4 MACOS=true
+          set -o pipefail
+          make -j4 MACOS=true 2>&1 | tee build.log \
+            || { grep -E "error|Error|undefined|No rule" build.log | head -12 | while IFS= read -r l; do echo "::error::$l"; done; exit 1; }
       - name: Sign (ad-hoc) and package
         run: |
           for b in bin/*.vst3 bin/*.clap bin/*.component; do [ -e "$b" ] && codesign --force --deep -s - "$b" || true; done
@@ -74,14 +78,17 @@ jobs:
   linux:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with: { submodules: recursive }
       - name: Install dependencies
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq libgl1-mesa-dev libx11-dev libxext-dev libxrandr-dev libxcursor-dev libdbus-1-dev
       - name: Build
-        run: make -j4
+        run: |
+          set -o pipefail
+          make -j4 2>&1 | tee build.log \
+            || { grep -E "error|Error|undefined|No rule" build.log | head -12 | while IFS= read -r l; do echo "::error::$l"; done; exit 1; }
       - name: Package
         run: |
           mkdir -p dist/pump-linux && cp -r bin/*.vst3 bin/*.clap dist/pump-linux/ && cp THIRD_PARTY_NOTICES.md dist/pump-linux/
@@ -94,7 +101,7 @@ jobs:
     if: github.event_name == 'push'
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: actions/download-artifact@v4
         with: { path: artifacts }
       - name: Publish

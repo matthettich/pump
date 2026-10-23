@@ -54,6 +54,7 @@ struct Control {
     bool visible = true, enabled = true;
     std::string label;
     std::string tip;           // shown in the status line on hover
+    int tabGroup = 0;          // controls sharing a group > 0 are a Tab ring when typing values
     virtual ~Control() {}
     virtual void draw(PumpUI& ui) = 0;
     virtual bool mouseDown(PumpUI&, float, float, int /*button*/, uint /*mod*/) { return false; }
@@ -99,6 +100,9 @@ struct Button : Control {
     std::function<bool()> isOnFn;
     bool small = false;
     bool pressed = false;
+    bool holdMomentary = false;              // click toggles; click-and-hold (>300 ms) acts only while held
+    std::function<void()> onExclusive;       // Ctrl/Cmd-click (multiband: solo/mute this one exclusively)
+    double pressTime = 0.0;
     bool isOn(PumpUI& ui) const;
     void draw(PumpUI& ui) override;
     bool mouseDown(PumpUI& ui, float x, float y, int button, uint mod) override;
@@ -274,9 +278,47 @@ public:
         repaint();
     }
     void setParamNorm(int i, float n) { setParam(i, fSpecs[i].fromNorm(n)); }
-    void beginEdit(int i) { if (i >= 0) editParameter((uint32_t)i, true); }
-    void endEdit(int i) { if (i >= 0) editParameter((uint32_t)i, false); }
-    void setParamGesture(int i, float v) { beginEdit(i); setParam(i, v); endEdit(i); }
+    // Gestures: every begin/end pair (and group) becomes one undo step (standard style: automation doesn't).
+    void beginEdit(int i) { beginGroup(); if (i >= 0) editParameter((uint32_t)i, true); }
+    void endEdit(int i) { if (i >= 0) editParameter((uint32_t)i, false); endGroup(); }
+    void setParamGesture(int i, float v)
+    {
+        if (i < 0 || i >= (int)fNum || fSpecs[i].clamp(v) == fValues[(size_t)i]) return;
+        beginEdit(i); setParam(i, v); endEdit(i);
+    }
+    void beginGroup() { if (fGestureDepth++ == 0 && !fApplyingHistory) fGestureBefore = serialize(); }
+    void endGroup()
+    {
+        if (fGestureDepth <= 0) return;
+        if (--fGestureDepth == 0 && !fApplyingHistory)
+        {
+            const std::string now = serialize();
+            if (now != fGestureBefore)
+            {
+                fUndo.push_back(fGestureBefore);
+                if (fUndo.size() > 200) fUndo.erase(fUndo.begin());
+                fRedo.clear();
+            }
+        }
+    }
+    bool canUndo() const { return !fUndo.empty(); }
+    bool canRedo() const { return !fRedo.empty(); }
+    void undo()
+    {
+        if (fUndo.empty()) return;
+        fRedo.push_back(serialize());
+        const std::string s = fUndo.back(); fUndo.pop_back();
+        fApplyingHistory = true; deserialize(s); fApplyingHistory = false;
+        onPresetApplied(); setStatus("Undo"); repaint();
+    }
+    void redo()
+    {
+        if (fRedo.empty()) return;
+        fUndo.push_back(serialize());
+        const std::string s = fRedo.back(); fRedo.pop_back();
+        fApplyingHistory = true; deserialize(s); fApplyingHistory = false;
+        onPresetApplied(); setStatus("Redo"); repaint();
+    }
 
     template <class T> T* add(T* c) { fControls.emplace_back(c); return c; }
     Dial* addDial(int param, const char* label, Dial::Size sz = Dial::Medium, bool bipolar = false)
@@ -470,6 +512,9 @@ public:
     virtual bool bodyScroll(float, float, float, uint) { return false; }
     virtual std::string footerInfo() { return ""; }
     virtual bool keyPress(uint /*key*/, uint /*mod*/) { return false; }
+    virtual bool keyRelease(uint /*key*/, uint /*mod*/) { return false; }
+    // Plugin-specific lines for the "?" key overlay: { keys, what they do }
+    virtual std::vector<std::pair<std::string, std::string>> helpLines() { return {}; }
     // UI-only settings saved with the session ("key=value;..." in the "ui" state)
     virtual void loadUiState(const std::string&) {}
     void saveUiState(const std::string& s) { fUiState = s; setState("ui", s.c_str()); }
@@ -508,9 +553,10 @@ public:
         if (h > H - 8.0f && current >= 0) fMenu.scroll = std::max(0.0f, std::min(h - (H - 8.0f), current * itemH - (H - 8.0f) * 0.5f));
         repaint();
     }
-    // Typed value entry over a control
-    void openTextEntry(int param, const Rect& r)
+    // Typed value entry over a control. `ring` lists the fields Tab steps through (standard: Freq -> Gain -> Q).
+    void openTextEntry(int param, const Rect& r, const std::vector<std::pair<int, Rect>>& ring = {})
     {
+        fEdit.ring = ring;
         fEdit.active = true; fEdit.param = param; fEdit.r = r;
         fEdit.text = fSpecs[param].format(fValues[(size_t)param]);
         // strip units for editing convenience
@@ -597,6 +643,7 @@ protected:
         drawFooter();
         drawResizeGrip();
         if (fEdit.active) drawTextEntry();
+        if (fHelpOpen) drawHelp();
         if (fMenu.open) drawMenu();
         restore();
     }
@@ -631,6 +678,7 @@ protected:
                 repaint();
                 return true;
             }
+            if (fHelpOpen) { fHelpOpen = false; repaint(); return true; }
             if (fEdit.active)
             {
                 if (fEdit.r.contains(x, y)) return true;
@@ -648,7 +696,11 @@ protected:
                     if (ev.button == kMouseButtonRight || (dbl && ev.button == kMouseButtonLeft))
                     {
                         if (fActive) { fActive->mouseUp(*this, x, y); fActive = nullptr; }
-                        openTextEntry(c->param, c->valueRect());
+                        std::vector<std::pair<int, Rect>> ring;
+                        if (c->tabGroup > 0)
+                            for (auto& o : fControls)
+                                if (o->tabGroup == c->tabGroup && o->visible && o->enabled && o->param >= 0) ring.push_back({ o->param, o->valueRect() });
+                        openTextEntry(c->param, c->valueRect(), ring);
                         return true;
                     }
                     if (reset && ev.button == kMouseButtonLeft)
@@ -728,8 +780,19 @@ protected:
 
     bool onKeyboard(const KeyboardEvent& ev) override
     {
-        if (!fEdit.active) return ev.press ? keyPress(ev.key, ev.mod) : false;
+        if (!fEdit.active)
+        {
+            if (!ev.press) return keyRelease(ev.key, ev.mod);
+            const bool cmd = (ev.mod & (kModifierControl | kModifierSuper)) != 0;
+            const uint k = ev.key >= 'A' && ev.key <= 'Z' ? ev.key + 32 : ev.key;
+            if (cmd && k == 'z') { if (ev.mod & kModifierShift) redo(); else undo(); return true; }
+            if (cmd && k == 'y') { redo(); return true; }
+            if (ev.key == kKeyEscape && (fHelpOpen || fMenu.open)) { fHelpOpen = false; fMenu.open = false; repaint(); return true; }
+            if (ev.key == '?' || k == '/' || ev.key == kKeyF1) { fHelpOpen = !fHelpOpen; repaint(); return true; }
+            return keyPress(ev.key, ev.mod);
+        }
         if (!ev.press) return false;
+        if (ev.key == kKeyTab) { tabTextEntry((ev.mod & kModifierShift) != 0); return true; }
         if (ev.key == kKeyEnter) { commitTextEntry(); return true; }
         if (ev.key == kKeyEscape) { fEdit.active = false; repaint(); return true; }
         if (ev.key == kKeyBackspace)
@@ -783,6 +846,15 @@ protected:
         fCopyAB->small = true;
         fCopyAB->tip = "Copy this setting to the other slot";
 
+        fUndoBtn = addButton("UNDO", [this]() { undo(); });
+        fUndoBtn->small = true;
+        fUndoBtn->tip = "Undo (Ctrl/Cmd+Z)";
+        fRedoBtn = addButton("REDO", [this]() { redo(); });
+        fRedoBtn->small = true;
+        fRedoBtn->tip = "Redo (Shift+Ctrl/Cmd+Z or Ctrl+Y)";
+        fHelpBtn = addButton("?", [this]() { fHelpOpen = !fHelpOpen; }, [this]() { return fHelpOpen; });
+        fHelpBtn->small = true;
+        fHelpBtn->tip = "Mouse and keyboard shortcuts (?)";
         fThemeBtn = addButton("DARK", [this]() { setDark(!fDark); }, [this]() { return fDark; });
         fThemeBtn->small = true;
         fThemeBtn->tip = "Light or dark (remembered for new instances)";
@@ -796,9 +868,13 @@ protected:
     {
         const float y = 9.0f, h = 28.0f;
         float x = brandRight() + 18.0f;
-        const float presetW = std::min(300.0f, W * 0.27f);
+        const float presetW = std::min(280.0f, W * 0.25f);
         fPresetMenu->r = Rect(x, y, presetW, h);
-        x += presetW + 16.0f;
+        x += presetW + 14.0f;
+        fUndoBtn->r = Rect(x, y, 50.0f, h);
+        x += 50.0f + 6.0f;
+        fRedoBtn->r = Rect(x, y, 50.0f, h);
+        x += 50.0f + 14.0f;
         fABButton->r = Rect(x, y, 56.0f, h);
         x += 56.0f + 8.0f;
         fCopyAB->r = Rect(x, y, 52.0f, h);
@@ -806,7 +882,9 @@ protected:
         float rx = W - 12.0f;
         if (fBypassBtn) { fBypassBtn->r = Rect(rx - 74.0f, y, 74.0f, h); rx -= 74.0f + 8.0f; }
         fThemeBtn->r = Rect(rx - 56.0f, y, 56.0f, h);
-        rx -= 56.0f + 12.0f;
+        rx -= 56.0f + 8.0f;
+        fHelpBtn->r = Rect(rx - 30.0f, y, 30.0f, h);
+        rx -= 30.0f + 12.0f;
         headerExtra = Rect(x, y, std::max(0.0f, rx - x), h);
     }
     float brandRight() { return 14.0f + textWidth("…pump", kBold, 21.0f) + 10.0f + textWidth(fTag, kBold, 15.0f) + 16.0f; }
@@ -893,6 +971,17 @@ protected:
         if (fSpecs[fEdit.param].parse(fEdit.text.c_str(), v)) setParamGesture(fEdit.param, v);
         repaint();
     }
+    void tabTextEntry(bool back)
+    {
+        const std::vector<std::pair<int, Rect>> ring = fEdit.ring;
+        const int cur = fEdit.param;
+        commitTextEntry();
+        if (ring.size() < 2) return;
+        int k = 0;
+        for (size_t i = 0; i < ring.size(); ++i) if (ring[i].first == cur) k = (int)i;
+        k = (k + (back ? (int)ring.size() - 1 : 1)) % (int)ring.size();
+        openTextEntry(ring[(size_t)k].first, ring[(size_t)k].second, ring);
+    }
 
     // ---- presets and A/B ----------------------------------------------------------------------------------------------
     std::string serialize() const
@@ -909,6 +998,7 @@ protected:
     }
     void deserialize(const std::string& s)
     {
+        beginGroup();
         size_t p = 0;
         while (p < s.size())
         {
@@ -920,11 +1010,13 @@ protected:
                 if (key == fSpecs[i].symbol) { setParamGesture((int)i, v); break; }
             p = sc + 1;
         }
+        endGroup();
     }
     void applyPreset(int idx)
     {
         if (!fPresets || idx < 0 || idx >= (int)fPresets->size()) return;
         const Preset& pr = (*fPresets)[(size_t)idx];
+        beginGroup();
         for (uint32_t i = 0; i < fNum; ++i)
         {
             if (fSpecs[i].flags & (pump::kPOutput | pump::kPBypass)) continue;
@@ -932,6 +1024,7 @@ protected:
             for (const auto& pv : pr.values) if (std::strcmp(pv.symbol, fSpecs[i].symbol) == 0) { v = pv.value; break; }
             setParamGesture((int)i, v);
         }
+        endGroup();
         fPresetName = pr.name;
         setState("preset", fPresetName.c_str());
         onPresetApplied();
@@ -957,6 +1050,44 @@ protected:
         setState(other ? "abB" : "abA", fAB[other].c_str());
         fStatus = std::string("Copied to ") + (other ? "B" : "A");
         repaint();
+    }
+
+    // ---- the "?" overlay ------------------------------------------------------------------------------------------------
+    void drawHelp()
+    {
+        std::vector<std::pair<std::string, std::string>> lines = {
+            { "Drag", "change a control (up/right = more)" },
+            { "Shift + drag / wheel", "fine adjustment" },
+            { "Double-click / right-click", "type a value: 1k, A4, C#3+13, 2x (= +6 dB), 50% (halfway)" },
+            { "Tab (while typing)", "next field" },
+            { "Ctrl/Cmd + click", "reset to default (Alt + click works too)" },
+            { "Mouse wheel", "step a control" },
+            { "Ctrl/Cmd + Z", "undo     Shift + Ctrl/Cmd + Z, Ctrl + Y: redo" },
+            { "A / B, COPY", "compare two settings, copy this one to the other slot" },
+        };
+        const auto extra = helpLines();
+        if (!extra.empty()) { lines.push_back({ "", "" }); for (const auto& e : extra) lines.push_back(e); }
+        const float lh = 21.0f, w = std::min(W - 80.0f, 820.0f), h = 74.0f + lh * (float)lines.size();
+        const Rect r((W - w) * 0.5f, std::max(kHeaderH + 10.0f, (H - h) * 0.5f), w, std::min(h, H - kHeaderH - 30.0f));
+        fillRect(Rect(0, kHeaderH, W, H - kHeaderH), withAlpha2(theme.bg, 0.55f));
+        fillRect(Rect(r.x + 6, r.y + 6, r.w, r.h), theme.dim);
+        fillRect(r, theme.bg);
+        strokeRect(r, theme.ink, 1.5f);
+        textAt(r.x + 20, r.y + 24, "MOUSE AND KEYS", kLabel, 13.0f, theme.ink, ALIGN_LEFT | ALIGN_MIDDLE, 2.0f);
+        textAt(r.r() - 20, r.y + 24, "click or Esc to close", kLabel, 11.0f, theme.ink2, ALIGN_RIGHT | ALIGN_MIDDLE, 0.8f);
+        line(r.x + 14, r.y + 42, r.r() - 14, r.y + 42, theme.dim, 1.0f);
+        float yy = r.y + 60.0f;
+        const float kx = r.x + 20, dx = r.x + 20 + std::min(300.0f, r.w * 0.38f);
+        for (const auto& l : lines)
+        {
+            if (yy > r.b() - 10) break;
+            if (!l.first.empty())
+            {
+                textAt(kx, yy, l.first, kMono, 11.5f, theme.ink, ALIGN_LEFT | ALIGN_MIDDLE);
+                textAt(dx, yy, l.second, kLabel, 12.0f, theme.ink2, ALIGN_LEFT | ALIGN_MIDDLE, 0.4f);
+            }
+            yy += lh;
+        }
     }
 
     // ---- remembered theme (for new instances) -------------------------------------------------------------------------
@@ -1026,7 +1157,15 @@ protected:
     Button* fThemeBtn = nullptr;
     Button* fBypassBtn = nullptr;
     struct { bool open = false; Rect r; std::vector<std::string> items; int current = -1, hover = -1; float itemH = 22, scroll = 0; std::function<void(int)> onPick; } fMenu;
-    struct { bool active = false; int param = -1; Rect r; std::string text; bool selectAll = true; } fEdit;
+    struct { bool active = false; int param = -1; Rect r; std::string text; bool selectAll = true; std::vector<std::pair<int, Rect>> ring; } fEdit;
+    std::vector<std::string> fUndo, fRedo;
+    std::string fGestureBefore;
+    int fGestureDepth = 0;
+    bool fApplyingHistory = false;
+    bool fHelpOpen = false;
+    Button* fUndoBtn = nullptr;
+    Button* fRedoBtn = nullptr;
+    Button* fHelpBtn = nullptr;
 
     friend struct Dial; friend struct SliderRow; friend struct Button; friend struct Segmented; friend struct MenuButton;
     DISTRHO_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PumpUI)
@@ -1141,15 +1280,26 @@ inline void Button::draw(PumpUI& ui)
     ui.keyBox(r, on, pressed || on, nullptr, small ? 3.0f : 4.0f);
     ui.textAt(r.cx(), r.cy() + 0.5f, label, PumpUI::kLabel, small ? 11.5f : 12.5f, on ? t.on : (enabled ? t.ink : t.dim), NanoVG::ALIGN_CENTER | NanoVG::ALIGN_MIDDLE, 1.0f);
 }
-inline bool Button::mouseDown(PumpUI& ui, float, float, int button, uint)
+inline bool Button::mouseDown(PumpUI& ui, float, float, int button, uint mod)
 {
     if (button != kMouseButtonLeft) return false;
     pressed = true;
+    pressTime = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+    if (onExclusive && (mod & (kModifierControl | kModifierSuper))) { onExclusive(); return true; }
     if (param >= 0) ui.setParamGesture(param, ui.value(param) >= 0.5f ? ui.spec(param).min : ui.spec(param).max);
     else if (onClick) onClick();
     return true;
 }
-inline void Button::mouseUp(PumpUI&, float, float) { pressed = false; }
+inline void Button::mouseUp(PumpUI& ui, float, float)
+{
+    pressed = false;
+    if (!holdMomentary) return;
+    const double held = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count() - pressTime;
+    if (held < 0.3) return;
+    // released after a hold: undo the toggle (momentary)
+    if (param >= 0) ui.setParamGesture(param, ui.value(param) >= 0.5f ? ui.spec(param).min : ui.spec(param).max);
+    else if (onClick) onClick();
+}
 
 inline int Segmented::count(PumpUI& ui) const
 {
