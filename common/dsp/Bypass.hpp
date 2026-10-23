@@ -16,6 +16,7 @@ public:
         fade.reset(on ? 1.0 : 0.0);
         xfLen = std::max(1, (int)(0.010 * sr));
         xfPos = xfLen;
+        fresh = true;   // the first latency after prepare() is a start, not a change: no crossfade
     }
     // A latency change while bypassed would make the dry signal jump (a click): crossfade from the old delay to
     // the new one over 10 ms instead.
@@ -23,6 +24,7 @@ public:
     {
         const int old = dly[0].getDelay();
         for (auto& d : dly) d.setDelay(samples);
+        if (fresh) { fresh = false; return; }
         if (dly[0].getDelay() != old) { xfOld = old; xfPos = 0; }
     }
     // call before processing (in-place buffers): remembers the dry input
@@ -63,6 +65,7 @@ private:
     LinearSmoother fade;
     bool on = false;
     int xfOld = 0, xfPos = 1, xfLen = 1;
+    bool fresh = true;
 };
 
 } // namespace pump

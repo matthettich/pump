@@ -23,6 +23,12 @@ public:
     Engine engine;
     int latencyNow() const { return engine.latency(); }
 
+    // Alt-hold listen, set by the UI while the mouse is held (direct access). Never a host parameter, so a host
+    // can't save it with the session or echo a stale value back; the UI clears it when it closes. (The audition*
+    // parameters stay in the table as unused placeholders: ids never shift.)
+    std::atomic<bool> auditionOn { false };
+    std::atomic<float> auditionFreq { 1000.0f }, auditionQ { 2.0f };
+
 protected:
     const char* getLabel() const override { return "pump_tone"; }
     const char* getDescription() const override { return "Intelligent auto-balance EQ: recovers masked frequencies and tames dominating ones, continuously."; }
@@ -34,7 +40,11 @@ protected:
         engine.prepare(sr);
         bypass.prepare(sr, engine.sizeFor(1) + 16, Engine::kMaxChunk);
         audition.prepare(sr);
-        lastLatency = -1;
+        // report the latency now (constructor, activate, rate change): hosts read it at activation, before the
+        // first block; the bypass path is matched to it from the start
+        lastLatency = engine.latency();
+        setLatency((uint32_t)lastLatency);
+        bypass.setLatency(lastLatency);
     }
     void activate() override { prepareAll(); }
     void sampleRateChanged(double) override { prepareAll(); }
@@ -70,11 +80,16 @@ protected:
             const int lat = engine.latency();
             if (lat != lastLatency) { setLatency((uint32_t)lat); bypass.setLatency(lat); lastLatency = lat; }
             bypass.capture(l, r, n);
+            // after the capture, so bypass stays a true pass-through: one NaN/Inf from upstream must not reach the
+            // engine (its analysis is recursive), the listen filter or the analyzer feed
+            pump::sanitizeBlock(l, n);
+            pump::sanitizeBlock(r, n);
             for (int i = 0; i < n; ++i) preRing.push(0.5f * (l[i] + r[i]));
             engine.process(l, r, n);
             const int lat2 = engine.latency();
             if (lat2 != lastLatency) { setLatency((uint32_t)lat2); bypass.setLatency(lat2); lastLatency = lat2; }
-            audition.set(pv(kAudition) >= 0.5f, pv(kAuditionFreq), pv(kAuditionQ));
+            audition.set(auditionOn.load(std::memory_order_relaxed), auditionFreq.load(std::memory_order_relaxed),
+                         auditionQ.load(std::memory_order_relaxed));
             audition.process(l, r, n);
             bypass.apply(l, r, n, pv(kBypass) >= 0.5f);
             float pl = 0.0f, pr = 0.0f;

@@ -1,7 +1,8 @@
 // pump TONE engine: Tame pulls down a broad bump, Recover lifts a broad dip (pink noise with +8 dB at 3 kHz and
 // -8 dB at 300 Hz); identity null at Recover = Tame = Brighten = Body = 0; auto level keeps the integrated loudness
 // of the test mix within 1 LU; latency per quality (impulse) at 44.1/48/96 kHz; delta; noise is not lifted;
-// parameter changes stay safe.
+// parameter changes stay safe; a quality change taken back mid-switch ends on the requested size; NaN/Inf input
+// never reaches the output and the analysis recovers.
 #include "TestMix.hpp"
 #include "../plugins/tone/ToneEngine.hpp"
 #include "dsp/Biquad.hpp"
@@ -317,6 +318,84 @@ int main()
         CHECK(finite && peak < 8.0f, "random automation: finite, peak %.3f", peak);
     }
 
+    // ---- 8b. quality switched back while a switch is under way: the engine ends on the size asked for ----
+    printf("== quality toggle-back\n");
+    {
+        // identity settings, so after settling the output must null against the input delayed by the reported
+        // latency (proves the engine really runs at that size, not just that it says so)
+        const int fade = (int)(0.005 * sr);   // the 5 ms fade-out before a switch
+        bool allOk = true;
+        int worstGap = -1;
+        for (int from = 0; from < 2; ++from)
+            for (int gap : { 0, 1, 100, fade - 1, fade, fade + 1, 2 * fade, 1000, 2048, 2048 + fade, 2600, 4096, 4096 + fade, 4600, 6000 })
+            {
+                Settings s; s.recover = 0; s.tame = 0; s.quality = from;
+                Engine e; e.set(s); e.prepare(sr);
+                Stereo x = mix;
+                size_t off = 0;
+                auto proc = [&](int m) { m = std::min<int>(m, (int)(x.L.size() - off)); if (m > 0) e.process(x.L.data() + off, x.R.data() + off, m); off += (size_t)std::max(0, m); };
+                proc(1024);
+                s.quality = 1 - from; e.set(s);                  // click the other size ...
+                for (int left = gap; left > 0; left -= 512) proc(std::min(512, left));
+                s.quality = from; e.set(s);                      // ... and back, `gap` samples later
+                const size_t until = off + (size_t)(1.5 * sr);
+                while (off < until) proc(512);
+                const int lat = e.latency();
+                const size_t from0 = off - (size_t)(0.5 * sr);
+                double err = 0, ref = 0;
+                for (size_t i = from0; i < off; ++i) { const double d = x.L[i] - mix.L[i - (size_t)lat]; err += d * d; ref += (double)mix.L[i - (size_t)lat] * mix.L[i - (size_t)lat]; }
+                const double nl = 10.0 * std::log10((err + 1e-30) / (ref + 1e-30));
+                const bool ok = e.fftSize() == e.sizeFor(from) && lat == e.sizeFor(from) && nl < -100.0;
+                if (!ok) { allOk = false; worstGap = gap; printf("    %s -> %s -> %s, back after %d samples: engine FFT %d, latency %d, null %.1f dB\n",
+                                                                   kQualityNames[from], kQualityNames[1 - from], kQualityNames[from], gap, e.fftSize(), lat, nl); }
+            }
+        CHECK(allOk, "switching back 0..6000 samples after a quality change (incl. the block right after the fade-out): engine always ends on the requested size and nulls at its latency%s",
+              worstGap >= 0 ? " (see above)" : "");
+    }
+
+    // ---- 8c. one NaN / Inf input sample: no non-finite output, and the analysis recovers (it used to freeze at 0 dB) ----
+    printf("== NaN / Inf input\n");
+    {
+        const int secs = 12, blk = 512, poisonBlock = 100;   // poison at ~1.07 s
+        auto runPoison = [&](int kind, std::vector<float>& gainOut, bool& finiteOut, bool& uiFinite) {
+            Settings s; s.recover = 60; s.tame = 60;
+            Engine e; e.set(s); e.prepare(sr);
+            std::mt19937 rng(1); std::normal_distribution<float> nd(0.0f, 0.1f);
+            std::vector<float> L((size_t)blk), R((size_t)blk);
+            long t = 0; finiteOut = true;
+            for (int k = 0; k < (int)(secs * sr / blk); ++k)
+            {
+                for (int i = 0; i < blk; ++i, ++t) { const float tone = 0.3f * (float)std::sin(kTwoPi * 3000.0 * t / sr); L[(size_t)i] = nd(rng) + tone; R[(size_t)i] = nd(rng) + tone; }
+                if (k == poisonBlock)
+                {
+                    if (kind == 1) L[7] = NAN;
+                    if (kind == 2) R[300] = -INFINITY;
+                    if (kind == 3) for (int i = 0; i < blk; ++i) { L[(size_t)i] = NAN; R[(size_t)i] = 1e30f; }
+                }
+                e.process(L.data(), R.data(), blk);
+                for (int i = 0; i < blk; ++i) if (!std::isfinite(L[(size_t)i]) || !std::isfinite(R[(size_t)i])) finiteOut = false;
+            }
+            gainOut.assign(Engine::kBands, 0.0f); uiFinite = std::isfinite(e.uiMakeup());
+            for (int b = 0; b < Engine::kBands; ++b)
+            {
+                gainOut[(size_t)b] = e.uiGain(b);
+                if (!std::isfinite(e.uiGain(b)) || !std::isfinite(e.uiTarget(b)) || !std::isfinite(e.uiLevel(b))) uiFinite = false;
+            }
+        };
+        std::vector<float> clean, poisoned; bool fin = true, uiFin = true;
+        runPoison(0, clean, fin, uiFin);
+        float cleanSpan = 0; for (float g : clean) cleanSpan = std::max(cleanSpan, std::fabs(g));
+        for (int kind = 1; kind <= 3; ++kind)
+        {
+            runPoison(kind, poisoned, fin, uiFin);
+            float diff = 0; for (int b = 0; b < Engine::kBands; ++b) diff = std::max(diff, std::fabs(poisoned[(size_t)b] - clean[(size_t)b]));
+            static const char* const names[] = { "", "one NaN sample", "one -Inf sample", "a block of NaN / 1e30" };
+            CHECK(fin && uiFin && diff < 0.5f && cleanSpan > 1.0f,
+                  "%-22s at 1.07 s: output finite throughout, UI feeds finite, gain curve %.0f s later within %.3f dB of the clean run (which works up to %.1f dB)",
+                  names[kind], secs - 1.07, diff, cleanSpan);
+        }
+    }
+
     // ---- 9. CPU ----
     printf("== cpu\n");
     for (int q = 0; q < 2; ++q)
@@ -327,6 +406,38 @@ int main()
         run(e, mix);
         const double sec = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
         printf("  quality %s: %.1f%% of one core\n", kQualityNames[q], 100.0 * sec / (mix.L.size() / sr));
+    }
+    // a quality switch only flips tables built in prepare(): its block costs about what a block with a frame does
+    // (informational: timings on a shared machine are too noisy for a pass/fail bound)
+    for (double r : { 48000.0, 192000.0 })
+    {
+        auto us = [](std::chrono::steady_clock::time_point t0) { return std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - t0).count(); };
+        std::vector<double> sw, fr;
+        for (int rep = 0; rep < 9; ++rep)
+        {
+            Settings s; s.recover = 50; s.tame = 50;
+            Engine e; e.set(s); e.prepare(r);
+            std::vector<float> L(64), R(64);
+            std::mt19937 rng(3); std::normal_distribution<float> nd(0, 0.1f);
+            auto fill = [&]() { for (int i = 0; i < 64; ++i) { L[(size_t)i] = nd(rng); R[(size_t)i] = nd(rng); } };
+            for (int k = 0; k < (int)(r / 64); ++k) { fill(); e.process(L.data(), R.data(), 64); }
+            double mxN = 0; for (int k = 0; k < 600; ++k) { fill(); const auto t0 = std::chrono::steady_clock::now(); e.process(L.data(), R.data(), 64); mxN = std::max(mxN, us(t0)); }
+            s.quality = 1; e.set(s);
+            double mxS = 0;
+            for (int k = 0; k < 600; ++k)
+            {
+                fill();
+                const int before = e.fftSize();
+                const auto t0 = std::chrono::steady_clock::now();
+                e.process(L.data(), R.data(), 64);
+                const double t = us(t0);
+                if (e.fftSize() != before) mxS = t;   // the block that switched
+            }
+            sw.push_back(mxS); fr.push_back(mxN);
+        }
+        std::sort(sw.begin(), sw.end()); std::sort(fr.begin(), fr.end());
+        printf("  %.0f Hz, quality switch: the switching 64-sample block takes %.0f us (median of 9), the worst normal block %.0f us; block period %.0f us\n",
+               r, sw[sw.size() / 2], fr[fr.size() / 2], 64e6 / r);
     }
     printf(fails ? "\n%d FAILED\n" : "\nall passed\n", fails);
     return fails ? 1 : 0;
