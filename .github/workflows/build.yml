@@ -64,6 +64,11 @@ jobs:
             || { grep -E "error|Error|undefined|No rule" build.log | head -12 | while IFS= read -r l; do echo "::error::$l"; done; exit 1; }
       - name: Sign (ad-hoc) and package
         run: |
+          # our own bundle identifiers (DPF's template uses studio.kx.distrho.*)
+          for b in bin/*.vst3 bin/*.clap; do
+            [ -e "$b" ] || continue
+            n=$(basename "$b"); plutil -replace CFBundleIdentifier -string "com.wake.${n%.*}.${n##*.}" "$b/Contents/Info.plist"
+          done
           for b in bin/*.vst3 bin/*.clap bin/*.component; do [ -e "$b" ] && codesign --force --deep -s - "$b" || true; done
           mkdir -p dist/pump-macos/VST3 dist/pump-macos/CLAP dist/pump-macos/Components
           cp -R bin/*.vst3 dist/pump-macos/VST3/
