@@ -33,7 +33,7 @@ public:
 
 protected:
     const char* getLabel() const override { return "pump_calm"; }
-    const char* getDescription() const override { return "Dynamic resonance suppressor: finds and calms harsh, ringing frequencies as they happen."; }
+    const char* getDescription() const override { return PUMP_PLUGIN_ABOUT; }
 
     void prepareAll()
     {

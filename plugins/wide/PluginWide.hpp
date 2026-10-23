@@ -31,7 +31,7 @@ public:
 
 protected:
     const char* getLabel() const override { return "pump_wide"; }
-    const char* getDescription() const override { return "Multiband stereo imager: width and stereoize per band, mono bass, vectorscope and correlation."; }
+    const char* getDescription() const override { return PUMP_PLUGIN_ABOUT; }
 
     void activate() override
     {

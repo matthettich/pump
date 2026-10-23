@@ -24,7 +24,7 @@ public:
 
 protected:
     const char* getLabel() const override { return "pump_limit"; }
-    const char* getDescription() const override { return "True-peak mastering limiter: seven styles, leveling + lookahead brickwall, oversampling, loudness metering."; }
+    const char* getDescription() const override { return PUMP_PLUGIN_ABOUT; }
 
     void activate() override
     {

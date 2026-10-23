@@ -4,17 +4,17 @@ Mastering plugins by **wake**, in the look of Thunder Plus's *Simple* skins: fla
 offset block, Share Tech Mono, one light-neon colour per plugin, light or dark. VST3 and CLAP on Windows and macOS
 (plus Audio Units on macOS), built for Ableton Live and any other host.
 
-| Plugin | Colour | Inspired by | What it does |
+| Plugin (name in your host) | Colour | Inspired by | What it does |
 |---|---|---|---|
-| **pump EQ** | aqua | FabFilter Pro-Q | 24 bands; analog-matched curves with no cramping; cuts to 96 dB/oct; dynamic bands; stereo/L/R/mid/side per band; zero latency or linear phase |
-| **pump COMP** | pink | FabFilter Pro-C | Clean, Glue, Opto, Punch, Vari-Mu and Pump styles; lookahead; external sidechain with sidechain EQ; stereo link and mid/side |
-| **pump LIMIT** | lime | FabFilter Pro-L, Ozone Maximizer | true-peak limiter with seven styles, up to 8x oversampling, dither, loudness metering and targets |
-| **pump CALM** | violet | soothe | dynamic resonance suppressor with a sensitivity curve, mid/side and delta listening |
-| **pump TONE** | mint | Gullfoss | automatic balance: Recover, Tame, Bias, Brighten, Body |
-| **pump BAND** | orange | Pro-MB, Ozone Dynamics | multiband compression, expansion and upward compression; analog or linear-phase crossovers |
-| **pump WIDE** | blue | Ozone Imager | multiband width and stereoize, mono bass, vectorscope and correlation |
-| **pump HEAT** | coral | Saturn, Ozone Exciter | multiband warm/tape/tube/triode/retro/clip saturation, oversampled |
-| **pump METER** | yellow | Youlean, Ozone | LUFS (momentary, short-term, integrated), LRA, true peak, PLR/PSR, history |
+| **pump EQ** Equalizer | aqua | FabFilter Pro-Q | 24 bands; analog-matched curves with no cramping; cuts to 96 dB/oct; dynamic bands; stereo/L/R/mid/side per band; zero latency or linear phase |
+| **pump COMP** Compressor | pink | FabFilter Pro-C | Clean, Glue, Opto, Punch, Vari-Mu and Pump styles; lookahead; external sidechain with sidechain EQ; stereo link and mid/side |
+| **pump LIMIT** Limiter | lime | FabFilter Pro-L, Ozone Maximizer | true-peak limiter with seven styles, up to 8x oversampling, dither, loudness metering and targets |
+| **pump CALM** Resonance Suppressor | violet | soothe | dynamic resonance suppressor with a sensitivity curve, mid/side and delta listening |
+| **pump TONE** Tonal Balance | mint | Gullfoss | automatic balance: Recover, Tame, Bias, Brighten, Body |
+| **pump BAND** Multiband Dynamics | orange | Pro-MB, Ozone Dynamics | multiband compression, expansion and upward compression; analog or linear-phase crossovers |
+| **pump WIDE** Stereo Imager | blue | Ozone Imager | multiband width and stereoize, mono bass, vectorscope and correlation |
+| **pump HEAT** Saturator | coral | Saturn, Ozone Exciter | multiband warm/tape/tube/triode/retro/clip saturation, oversampled |
+| **pump METER** Loudness Meter | yellow | Youlean, Ozone | LUFS (momentary, short-term, integrated), LRA, true peak, PLR/PSR, history |
 
 ## Download
 

@@ -2,7 +2,9 @@
 #define DISTRHO_PLUGIN_INFO_H_INCLUDED
 
 #define DISTRHO_PLUGIN_BRAND           "wake"
-#define DISTRHO_PLUGIN_NAME            "pump CALM"
+#define DISTRHO_PLUGIN_NAME            "pump CALM Resonance Suppressor"   // hosts identify plugins by the ids below, not the name
+#define PUMP_PLUGIN_KIND               "Resonance Suppressor"   // shown next to the tag in the window
+#define PUMP_PLUGIN_ABOUT              "Resonance suppressor: finds and calms harsh, ringing frequencies as they happen."
 #define DISTRHO_PLUGIN_URI             "https://github.com/matthettich/pump#calm"
 #define DISTRHO_PLUGIN_CLAP_ID         "com.wake.pump.calm"
 #define DISTRHO_PLUGIN_BRAND_ID        Wake

@@ -2,7 +2,9 @@
 #define DISTRHO_PLUGIN_INFO_H_INCLUDED
 
 #define DISTRHO_PLUGIN_BRAND           "wake"
-#define DISTRHO_PLUGIN_NAME            "pump HEAT"
+#define DISTRHO_PLUGIN_NAME            "pump HEAT Saturator"   // hosts identify plugins by the ids below, not the name
+#define PUMP_PLUGIN_KIND               "Saturator"   // shown next to the tag in the window
+#define PUMP_PLUGIN_ABOUT              "Multiband saturation: six curves from warm to clip, oversampled, auto gain."
 #define DISTRHO_PLUGIN_URI             "https://github.com/matthettich/pump#heat"
 #define DISTRHO_PLUGIN_CLAP_ID         "com.wake.pump.heat"
 #define DISTRHO_PLUGIN_BRAND_ID        Wake

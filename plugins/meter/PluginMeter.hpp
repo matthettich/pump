@@ -20,7 +20,7 @@ public:
 
 protected:
     const char* getLabel() const override { return "pump_meter"; }
-    const char* getDescription() const override { return "Loudness and analysis meter: EBU R128 / BS.1770 loudness, LRA, true peak, PLR/PSR, correlation, spectrum."; }
+    const char* getDescription() const override { return PUMP_PLUGIN_ABOUT; }
 
     void activate() override
     {

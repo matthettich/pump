@@ -22,10 +22,7 @@ public:
 
 protected:
     const char* getLabel() const override { return "pump_comp"; }
-    const char* getDescription() const override
-    {
-        return "Mastering compressor: six styles (clean, glue, opto, punch, vari-mu, pump), lookahead, oversampling, mid/side, external sidechain.";
-    }
+    const char* getDescription() const override { return PUMP_PLUGIN_ABOUT; }
 
     // Inputs 3-4 are the external sidechain: their own stereo group, flagged as sidechain, which DPF turns into a
     // VST3 aux bus and a non-main CLAP port (hosts that leave it unconnected pass silence there).
