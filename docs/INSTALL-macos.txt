@@ -1,16 +1,26 @@
 …pump mastering plugins — Mac install (Apple Silicon and Intel)
 ================================================================
 
-1. Copy the plugins into your user plug-in folders (Finder: Go > Go to Folder…, paste the path):
-       VST3/*.vst3          ->  ~/Library/Audio/Plug-Ins/VST3/
-       Components/*.component -> ~/Library/Audio/Plug-Ins/Components/   (Audio Units, for Logic and Live)
-       CLAP/*.clap          ->  ~/Library/Audio/Plug-Ins/CLAP/          (optional)
+These builds are not notarized by Apple yet, so macOS blocks them the first time ("Apple could not verify…").
+Click Done (never Move to Trash) and use one of these:
 
-2. These builds are not notarized yet, so macOS quarantines them. Open Terminal and run once:
-       xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/VST3/pump*.vst3 ~/Library/Audio/Plug-Ins/Components/pump*.component ~/Library/Audio/Plug-Ins/CLAP/pump*.clap
+EASIEST: the installer
+  1. Download pump-macos.pkg from the release page and double-click it.
+  2. If macOS says it can't verify it: open System Settings > Privacy & Security, scroll down to
+     "pump-macos.pkg was blocked…" and click Open Anyway, then confirm.
+  3. The installer puts every plugin in /Library/Audio/Plug-Ins (VST3, Components = Audio Units, CLAP).
+     Plugins installed this way are not blocked.
 
-3. In Ableton Live: Settings > Plug-Ins, turn on "Use VST3 Plug-In Custom/System Folders" (and Audio Units),
-   then Rescan. The plugins appear under Plug-Ins > wake.
+OR: copy the files yourself
+  1. Copy the plugins into your user plug-in folders (Finder: Go > Go to Folder…, paste the path):
+       VST3/*.vst3             ->  ~/Library/Audio/Plug-Ins/VST3/
+       Components/*.component  ->  ~/Library/Audio/Plug-Ins/Components/   (Audio Units)
+       CLAP/*.clap             ->  ~/Library/Audio/Plug-Ins/CLAP/          (optional)
+  2. Remove the quarantine flag once, in Terminal:
+       xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/VST3/pump* ~/Library/Audio/Plug-Ins/Components/pump* ~/Library/Audio/Plug-Ins/CLAP/pump*
+
+Then in Ableton Live: Settings > Plug-Ins, turn on VST3 (and Audio Units) system folders, press Rescan.
+The plugins appear under Plug-Ins > wake.
 
 In every plugin: drag to change a control (Shift = fine), double-click or right-click to type a value,
-Cmd-click to reset it. A/B compares two settings; DARK switches the look (remembered for new instances).
+Cmd-click to reset it, Cmd+Z to undo, ? for all shortcuts. A/B compares two settings; DARK switches the look.
