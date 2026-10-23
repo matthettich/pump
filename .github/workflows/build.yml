@@ -72,8 +72,30 @@ jobs:
           cp docs/INSTALL-macos.txt dist/pump-macos/INSTALL.txt
           cp THIRD_PARTY_NOTICES.md dist/pump-macos/
           cd dist && ditto -c -k --keepParent pump-macos pump-macos.zip
+      - name: Installer (.pkg)
+        # Files installed by macOS Installer are not quarantined, so after one "Open Anyway" for the installer
+        # itself every plugin loads without Terminal. Bundles are marked non-relocatable so Installer never
+        # redirects them to an older copy elsewhere on the disk.
+        run: |
+          VERSION="0.1.$GITHUB_RUN_NUMBER"
+          mkdir -p pkgs
+          build_component () {   # $1 = name, $2 = glob, $3 = install location
+            rm -rf "root-$1" && mkdir -p "root-$1"
+            cp -R $2 "root-$1/" 2>/dev/null || return 0
+            pkgbuild --analyze --root "root-$1" "comp-$1.plist"
+            n=$(plutil -convert json -o - "comp-$1.plist" | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))')
+            for i in $(seq 0 $((n-1))); do plutil -replace "$i.BundleIsRelocatable" -bool NO "comp-$1.plist"; done
+            pkgbuild --root "root-$1" --component-plist "comp-$1.plist" --install-location "$3" \
+              --identifier "com.wake.pump.$1" --version "$VERSION" "pkgs/pump-$1.pkg"
+          }
+          build_component vst3 "bin/*.vst3" "/Library/Audio/Plug-Ins/VST3"
+          build_component au "bin/*.component" "/Library/Audio/Plug-Ins/Components"
+          build_component clap "bin/*.clap" "/Library/Audio/Plug-Ins/CLAP"
+          args=""; for p in pkgs/*.pkg; do args="$args --package $p"; done
+          productbuild $args --identifier com.wake.pump --version "$VERSION" dist/pump-macos.pkg
+          ls -la dist
       - uses: actions/upload-artifact@v4
-        with: { name: pump-macos, path: dist/pump-macos.zip }
+        with: { name: pump-macos, path: "dist/pump-macos.*" }
 
   linux:
     runs-on: ubuntu-24.04
@@ -108,11 +130,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          files=$(find artifacts -type f \( -name '*.zip' -o -name '*.tar.gz' \))
+          files=$(find artifacts -type f \( -name '*.zip' -o -name '*.tar.gz' -o -name '*.pkg' \))
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             gh release create "$GITHUB_REF_NAME" $files --title "…pump $GITHUB_REF_NAME" --notes "Mastering plugins by wake. See INSTALL.txt in each zip."
           else
             gh release delete latest --yes --cleanup-tag 2>/dev/null || true
             gh release create latest $files --prerelease --title "…pump (latest build)" \
-              --notes "Newest build from main ($GITHUB_SHA). Windows: pump-windows.zip. Mac: pump-macos.zip. Install steps are in INSTALL.txt inside each zip."
+              --notes "Newest build from main ($GITHUB_SHA). Mac: pump-macos.pkg (installer; if macOS blocks it, System Settings > Privacy & Security > Open Anyway) or pump-macos.zip. Windows: pump-windows.zip. Install steps are in INSTALL.txt inside each zip."
           fi
