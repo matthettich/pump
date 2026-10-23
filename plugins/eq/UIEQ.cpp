@@ -535,7 +535,8 @@ protected:
     void startNodeDrag(float x, float y)
     {
         dragSet = selectedBands();
-        for (int b : dragSet) { orig[b][0] = bandFreq(b); orig[b][1] = bandGain(b); orig[b][2] = bandQ(b); }
+        for (int b : dragSet)
+            if (b >= 0 && b < kNumBands) { orig[b][0] = bandFreq(b); orig[b][1] = bandGain(b); orig[b][2] = bandQ(b); }
         beginGroup();
         for (int b : dragSet) { beginEdit(bandParam(b, kFreq)); beginEdit(bandParam(b, kGain)); beginEdit(bandParam(b, kQ)); }
         dmode = dmNodes;

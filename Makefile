@@ -13,10 +13,15 @@ all: $(PLUGINS)
 dpf-patches:
 	@sh tools/apply-dpf-patches.sh
 
-$(PLUGINS): dpf-patches
+# DPF's graphics library is shared by every plugin: build it once, first, so parallel plugin builds (make -j)
+# don't race to write it.
+dgl: dpf-patches
+	$(MAKE) -C dpf/dgl opengl
+
+$(PLUGINS): dgl
 	$(MAKE) -C plugins/$@
 
-jack: dpf-patches
+jack: dgl
 	for p in $(PLUGINS); do $(MAKE) -C plugins/$$p jack || exit 1; done
 
 # --- offline DSP tests (no UI, no plugin framework) ---
@@ -39,4 +44,4 @@ tests: $(TESTS)
 clean:
 	rm -rf bin build
 
-.PHONY: all jack tests clean dpf-patches $(PLUGINS)
+.PHONY: all dgl jack tests clean dpf-patches $(PLUGINS)

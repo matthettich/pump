@@ -19,7 +19,8 @@ offset block, Share Tech Mono, one light-neon colour per plugin, light or dark. 
 ## Download
 
 The newest builds are always on the [latest release](https://github.com/matthettich/pump/releases/tag/latest):
-`pump-windows.zip`, `pump-macos.zip` (Apple Silicon + Intel). Each zip has an `INSTALL.txt`.
+`pump-macos.pkg` (installer, Apple Silicon + Intel), `pump-macos.zip`, `pump-windows.zip`. Each zip has an
+`INSTALL.txt`.
 
 ## Using them
 
@@ -32,6 +33,9 @@ Every plugin follows the usual conventions. Press **?** in a plugin for its full
 - hold **Alt** on a band to solo it while held (EQ nodes, multiband regions); drag while soloed to move it (up = narrower,
   down = wider). On empty spectrum space, Alt-hold listens to the range under the mouse (drag to sweep; up/down or wheel = width)
 - DARK switches the look and is remembered for new instances
+- EQ dynamic bands (EQ style): select a band, turn on DYNAMIC, set RANGE and THRESH; Alt+double-click on the
+  curve makes a dynamic band directly
+- COMP has a stereo sidechain input: set SC to External and route a track to the plugin's sidechain in your host
 
 ## Building
 

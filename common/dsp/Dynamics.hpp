@@ -135,7 +135,7 @@ public:
     }
 private:
     std::vector<double> buf { 0.0 };
-    double sum = 0.0, fillValue = 1.0;
+    double sum = 0.0, fillValue = 0.0;   // detectors start silent; LookaheadGain resets its boxes to 1
     int L = 1, pos = 0, n = 0;
 };
 
