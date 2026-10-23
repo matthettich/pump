@@ -1,6 +1,7 @@
 // pump WIDE: width 100 / stereoize 0 is the crossover's allpass path (linear: the delayed input), width 0 gives
 // L == R, stereoize leaves L + R untouched, per-band width accuracy, mono bass (LR4 / LR8) side attenuation and mid
 // integrity, correlation readings (mono, anti-phase, uncorrelated noise), solo / listen, at 44.1, 48 and 96 kHz.
+#include "TestMix.hpp"
 #include "../plugins/wide/WideEngine.hpp"
 #include <cstdio>
 #include <random>
@@ -64,7 +65,7 @@ static double nullDb(const std::vector<float>& a, const std::vector<float>& b, i
 
 int main()
 {
-    const std::vector<float> mix = loadMix("/home/claude/testkit/mix.f32");
+    const std::vector<float> mix = loadMix(pump_test_mix());
     if (mix.empty()) { printf("no test mix\n"); return 1; }
     for (double sr : { 44100.0, 48000.0, 96000.0 })
     {

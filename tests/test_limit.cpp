@@ -2,6 +2,7 @@
 // +18 dB in every style and oversampling setting at 44.1/48/96 kHz, plus synthetic worst cases; exact latency
 // (impulse position, bit-exact null without oversampling); styles really differ; smooth parameter changes;
 // dither on the grid; unity-gain listen.
+#include "TestMix.hpp"
 #include "../plugins/limit/LimitEngine.hpp"
 #include <chrono>
 #include <cstdio>
@@ -16,7 +17,7 @@ static int fails = 0;
 static std::vector<float> gMixL, gMixR;
 static void loadMix()
 {
-    FILE* f = std::fopen("/home/claude/testkit/mix.f32", "rb");
+    FILE* f = std::fopen(pump_test_mix(), "rb");
     if (!f) { printf("no test mix\n"); return; }
     std::fseek(f, 0, SEEK_END); const long n = std::ftell(f) / 8; std::fseek(f, 0, SEEK_SET);
     std::vector<float> v((size_t)n * 2);

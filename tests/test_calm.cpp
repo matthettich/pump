@@ -1,5 +1,6 @@
 // pump CALM engine: resonance reduction on the test mix (1.2 kHz and 2.9 kHz resonances vs broadband), depth 0 null,
 // delta + output = delayed input, latency per quality (impulse), stereo modes, sample rates, parameter-change safety.
+#include "TestMix.hpp"
 #include "../plugins/calm/CalmEngine.hpp"
 #include <chrono>
 #include <cstdio>
@@ -176,8 +177,8 @@ static double nullDb(const std::vector<float>& a, const std::vector<float>& b, s
 
 int main()
 {
-    const std::vector<float> il = loadMix("/home/claude/testkit/mix.f32");
-    if (il.empty()) { printf("cannot read /home/claude/testkit/mix.f32\n"); return 1; }
+    const std::vector<float> il = loadMix(pump_test_mix());
+    if (il.empty()) { printf("cannot read %s\n", pump_test_mix()); return 1; }
     const Stereo mix48 = split(il);
     printf("test mix: %zu samples (%.1f s)\n", mix48.L.size(), mix48.L.size() / 48000.0);
 

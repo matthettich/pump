@@ -1,0 +1,59 @@
+--- a/distrho/src/DistrhoPluginVST3.cpp	2026-10-23 14:41:25.964791692 -0600
++++ b/distrho/src/DistrhoPluginVST3.cpp	2026-10-23 14:41:25.966337438 -0600
+@@ -1467,10 +1467,12 @@
+                 for (int32_t i = 0, count = v3_cpp_obj(inparamsptr)->get_param_count(inparamsptr); i < count; ++i)
+                 {
+                     v3_param_value_queue** const queue = v3_cpp_obj(inparamsptr)->get_param_data(inparamsptr, i);
+-                    DISTRHO_SAFE_ASSERT_BREAK(queue != nullptr);
++                    if (queue == nullptr)
++                        continue;
+ 
+                     const v3_param_id rindex = v3_cpp_obj(queue)->get_param_id(queue);
+-                    DISTRHO_SAFE_ASSERT_UINT_BREAK(rindex < fVst3ParameterCount, rindex);
++                    if (rindex >= fVst3ParameterCount) // e.g. kNoParamId for a queue the host left unused
++                        continue;
+ 
+                    #if DPF_VST3_HAS_INTERNAL_PARAMETERS
+                     if (rindex < kVst3InternalParameterCount)
+@@ -1595,10 +1597,12 @@
+             for (int32_t i = 0, count = v3_cpp_obj(inparamsptr)->get_param_count(inparamsptr); i < count; ++i)
+             {
+                 v3_param_value_queue** const queue = v3_cpp_obj(inparamsptr)->get_param_data(inparamsptr, i);
+-                DISTRHO_SAFE_ASSERT_BREAK(queue != nullptr);
++                if (queue == nullptr)
++                    continue;
+ 
+                 const v3_param_id rindex = v3_cpp_obj(queue)->get_param_id(queue);
+-                DISTRHO_SAFE_ASSERT_UINT_BREAK(rindex < fVst3ParameterCount, rindex);
++                if (rindex >= fVst3ParameterCount) // e.g. kNoParamId for a queue the host left unused
++                    continue;
+ 
+                #if DPF_VST3_HAS_INTERNAL_PARAMETERS
+                 if (rindex < kVst3InternalParameterCount)
+@@ -1673,10 +1677,12 @@
+             for (int32_t i = 0, count = v3_cpp_obj(inparamsptr)->get_param_count(inparamsptr); i < count; ++i)
+             {
+                 v3_param_value_queue** const queue = v3_cpp_obj(inparamsptr)->get_param_data(inparamsptr, i);
+-                DISTRHO_SAFE_ASSERT_BREAK(queue != nullptr);
++                if (queue == nullptr)
++                    continue;
+ 
+                 const v3_param_id rindex = v3_cpp_obj(queue)->get_param_id(queue);
+-                DISTRHO_SAFE_ASSERT_UINT_BREAK(rindex < fVst3ParameterCount, rindex);
++                if (rindex >= fVst3ParameterCount) // e.g. kNoParamId for a queue the host left unused
++                    continue;
+ 
+                #if DPF_VST3_HAS_INTERNAL_PARAMETERS
+                 if (rindex < kVst3InternalParameterCount)
+@@ -2926,7 +2932,10 @@
+ 
+     void updateParametersFromProcessing(v3_param_changes** const outparamsptr, const int32_t offset)
+     {
+-        DISTRHO_SAFE_ASSERT_RETURN(outparamsptr != nullptr,);
++        // hosts may pass no output parameter list (allowed by the spec): nothing to report, and no stderr
++        // message from the audio thread on every block
++        if (outparamsptr == nullptr)
++            return;
+ 
+         float curValue, defValue;
+         double normalized;

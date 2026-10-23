@@ -8,7 +8,7 @@ if ! xdpyinfo -display $DISPLAY_NUM >/dev/null 2>&1 && ! pgrep -f "Xvfb $DISPLAY
   sleep 1
 fi
 export DISPLAY=$DISPLAY_NUM LIBGL_ALWAYS_SOFTWARE=1
-export PUMP_TEST_AUDIO="${PUMP_TEST_AUDIO:-/home/claude/testkit/mix.f32}"
+export PUMP_TEST_AUDIO="${PUMP_TEST_AUDIO:-$(cd "$(dirname "$0")/.." && pwd)/tests/data/mix.f32}"
 [ -n "$PRESET" ] && export PUMP_TEST_PRESET="$PRESET"
 export PUMP_TEST_DARK="$DARK"
 LOG="${OUT%.png}.log"

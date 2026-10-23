@@ -1,6 +1,7 @@
 // pump BAND: crossover reconstruction (analog allpass sum, linear-phase exact null), latency, per-band gain
 // accuracy for compression / expansion / upward compression with sines, detection modes, solo/mute/listen,
 // band-count and crossover changes without clicks, at 44.1, 48 and 96 kHz.
+#include "TestMix.hpp"
 #include "../plugins/band/BandEngine.hpp"
 #include <cstdio>
 #include <random>
@@ -50,7 +51,7 @@ static const float kX[3] = { 120.0f, 1000.0f, 6000.0f };
 
 int main()
 {
-    const std::vector<float> mix = loadMix("/home/claude/testkit/mix.f32");
+    const std::vector<float> mix = loadMix(pump_test_mix());
     for (double sr : { 44100.0, 48000.0, 96000.0 })
     {
         printf("== %.0f Hz\n", sr);
