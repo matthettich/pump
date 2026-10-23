@@ -13,7 +13,9 @@ constexpr int kNumNodes = 6;   // sensitivity curve: low shelf, 4 bells, high sh
 enum Global : int {
     kDepth = 0, kSharpness, kSelectivity, kAttack, kRelease, kMode, kFocusLow, kFocusHigh,
     kStereo, kBalance, kQuality, kDelta, kMix, kTrim, kBypass,
-    kAudition, kAuditionFreq, kAuditionQ, kAuditionRegion,   // Alt-listen (UI-driven, hidden, not automatable)
+    kAudition, kAuditionFreq, kAuditionQ, kAuditionRegion,   // unused placeholders (kept so parameter indices/ids never
+                                                             // shift): Alt-listen and node solo go through PluginCalm's
+                                                             // atomics instead (hosts save hidden parameters)
     kNumGlobals
 };
 enum NodeField : int { kNFreq = 0, kNGain, kNQ, kNodeStride };
@@ -58,10 +60,10 @@ inline const std::vector<ParamSpec>& params()
     v.push_back({ "mix", "Mix", "Mix", 0, 100, 100, PUnit::Percent, PScale::Linear, A, nullptr, 1 });
     v.push_back({ "trim", "Output Trim", "Trim", -12, 12, 0, PUnit::dB, PScale::Linear, A, nullptr, 1 });
     v.push_back({ "bypass", "Bypass", "Bypass", 0, 1, 0, PUnit::None, PScale::Linear, A | kPBoolean | kPBypass, nullptr, 1 });
-    v.push_back({ "audition", "Audition", "Audition", 0, 1, 0, PUnit::None, PScale::Linear, kPBoolean | kPHidden, nullptr, 1 });
-    v.push_back({ "audition_freq", "Audition Frequency", "Aud Freq", 20, 20000, 1000, PUnit::Hz, PScale::Log, kPHidden, nullptr, 1 });
-    v.push_back({ "audition_q", "Audition Q", "Aud Q", 0.3f, 12, 2, PUnit::None, PScale::Log, kPHidden, nullptr, 1 });
-    v.push_back({ "audition_region", "Audition Region", "Aud Region", 0, 2, 0, PUnit::None, PScale::Linear, kPInteger | kPHidden, kRegionNames, 1 });
+    v.push_back({ "audition", "Audition", "Audition", 0, 1, 0, PUnit::None, PScale::Linear, kPBoolean | kPHidden | kPNoUndo, nullptr, 1 });
+    v.push_back({ "audition_freq", "Audition Frequency", "Aud Freq", 20, 20000, 1000, PUnit::Hz, PScale::Log, kPHidden | kPNoUndo, nullptr, 1 });
+    v.push_back({ "audition_q", "Audition Q", "Aud Q", 0.3f, 12, 2, PUnit::None, PScale::Log, kPHidden | kPNoUndo, nullptr, 1 });
+    v.push_back({ "audition_region", "Audition Region", "Aud Region", 0, 2, 0, PUnit::None, PScale::Linear, kPInteger | kPHidden | kPNoUndo, kRegionNames, 1 });
     for (int n = 0; n < kNumNodes; ++n)
     {
         const std::string i = std::to_string(n + 1), p = "s" + i + "_", N = "Sensitivity " + i + " ";

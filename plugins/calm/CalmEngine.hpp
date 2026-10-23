@@ -141,8 +141,7 @@ public:
         for (int c = 0; c < 2; ++c)
         {
             dly[c].clear();
-            std::fill(Ps[c].begin(), Ps[c].end(), 0.0f);
-            std::fill(Rs[c].begin(), Rs[c].end(), 0.0f);
+            clearDetector(c);
         }
     }
 
@@ -199,12 +198,26 @@ private:
         {
             dly[c].setDelay(N);
             dly[c].clear();
-            std::fill(Ps[c].begin(), Ps[c].end(), 0.0f);
-            std::fill(Rs[c].begin(), Rs[c].end(), 0.0f);
-            std::fill(Sp[c].begin(), Sp[c].end(), 0.0f);
+            clearDetector(c);
         }
+        stereoNow = cur.stereo;
         tablesDirty = sensDirty = true;
         buildUiTables();
+    }
+
+    // One detector's state: the smoothed power, the persistence average and the reduction (attack/release).
+    void clearDetector(int c)
+    {
+        for (auto* v : { &Ps[c], &Rs[c], &Sp[c], &Rout[c] }) std::fill(v->begin(), v->end(), 0.0f);
+    }
+    // Backstop: the state is recursive (one-pole smoothers), so a single non-finite value would stay in it for good
+    // and switch the processing off (gains of NaN read as 1). Sanitized input can't get there; checked once a frame.
+    bool detectorFinite(int c) const
+    {
+        const float *ps = Ps[c].data(), *rs = Rs[c].data(), *sp = Sp[c].data();
+        float s = 0.0f;
+        for (int k = 0; k < K; ++k) s += ps[k] + rs[k] + sp[k];
+        return std::isfinite(s);
     }
 
     void processChunk(float* L, float* R, int n)
@@ -217,6 +230,10 @@ private:
             swState = 3;
             muteLeft = N;
         }
+        // a NaN / Inf (or absurd) input sample is replaced by silence before it reaches the spectra, the detector
+        // state or the dry path (in place: these buffers are the output too)
+        sanitizeBlock(L, n);
+        sanitizeBlock(R, n);
         float* io[2] = { wetBuf[0].data(), wetBuf[1].data() };
         for (int i = 0; i < n; ++i)
         {
@@ -427,6 +444,12 @@ private:
         ro[K - 1] = rs[K - 1];
         for (int k = 1; k < K - 1; ++k) ro[k] = 0.25f * rs[k - 1] + 0.5f * rs[k] + 0.25f * rs[k + 1];
         for (int k = 0; k < K; ++k) G[(size_t)k] = ro[k] > 1e-5f ? dbToGainF(-ro[k]) : 1.0f;
+        if (!detectorFinite(c))
+        {
+            // start this detector over (this frame passes unchanged) rather than leave it off for good
+            clearDetector(c);
+            std::fill(G.begin(), G.begin() + K, 1.0f);
+        }
     }
 
     static inline float binPower(const float* s, int k, int K)
@@ -461,6 +484,17 @@ private:
         float* L = spec[0];
         float* R = channels > 1 ? spec[1] : spec[0];
         const int st = cur.stereo;
+        if (st != stereoNow)
+        {
+            // Linked runs detector 0 only, so detector 1 still holds what it had when Linked was chosen (minutes ago,
+            // perhaps: an old notch would come back); after L/R <-> M/S it holds another signal's state. Start it
+            // from detector 0's state instead of zero: coming from Linked that is exactly the reduction both
+            // channels just had (no jump), and the persistence average carries over, so the second channel isn't
+            // left unprocessed for the second or so a cleared state needs to count a resonance as persistent.
+            if (st != kLinked)
+                for (auto* v : { Ps, Rs, Sp, Rout }) std::copy(v[0].begin(), v[0].end(), v[1].begin());   // same sizes
+            stereoNow = st;
+        }
         // norm: a full-scale sine reads about 0 dB in its peak bin (sine window: peak = N / pi)
         const float norm = (float)(kPi * kPi / ((double)N * (double)N));
         if (st == kMidSide)
@@ -502,6 +536,7 @@ private:
     STFT stft[4];
     int sizes[4] = { 1024, 2048, 4096, 8192 };
     int active = 1, pending = -1;
+    int stereoNow = kLinked;   // the stereo mode the detector state belongs to
     int N = 2048, K = 1025, H = 512, Kmax = 4097;
     bool tablesDirty = true, sensDirty = true;
     std::vector<float> Ps[2], Rs[2], Rout[2], Sp[2], P, Q, D, E, C, T, T1, T2, G, sens, fw;

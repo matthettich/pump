@@ -1,5 +1,6 @@
 // pump CALM engine: resonance reduction on the test mix (1.2 kHz and 2.9 kHz resonances vs broadband), depth 0 null,
-// delta + output = delayed input, latency per quality (impulse), stereo modes, sample rates, parameter-change safety.
+// delta + output = delayed input, latency per quality (impulse), stereo modes, sample rates, parameter-change safety,
+// NaN / Inf input, stereo mode switches.
 #include "TestMix.hpp"
 #include "../plugins/calm/CalmEngine.hpp"
 #include <chrono>
@@ -432,7 +433,68 @@ int main()
         CHECK(finite && peak < 4.0f * 0.5f * 4.0f, "random automation incl. FFT size switches: finite, peak %.3f (input peak 0.5, trim up to +12 dB)", peak);
     }
 
-    // ---- 8. CPU: real-time factor per quality ----
+    // ---- 8. bad input: a NaN / Inf / absurd sample is heard as silence and never switches the processing off ----
+    printf("== bad input samples\n");
+    {
+        Settings s; s.depth = 80; s.mode = kHard;
+        Engine a, b; a.set(s); a.prepare(48000); b.set(s); b.prepare(48000);
+        Stereo xa = mix48, xb = mix48;
+        xb.L[48000] = NAN; xb.R[60000] = INFINITY; xb.L[72000] = -INFINITY; xb.R[72001] = 1e30f;
+        const int B = 512, n = (int)xa.L.size();
+        bool finite = true; double diff = 0.0, grA = 0.0, grB = 0.0; int cnt = 0;
+        for (int off = 0; off + B <= n; off += B)
+        {
+            a.process(xa.L.data() + off, xa.R.data() + off, B);
+            b.process(xb.L.data() + off, xb.R.data() + off, B);
+            for (int i = off; i < off + B; ++i) if (!std::isfinite(xb.L[(size_t)i]) || !std::isfinite(xb.R[(size_t)i])) finite = false;
+            const float ga = a.grMax.exchange(0.0f), gb = b.grMax.exchange(0.0f);
+            if (off >= 4 * 48000) { diff = std::max(diff, (double)std::fabs(ga - gb)); grA += ga; grB += gb; ++cnt; }   // from 2.5 s after the last one
+        }
+        if (cnt) { grA /= cnt; grB /= cnt; }
+        CHECK(finite && cnt > 0 && grB > 0.5 && diff < 0.05, "NaN, +-Inf and 1e30 input samples: output finite, reduction still working (%.2f dB average later on, clean run %.2f dB, frames differ by <= %.3f dB)", grB, grA, diff);
+    }
+
+    // ---- 9. stereo mode switches: the second detector starts from the first one's state, never from stale state ----
+    printf("== stereo mode switches\n");
+    {
+        Settings s; s.depth = 90; s.mode = kHard; s.stereo = kStereoLR; s.releaseMs = 1000;
+        Engine e1, e2;
+        Engine* ep = &e1;
+        e1.set(s); e1.prepare(48000);
+        const int B = 512;
+        std::vector<float> L(B), R(B);
+        std::mt19937 rng(1); std::normal_distribution<float> nd(0.0f, 0.05f);
+        double ph = 0.0;
+        // noise on both channels, plus a 3 kHz ring on L and/or R
+        auto feed = [&](int blocks, bool ringL, bool ringR) {
+            for (int k = 0; k < blocks; ++k)
+            {
+                for (int i = 0; i < B; ++i)
+                {
+                    const float t = 0.4f * (float)std::sin(ph); ph += kTwoPi * 3000.0 / 48000.0;
+                    L[(size_t)i] = nd(rng) + (ringL ? t : 0.0f); R[(size_t)i] = nd(rng) + (ringR ? t : 0.0f);
+                }
+                ep->process(L.data(), R.data(), B);
+            }
+        };
+        auto maxRed = [&](int c) { float m = 0.0f; for (int p = 0; p < Engine::kUiPoints; ++p) m = std::max(m, ep->uiReduction(c, p)); return m; };
+        feed(400, false, true);                                  // L/R, ring on R only: deep notch on detector 1
+        const float r1 = maxRed(1);
+        s.stereo = kLinked; e1.set(s); feed(500, false, false);  // ~5 s Linked, noise only
+        s.stereo = kStereoLR; e1.set(s); feed(2, false, false);  // back to L/R
+        const float l2 = maxRed(0), r2 = maxRed(1);
+        CHECK(r1 > 10.0f && r2 < 0.25f * r1 && std::fabs(r2 - l2) < 1.5f, "L/R -> Linked (5 s) -> L/R: R had -%.1f dB, after the switch back R -%.1f dB, L -%.1f dB (no stale notch)", r1, r2, l2);
+        // a fresh engine, Linked with a ring on both, then L/R: the right channel keeps the reduction it had (a cleared
+        // detector would let the ring through until it is grabbed and counted as persistent again)
+        ep = &e2;
+        s.stereo = kLinked; e2.set(s); e2.prepare(48000); feed(400, true, true);
+        const float lk = maxRed(0);
+        s.stereo = kStereoLR; e2.set(s); feed(1, true, true);
+        const float r3 = maxRed(1);
+        CHECK(lk > 10.0f && r3 > 0.8f * lk, "Linked -> L/R with a ring on both: R goes on at -%.1f dB (Linked had -%.1f dB)", r3, lk);
+    }
+
+    // ---- 10. CPU: real-time factor per quality ----
     printf("== cpu\n");
     for (int q = 0; q < 4; ++q)
     {

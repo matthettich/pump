@@ -137,7 +137,12 @@ private:
             const double gate = toLufs(sumE / (double)n) - 10.0;
             double e = 0.0; uint64_t m = 0;
             for (int b = 0; b < kBins; ++b)
-                if (binLoud(b) >= gate) { e += histIE[b]; m += histI[b]; }
+            {
+                // the top bin also holds every block above the histogram's range: gate it at its real mean
+                // loudness, or one absurd (but finite) block lifts the gate above every bin (integrated = -inf)
+                const double lb = (b == kBins - 1 && histI[b]) ? std::max(binLoud(b), toLufs(histIE[b] / (double)histI[b])) : binLoud(b);
+                if (lb >= gate) { e += histIE[b]; m += histI[b]; }
+            }
             integrated = m ? toLufs(e / (double)m) : -INFINITY;
         }
         // LRA (EBU Tech 3342): short-term values, -70 absolute gate, -20 LU relative gate, 10th..95th percentile

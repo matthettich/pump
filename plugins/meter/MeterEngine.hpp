@@ -18,6 +18,23 @@ struct Readout {
     std::atomic<bool> silent { true };
 };
 
+// The part of the loudness history a view can show: the newest `count` points (at most `maxPoints`, and never more
+// than the ring still holds intact), starting at ring index `base`; `first` = how many points since the reset come
+// before them (the time axis). `end` / `start` are ring positions (now / at the reset); differences wrap safely.
+struct HistoryWindow { uint32_t base = 0, first = 0; int count = 0; };
+inline HistoryWindow historyWindow(uint32_t end, uint32_t start, int capacity, int maxPoints)
+{
+    const uint32_t total = end - start;
+    // the oldest slot is the next one the audio thread overwrites: keep one in hand
+    const uint32_t avail = std::min<uint32_t>(total, (uint32_t)std::max(0, capacity - 1));
+    const uint32_t n = std::min<uint32_t>(avail, (uint32_t)std::max(0, maxPoints));
+    HistoryWindow w;
+    w.count = (int)n;
+    w.base = end - n;
+    w.first = total - n;
+    return w;
+}
+
 class Engine {
 public:
     static constexpr int kHistRate = 10;           // history points per second (one per 100 ms sub-block)
@@ -35,8 +52,8 @@ public:
         sr = sampleRate;
         meter.prepare(sr);
         sub = std::max(1, (int)std::lround(sr * 0.1));   // same sub-block as LoudnessMeter
-        cRms = (float)tauCoef(0.3, sr);
-        cCorr = (float)tauCoef(0.3, sr);
+        cRms = tauCoef(0.3, sr);
+        cCorr = tauCoef(0.3, sr);
         reset();
     }
 
@@ -57,6 +74,7 @@ public:
         subCount = 0; subTP = 0.0f;
         samplePeak = 0.0f;
         samples = 0;
+        pw[0] = pw[1] = xlr = 0.0;   // RMS / correlation / balance start over too
         histStart.store(histM.position(), std::memory_order_release);
         resetCount.fetch_add(1, std::memory_order_acq_rel);
         publish();
@@ -76,14 +94,17 @@ public:
             samples += (uint64_t)k;
             if (subCount >= sub) { subCount = 0; endSubBlock(); }
         }
+        // backstop: the averages are recursive, so a non-finite value would stay for good (finite input can't get
+        // there: the analysis hears NaN / Inf as silence and squares in double)
+        if (!std::isfinite(pw[0] + pw[1] + xlr)) pw[0] = pw[1] = xlr = 0.0;
         // fast values every block
-        out.rmsDb[0].store(10.0f * std::log10(std::max(pw[0], 1e-20f)), std::memory_order_relaxed);
-        out.rmsDb[1].store(10.0f * std::log10(std::max(pw[1], 1e-20f)), std::memory_order_relaxed);
-        const float e = pw[0] * pw[1];
-        const bool silent = e < 1e-14f;
+        out.rmsDb[0].store((float)(10.0 * std::log10(std::max(pw[0], 1e-20))), std::memory_order_relaxed);
+        out.rmsDb[1].store((float)(10.0 * std::log10(std::max(pw[1], 1e-20))), std::memory_order_relaxed);
+        const double e = pw[0] * pw[1];
+        const bool silent = e < 1e-14;
         out.silent.store(silent, std::memory_order_relaxed);
-        out.correlation.store(silent ? 0.0f : clampv(xlr / std::sqrt(e), -1.0f, 1.0f), std::memory_order_relaxed);
-        out.balance.store(silent ? 0.0f : clampv(10.0f * std::log10(std::max(pw[0], 1e-20f) / std::max(pw[1], 1e-20f)), -24.0f, 24.0f), std::memory_order_relaxed);
+        out.correlation.store(silent ? 0.0f : (float)clampv(xlr / std::sqrt(e), -1.0, 1.0), std::memory_order_relaxed);
+        out.balance.store(silent ? 0.0f : (float)clampv(10.0 * std::log10(std::max(pw[0], 1e-20) / std::max(pw[1], 1e-20)), -24.0, 24.0), std::memory_order_relaxed);
         out.elapsed.store((float)((double)samples / sr), std::memory_order_relaxed);
     }
 
@@ -95,16 +116,21 @@ private:
     void analyse(const float* L, const float* R, int n)
     {
         float p0 = 0.0f, p1 = 0.0f, t0 = 0.0f, t1 = 0.0f;
+        double w0 = pw[0], w1 = pw[1], x = xlr;
         for (int i = 0; i < n; ++i)
         {
-            const float l = L[i], r = R[i];
+            // the audio is never touched; the analysis hears a NaN / Inf sample as silence (as LoudnessMeter does),
+            // so one bad sample can't stick in the RMS, correlation, true-peak or spectrum state
+            const float l = std::isfinite(L[i]) ? L[i] : 0.0f, r = std::isfinite(R[i]) ? R[i] : 0.0f;
             p0 = std::max(p0, std::fabs(l)); p1 = std::max(p1, std::fabs(r));
             t0 = std::max(t0, tpd[0].process(l)); t1 = std::max(t1, tpd[1].process(r));
-            pw[0] = l * l + (pw[0] - l * l) * cRms;
-            pw[1] = r * r + (pw[1] - r * r) * cRms;
-            xlr = l * r + (xlr - l * r) * cCorr;
-            spectrum.push(0.5f * (l + r));
+            const double dl = l, dr = r;   // squares in double: no finite sample can overflow them
+            w0 = dl * dl + (w0 - dl * dl) * cRms;
+            w1 = dr * dr + (w1 - dr * dr) * cRms;
+            x = dl * dr + (x - dl * dr) * cCorr;
+            spectrum.push(0.5f * l + 0.5f * r);
         }
+        pw[0] = w0; pw[1] = w1; xlr = x;
         t0 = std::max(t0, p0); t1 = std::max(t1, p1);   // a true peak is never below the sample peak
         peak[0].setMax(p0); peak[1].setMax(p1);
         tpPeak[0].setMax(t0); tpPeak[1].setMax(t1);
@@ -151,7 +177,7 @@ private:
     int tpRingPos = 0;
     int sub = 4800, subCount = 0;
     float subTP = 0.0f, samplePeak = 0.0f;
-    float pw[2] = {}, xlr = 0.0f, cRms = 0.999f, cCorr = 0.999f;
+    double pw[2] = {}, xlr = 0.0, cRms = 0.999, cCorr = 0.999;
     uint64_t samples = 0;
     std::atomic<float> resetHigh { 0.0f };
 };

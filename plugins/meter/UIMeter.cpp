@@ -63,8 +63,7 @@ public:
         scaleMenu->tip = "Meter scale: EBU +9 / +18 (relative to the target) or absolute LUFS";
 
         plug = static_cast<PluginMeter*>(pluginPtr());
-        spec.setup(sampleRate() > 0 ? sampleRate() : 48000.0);   // FFT size scales with the rate (ring holds 1 << 15)
-        spec.setRange(20.0, 24000.0);
+        setupAnalyzer(plug && plug->getSampleRate() > 0 ? plug->getSampleRate() : (sampleRate() > 0 ? sampleRate() : 48000.0));
         rebind();
     }
 
@@ -97,6 +96,15 @@ protected:
     }
     void onParamChanged(int, float) override { rebind(); }
     void onPresetApplied() override { rebind(); }
+    // the spectrum's FFT size and bin frequencies follow the sample rate (ring holds 1 << 15)
+    void setupAnalyzer(double sr)
+    {
+        if (sr <= 0.0 || sr == anaRate) return;
+        anaRate = sr;
+        spec.setup(sr);
+        spec.setRange(20.0, 24000.0);
+    }
+    void onSampleRateChanged(double sr) override { setupAnalyzer(sr); }
 
     // ---------------------------------------------------------------- helpers
     float tgt() const { return targetLufs((int)value(kTarget), value(kCustomLufs)); }
@@ -147,6 +155,7 @@ protected:
     void tick(float dt) override
     {
         if (!plug) return;
+        setupAnalyzer(plug->getSampleRate());   // also for hosts that don't tell the editor about a new rate
         Engine& e = plug->engine;
         const uint32_t rc = e.resetCount.load();
         if (rc != lastReset) { lastReset = rc; clearHolds(); }
@@ -308,10 +317,17 @@ protected:
         for (float xx = g.x; xx < g.r(); xx += 9.0f) line(xx, yOf(tgt()), std::min(g.r(), xx + 5.0f), yOf(tgt()), withAlpha2(theme.second, 0.9f), 1.2f);
         // time axis
         const int N = (int)(kHistoryMinutes[pump::clampv((int)value(kHistory), 0, 3)] * 60.0f * Engine::kHistRate);
-        uint32_t end = 0, start = 0;
-        if (plug) { end = plug->engine.histS.position(); start = plug->engine.histStart.load(); }
-        const int have = (int)std::min<uint32_t>(end - start, 32000u);
-        const int first = std::max(0, have - N);   // index (since reset) of the leftmost point shown
+        // the newest N points since the reset (the integrated ring is written last, so all three hold them; the
+        // reset position is read first, so a reset in between can't put it after the end)
+        pump::meter::HistoryWindow hw;
+        if (plug)
+        {
+            const uint32_t start = plug->engine.histStart.load();
+            const uint32_t end = plug->engine.histI.position();
+            hw = pump::meter::historyWindow(end, start, plug->engine.histI.capacity(), N);
+        }
+        const int have = hw.count;                 // points shown, from ring index hw.base
+        const uint32_t first = hw.first;           // index (since reset) of the leftmost point shown
         const float secW = g.w / (N / (float)Engine::kHistRate);
         {
             const float span = N / (float)Engine::kHistRate;
@@ -332,7 +348,7 @@ protected:
         const pump::meter::Engine& e = plug->engine;
         const int cols = (int)g.w;
         const float ptsPerCol = N / (float)cols;
-        auto pointAt = [&](const pump::ScopeRing& r, int i) { return r.at(start + (uint32_t)i); };
+        auto pointAt = [&](const pump::ScopeRing& r, int i) { return r.at(hw.base + (uint32_t)i); };
         // momentary band
         beginPath();
         bool open = false;
@@ -340,7 +356,7 @@ protected:
         top.assign((size_t)cols, NAN); bot.assign((size_t)cols, NAN); sv.assign((size_t)cols, NAN); iv.assign((size_t)cols, NAN);
         for (int c = 0; c < cols; ++c)
         {
-            const int a = first + (int)std::floor(c * ptsPerCol), b = first + std::max((int)std::floor((c + 1) * ptsPerCol), (int)std::floor(c * ptsPerCol) + 1);
+            const int a = (int)std::floor(c * ptsPerCol), b = std::max((int)std::floor((c + 1) * ptsPerCol), a + 1);
             if (a >= have) break;
             float mn = 1e9f, mx = -1e9f;
             for (int i = a; i < std::min(b, have); ++i)
@@ -560,6 +576,7 @@ private:
     float lvl[2] = { -120, -120 }, hold[2] = { -120, -120 }, holdT[2] = {}, tpHold[2] = { -INFINITY, -INFINITY }, rmsS[2] = { -120, -120 };
     float corrS = 0.0f, corrMin = 1.0f, balS = 0.0f;
     uint32_t lastReset = 0;
+    double anaRate = 0.0;   // sample rate the spectrum is set up for
     std::vector<float> colTop, colBot, colS, colI;
 
     Button* resetBtn;
