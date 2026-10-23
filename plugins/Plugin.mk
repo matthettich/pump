@@ -9,8 +9,8 @@ UI_TYPE = opengl
 include $(DPF_PATH)/Makefile.plugins.mk
 
 # C++17, our headers, and fast math without assuming finite values (meters use -inf as "silence").
-BUILD_CXX_FLAGS += -std=gnu++17 -I. -I../../common -fno-finite-math-only -Wno-unused-parameter
-BUILD_C_FLAGS += -fno-finite-math-only -Wno-unused-parameter -Wno-sign-compare
+BUILD_CXX_FLAGS += -std=gnu++17 -I. -I../../common -fno-finite-math-only -Wno-unused-parameter -DPFFFT_STATIC_DEFINE
+BUILD_C_FLAGS += -fno-finite-math-only -Wno-unused-parameter -Wno-sign-compare -DPFFFT_STATIC_DEFINE
 
 TARGETS = vst3 clap
 ifeq ($(MACOS),true)

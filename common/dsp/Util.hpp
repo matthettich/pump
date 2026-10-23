@@ -10,6 +10,13 @@
 #include <new>
 #include <vector>
 
+#if defined(__SSE__) || defined(_M_X64) || defined(_M_IX86) || defined(__x86_64__)
+ #define PUMP_X86 1
+ #include <xmmintrin.h>
+#else
+ #define PUMP_X86 0
+#endif
+
 namespace pump {
 
 constexpr double kPi = 3.14159265358979323846;
@@ -184,9 +191,9 @@ class DenormalGuard {
 public:
     DenormalGuard()
     {
-       #if defined(__SSE__) || defined(_M_X64) || defined(_M_IX86) || defined(__x86_64__)
-        old = __builtin_ia32_stmxcsr_compat();
-        setcsr(old | 0x8040);
+       #if PUMP_X86
+        old = _mm_getcsr();
+        _mm_setcsr(old | 0x8040u);
        #elif defined(__aarch64__)
         uint64_t fpcr;
         __asm__ __volatile__("mrs %0, fpcr" : "=r"(fpcr));
@@ -197,24 +204,21 @@ public:
     }
     ~DenormalGuard()
     {
-       #if defined(__SSE__) || defined(_M_X64) || defined(_M_IX86) || defined(__x86_64__)
-        setcsr((unsigned)old);
+       #if PUMP_X86
+        _mm_setcsr((unsigned)old);
        #elif defined(__aarch64__)
-        uint64_t fpcr = old;
+        const uint64_t fpcr = old;
         __asm__ __volatile__("msr fpcr, %0" : : "r"(fpcr));
        #endif
     }
+    DenormalGuard(const DenormalGuard&) = delete;
+    DenormalGuard& operator=(const DenormalGuard&) = delete;
 private:
-   #if defined(__SSE__) || defined(_M_X64) || defined(_M_IX86) || defined(__x86_64__)
-    static unsigned __builtin_ia32_stmxcsr_compat()
-    {
-        unsigned v;
-        __asm__ __volatile__("stmxcsr %0" : "=m"(v));
-        return v;
-    }
-    static void setcsr(unsigned v) { __asm__ __volatile__("ldmxcsr %0" : : "m"(v)); }
-   #endif
+   #if PUMP_X86
+    unsigned old = 0;
+   #else
     uint64_t old = 0;
+   #endif
 };
 
 } // namespace pump
