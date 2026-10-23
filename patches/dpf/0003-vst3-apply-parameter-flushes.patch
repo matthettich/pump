@@ -1,0 +1,43 @@
+diff --git a/distrho/src/DistrhoPluginVST3.cpp b/distrho/src/DistrhoPluginVST3.cpp
+index 24a0678..715db11 100644
+--- a/distrho/src/DistrhoPluginVST3.cpp
++++ b/distrho/src/DistrhoPluginVST3.cpp
+@@ -1457,6 +1457,38 @@ public:
+ 
+         if (data->nframes <= 0)
+         {
++            // hosts flush parameter changes with zero-frame process calls (plugin idle/stopped): apply them,
++            // or edits made while nothing plays never reach the plugin and get saved with the old value
++            if (v3_param_changes** const inparamsptr = data->input_params)
++            {
++                int32_t offset;
++                double normalized;
++
++                for (int32_t i = 0, count = v3_cpp_obj(inparamsptr)->get_param_count(inparamsptr); i < count; ++i)
++                {
++                    v3_param_value_queue** const queue = v3_cpp_obj(inparamsptr)->get_param_data(inparamsptr, i);
++                    DISTRHO_SAFE_ASSERT_BREAK(queue != nullptr);
++
++                    const v3_param_id rindex = v3_cpp_obj(queue)->get_param_id(queue);
++                    DISTRHO_SAFE_ASSERT_UINT_BREAK(rindex < fVst3ParameterCount, rindex);
++
++                   #if DPF_VST3_HAS_INTERNAL_PARAMETERS
++                    if (rindex < kVst3InternalParameterCount)
++                        continue;
++                   #endif
++
++                    const int32_t pcount = v3_cpp_obj(queue)->get_point_count(queue);
++
++                    if (pcount <= 0)
++                        continue;
++
++                    if (v3_cpp_obj(queue)->get_point(queue, pcount - 1, &offset, &normalized) != V3_OK)
++                        break;
++
++                    _setNormalizedPluginParameterValue(rindex - kVst3InternalParameterCount, normalized);
++                }
++            }
++
+             updateParametersFromProcessing(data->output_params, 0);
+             return V3_OK;
+         }

@@ -1,0 +1,13 @@
+diff --git a/distrho/src/DistrhoPluginAU.cpp b/distrho/src/DistrhoPluginAU.cpp
+index 919faa7..69bea19 100644
+--- a/distrho/src/DistrhoPluginAU.cpp
++++ b/distrho/src/DistrhoPluginAU.cpp
+@@ -1814,7 +1814,7 @@ public:
+             // TODO flag param only, notify listeners later on bg thread (sem_post etc)
+             notifyPropertyListeners('DPFp', kAudioUnitScope_Global, param);
+ 
+-            if (fBypassParameterIndex == elem)
++            if (fBypassParameterIndex == param)
+                 notifyPropertyListeners(kAudioUnitProperty_BypassEffect, kAudioUnitScope_Global, 0);
+         }
+ 
