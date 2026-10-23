@@ -411,7 +411,7 @@ protected:
             fillRect(rr, withAlpha2(theme.ink, 0.06f));
             strokeRect(rr, theme.ink2, 1.0f);
         }
-        if (dmode == dmAudition || dmode == dmSoloHold)
+        if (dmode == dmAudition || soloHeld)
         {
             double f, q;
             std::string label;
@@ -466,7 +466,7 @@ protected:
     //   double-click / Ctrl-click empty: new band (Alt + double-click: a dynamic band); drag the curve: new band
     //   drag a node: frequency + gain of all selected bands; Shift: fine; Alt while dragging: lock to one axis;
     //   Ctrl/Cmd + vertical drag: Q; wheel: Q (cuts: slope), Ctrl/Cmd + wheel: gain, Alt + wheel: dynamic range
-    //   Alt + click-and-hold a node: solo that band while held; Alt + hold empty space: listen to the region
+    //   Alt + click-and-hold a node: solo that band while held (drag to move it, still soloed); Alt + hold empty space: listen to the region
     //   under the mouse (drag to sweep, wheel for width)
     //   Ctrl/Cmd + click a node: add to selection; Shift + click: select a range; drag empty space: select
     //   Ctrl/Cmd + Alt + click a node: next shape; Alt + Shift + click: next slope; double-click a node: type values
@@ -517,9 +517,13 @@ protected:
             if (alt && shift) { cycleSlope(b); return false; }
             if (alt)
             {
-                // standard Alt-solo on a node: hear this band's region while the button is held
+                // standard Alt-solo on a node: hear this band's region while the button is held; drag to move it
+                // (still soloed) like an ordinary node drag
+                if (!selMask[b]) selectOnly(b);
+                else { sel = b; rebind(); }
                 prevSolo = (int)value(kSolo);
                 soloBand = b;
+                soloHeld = true;
                 setParam(kSolo, (float)(b + 1));
                 dmode = dmSoloHold;
                 return true;
@@ -568,6 +572,14 @@ protected:
             setParam(kAuditionFreq, (float)fOfX(std::max(display.x, std::min(display.r(), x))));
             setStatus("Listening around " + spec(kAuditionFreq).format(value(kAuditionFreq)) + "  (wheel: width)");
             return;
+        case dmSoloHold:
+            // moved far enough: keep the solo and turn the hold into a node drag
+            if (std::fabs(x - pressX) + std::fabs(y - pressY) > 3.0f)
+            {
+                startNodeDrag(pressX, pressY);
+                bodyMouseDrag(x, y, mod);
+            }
+            return;
         case dmPending:
             if (std::fabs(x - pressX) + std::fabs(y - pressY) > 4.0f)
             {
@@ -582,7 +594,7 @@ protected:
             effY += (y - lastY) * fine;
             lastX = x; lastY = y;
             float dx = effX, dy = effY;
-            if (alt)   // lock to the dominant axis (EQ)
+            if (alt && !soloHeld)   // lock to the dominant axis (EQ); Alt held for a solo-drag doesn't count
             {
                 if (axis == 0 && std::fabs(dx) + std::fabs(dy) > 6.0f) axis = std::fabs(dx) >= std::fabs(dy) ? 1 : 2;
                 if (axis == 1) dy = 0.0f; else if (axis == 2) dx = 0.0f;
@@ -613,9 +625,6 @@ protected:
             for (int b : dragSet) { endEdit(bandParam(b, kFreq)); endEdit(bandParam(b, kGain)); endEdit(bandParam(b, kQ)); }
             endGroup();
             break;
-        case dmSoloHold:
-            setParam(kSolo, (float)prevSolo);
-            break;
         case dmAudition:
             setParam(kAudition, 0.0f);
             break;
@@ -638,6 +647,7 @@ protected:
             break;
         default: break;
         }
+        if (soloHeld) { setParam(kSolo, (float)prevSolo); soloHeld = false; }   // Alt-solo hold (and solo-drag) over
         dmode = dmNone;
         dragBand = -1;
         dragSet.clear();
@@ -646,7 +656,7 @@ protected:
     void bodyHover(float x, float y) override
     {
         hover = display.contains(x, y) ? nodeAt(x, y) : -1;
-        if (hover >= 0) setStatus(bandReadout(hover) + "    drag · Alt-hold: solo · wheel: Q · double-click: type · right-click: menu");
+        if (hover >= 0) setStatus(bandReadout(hover) + "    drag · Alt-hold: solo (drag to move) · wheel: Q · double-click: type · right-click: menu");
         else if (display.contains(x, y))
         {
             char buf[160];
@@ -783,7 +793,7 @@ protected:
             { "Drag a node", "frequency and gain (all selected bands); Alt while dragging: one axis" },
             { "Ctrl/Cmd + drag up/down", "Q (width); mouse wheel on a node: Q, on cuts: slope" },
             { "Ctrl/Cmd + wheel  ·  Alt + wheel", "gain  ·  dynamic range" },
-            { "Alt + hold a node", "solo: hear only that band while held" },
+            { "Alt + hold a node", "solo: hear only that band while held; drag to move it while soloed" },
             { "Alt + hold / drag empty space", "listen to the region under the mouse (wheel: width)" },
             { "Ctrl/Cmd+click · Shift+click · drag", "add to selection · select a range · box-select" },
             { "Ctrl/Cmd+Alt+click · Alt+Shift+click", "next shape · next slope" },
@@ -857,6 +867,7 @@ private:
     float orig[kNumBands][3] = {};
     float pressX = 0, pressY = 0, curX = 0, curY = 0, lastX = 0, lastY = 0, effX = 0, effY = 0;
     int axis = 0, prevSolo = 0, soloBand = 0;
+    bool soloHeld = false;   // Alt-hold solo active (stays on when the hold turns into a drag)
     static constexpr int kCurvePts = 220;
     float curveX[kCurvePts] = {}, curveDb[kCurvePts] = {};
 
