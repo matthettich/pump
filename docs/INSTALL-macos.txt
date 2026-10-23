@@ -1,0 +1,16 @@
+…pump mastering plugins — Mac install (Apple Silicon and Intel)
+================================================================
+
+1. Copy the plugins into your user plug-in folders (Finder: Go > Go to Folder…, paste the path):
+       VST3/*.vst3          ->  ~/Library/Audio/Plug-Ins/VST3/
+       Components/*.component -> ~/Library/Audio/Plug-Ins/Components/   (Audio Units, for Logic and Live)
+       CLAP/*.clap          ->  ~/Library/Audio/Plug-Ins/CLAP/          (optional)
+
+2. These builds are not notarized yet, so macOS quarantines them. Open Terminal and run once:
+       xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/VST3/pump*.vst3 ~/Library/Audio/Plug-Ins/Components/pump*.component ~/Library/Audio/Plug-Ins/CLAP/pump*.clap
+
+3. In Ableton Live: Settings > Plug-Ins, turn on "Use VST3 Plug-In Custom/System Folders" (and Audio Units),
+   then Rescan. The plugins appear under Plug-Ins > wake.
+
+In every plugin: drag to change a control (Shift = fine), double-click or right-click to type a value,
+Cmd-click to reset it. A/B compares two settings; DARK switches the look (remembered for new instances).

@@ -1,0 +1,20 @@
+# Shared build setup for every pump plugin. A plugin's Makefile sets NAME, FILES_DSP and FILES_UI, then
+# includes this file. Formats: VST3 and CLAP everywhere, AU on macOS; `make jack` builds a standalone app.
+
+DPF_PATH ?= ../../dpf
+DPF_TARGET_DIR ?= ../../bin
+DPF_BUILD_DIR ?= ../../build/$(NAME)
+UI_TYPE = opengl
+
+include $(DPF_PATH)/Makefile.plugins.mk
+
+# C++17, our headers, and fast math without assuming finite values (meters use -inf as "silence").
+BUILD_CXX_FLAGS += -std=gnu++17 -I. -I../../common -fno-finite-math-only -Wno-unused-parameter
+BUILD_C_FLAGS += -fno-finite-math-only -Wno-unused-parameter -Wno-sign-compare
+
+TARGETS = vst3 clap
+ifeq ($(MACOS),true)
+TARGETS += au
+endif
+
+all: $(TARGETS)

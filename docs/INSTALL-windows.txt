@@ -1,0 +1,16 @@
+…pump mastering plugins — Windows install
+=========================================
+
+1. Copy every "pump ….vst3" folder into:
+       C:\Program Files\Common Files\VST3\
+   (Windows asks for permission once; that folder is where Ableton Live and other hosts look.)
+
+2. Optional, for hosts that use CLAP (Bitwig, Reaper): copy the files in the CLAP folder into:
+       C:\Program Files\Common Files\CLAP\
+
+3. In Ableton Live: Options > Preferences > Plug-Ins, turn on "Use VST3 Plug-In System Folders",
+   then press Rescan. The plugins appear under Plug-Ins > wake.
+
+Plugins: pump EQ, pump COMP, pump LIMIT, pump CALM, pump TONE, pump BAND, pump WIDE, pump HEAT, pump METER.
+In every plugin: drag to change a control (Shift = fine), double-click or right-click to type a value,
+Ctrl-click to reset it. A/B compares two settings; DARK switches the look (remembered for new instances).
