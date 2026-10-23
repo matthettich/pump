@@ -141,10 +141,20 @@ public:
         w = (w + 1) & mask;
         return y;
     }
+    // After process(): the sample written `delay` samples ago (read(getDelay()) is what process() returned).
+    inline float read(int delay) const { return buf[(size_t)((w - 1 - delay) & mask)]; }
 private:
     std::vector<float> buf { 0.0f, 0.0f };
     int mask = 1, w = 0, d = 0;
 };
+
+// Replaces non-finite samples (a NaN/Inf from an upstream device) and absurd values (beyond +120 dBFS) with 0, in
+// place. Call on an engine's input: one bad sample would otherwise stay in recursive filters and envelopes for good.
+inline void sanitizeBlock(float* x, int n)
+{
+    for (int i = 0; i < n; ++i)
+        if (!(std::fabs(x[i]) < 1e6f)) x[i] = 0.0f;
+}
 
 // Lock-free single-producer/single-consumer sample ring for UI feeds (analyzers, scopes, history).
 // The audio thread writes; the UI reads the most recent `count` samples. Reads are not synchronised

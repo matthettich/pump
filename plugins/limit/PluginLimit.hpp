@@ -15,6 +15,7 @@ public:
     {
         engine.prepare(getSampleRate(), (int)getBufferSize());
         bypass.prepare(getSampleRate(), 1 << 14, (int)std::max<uint32_t>(getBufferSize(), 8192));
+        setLatency((uint32_t)engine.latency());
     }
 
     Engine engine;
@@ -30,7 +31,10 @@ protected:
         engine.prepare(getSampleRate(), (int)getBufferSize());
         bypass.prepare(getSampleRate(), 1 << 14, (int)std::max<uint32_t>(getBufferSize(), 8192));
         sync();
-        lastLatency = -1;
+        // report the latency now: hosts read it at activation, before the first block
+        lastLatency = engine.latency();
+        setLatency((uint32_t)lastLatency);
+        bypass.setLatency(lastLatency);
     }
     void sampleRateChanged(double) override { activate(); }
 

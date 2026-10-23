@@ -52,14 +52,17 @@ public:
     }
 
     // Feed a stereo block. Updates momentary/short-term every 100 ms.
+    // Non-finite samples (a NaN or Inf from an upstream device) are measured as silence, so one bad sample can't
+    // leave the filters, the gating histogram or the readouts stuck at NaN.
     void process(const float* L, const float* R, int n)
     {
         for (int i = 0; i < n; ++i)
         {
-            const double l = st[0][1].process(hp, st[0][0].process(shelf, L[i]));
-            const double r = st[1][1].process(hp, st[1][0].process(shelf, R[i]));
+            const float xl = std::isfinite(L[i]) ? L[i] : 0.0f, xr = std::isfinite(R[i]) ? R[i] : 0.0f;
+            const double l = st[0][1].process(hp, st[0][0].process(shelf, xl));
+            const double r = st[1][1].process(hp, st[1][0].process(shelf, xr));
             acc += l * l + r * r;
-            tpMax = std::max(tpMax, std::max(tp[0].process(L[i]), tp[1].process(R[i])));
+            tpMax = std::max(tpMax, std::max(tp[0].process(xl), tp[1].process(xr)));
             if (++cnt >= sub)
             {
                 pushSubblock(acc / cnt);
