@@ -2,6 +2,9 @@
 #pragma once
 
 #include "Util.hpp"
+#ifndef PFFFT_STATIC_DEFINE
+#define PFFFT_STATIC_DEFINE 1   // compiled into the plugin, not a DLL (matters on Windows)
+#endif
 #include "../third_party/pffft/pffft.h"
 #include <atomic>
 #include <memory>
