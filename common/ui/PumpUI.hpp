@@ -246,6 +246,7 @@ public:
           W(logicalW), H(logicalH), fBypass(bypassParam)
     {
         fValues.resize(numParams);
+        fLocalSet.assign(numParams, -1.0);
         for (uint32_t i = 0; i < numParams; ++i) fValues[i] = specs[i].def;
         const double sf = getScaleFactor();
         if (sf != 1.0) setSize((uint)(W * sf), (uint)(H * sf));
@@ -273,6 +274,7 @@ public:
         v = fSpecs[i].clamp(v);
         if (v == fValues[(size_t)i]) return;
         fValues[(size_t)i] = v;
+        fLocalSet[(size_t)i] = nowSeconds();
         setParameterValue((uint32_t)i, v);
         onParamChanged(i, v);
         repaint();
@@ -587,15 +589,20 @@ protected:
     void parameterChanged(uint32_t index, float value) override
     {
         if (index >= fNum) return;
+        // Hosts (Ableton Live especially) echo our own edits back late, sometimes with older values; ignore echoes
+        // for a parameter this UI changed itself in the last 300 ms so drags don't jitter or snap back.
+        if (value != fValues[index] && nowSeconds() - fLocalSet[index] < 0.3) return;
         fValues[index] = value;
         onParamChanged((int)index, value);
         repaint();
     }
+   #if DISTRHO_PLUGIN_WANT_PROGRAMS
     void programLoaded(uint32_t index) override
     {
         if (fPresets && index < fPresets->size()) fPresetName = (*fPresets)[index].name;
         repaint();
     }
+   #endif
     void stateChanged(const char* key, const char* value) override
     {
         if (std::strcmp(key, "theme") == 0 && value && *value)
@@ -1135,6 +1142,7 @@ protected:
     std::string fTag;
     int fBypass;
     std::vector<float> fValues;
+    std::vector<double> fLocalSet;   // when this UI last changed each parameter (seconds)
     std::vector<std::unique_ptr<Control>> fControls;
     Control* fActive = nullptr;
     bool fBodyActive = false;
