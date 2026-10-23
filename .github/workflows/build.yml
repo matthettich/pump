@@ -1,0 +1,111 @@
+name: build
+
+# Builds every pump plugin for Windows (x64), macOS (universal: Apple Silicon + Intel) and Linux, runs the DSP
+# tests, and keeps a rolling "latest" pre-release with the newest builds. A tag like v0.2.0 makes a real release.
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  tests:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with: { submodules: recursive }
+      - name: DSP tests
+        run: make tests
+
+  windows:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with: { submodules: recursive }
+      - name: Install MinGW (posix threads)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq g++-mingw-w64-x86-64-posix gcc-mingw-w64-x86-64-posix binutils-mingw-w64-x86-64
+      - name: Build (cross-compile for Windows x64)
+        run: |
+          make -j4 WINDOWS=true \
+            CC=x86_64-w64-mingw32-gcc-posix CXX=x86_64-w64-mingw32-g++-posix \
+            AR=x86_64-w64-mingw32-ar WINDRES=x86_64-w64-mingw32-windres PKG_CONFIG=false
+      - name: Package
+        run: |
+          mkdir -p dist/pump-windows
+          cp -r bin/*.vst3 dist/pump-windows/
+          mkdir -p dist/pump-windows/CLAP && cp bin/*.clap dist/pump-windows/CLAP/
+          cp docs/INSTALL-windows.txt dist/pump-windows/INSTALL.txt
+          cp THIRD_PARTY_NOTICES.md dist/pump-windows/
+          cd dist && zip -qr pump-windows.zip pump-windows
+      - uses: actions/upload-artifact@v4
+        with: { name: pump-windows, path: dist/pump-windows.zip }
+
+  macos:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+        with: { submodules: recursive }
+      - name: Build (universal)
+        run: |
+          export CFLAGS="-arch x86_64 -arch arm64 -mmacosx-version-min=10.15"
+          export CXXFLAGS="-arch x86_64 -arch arm64 -mmacosx-version-min=10.15"
+          export LDFLAGS="-arch x86_64 -arch arm64 -mmacosx-version-min=10.15"
+          make -j4 MACOS=true
+      - name: Sign (ad-hoc) and package
+        run: |
+          for b in bin/*.vst3 bin/*.clap bin/*.component; do [ -e "$b" ] && codesign --force --deep -s - "$b" || true; done
+          mkdir -p dist/pump-macos/VST3 dist/pump-macos/CLAP dist/pump-macos/Components
+          cp -R bin/*.vst3 dist/pump-macos/VST3/
+          cp -R bin/*.clap dist/pump-macos/CLAP/
+          cp -R bin/*.component dist/pump-macos/Components/ 2>/dev/null || true
+          cp docs/INSTALL-macos.txt dist/pump-macos/INSTALL.txt
+          cp THIRD_PARTY_NOTICES.md dist/pump-macos/
+          cd dist && ditto -c -k --keepParent pump-macos pump-macos.zip
+      - uses: actions/upload-artifact@v4
+        with: { name: pump-macos, path: dist/pump-macos.zip }
+
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with: { submodules: recursive }
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libgl1-mesa-dev libx11-dev libxext-dev libxrandr-dev libxcursor-dev libdbus-1-dev
+      - name: Build
+        run: make -j4
+      - name: Package
+        run: |
+          mkdir -p dist/pump-linux && cp -r bin/*.vst3 bin/*.clap dist/pump-linux/ && cp THIRD_PARTY_NOTICES.md dist/pump-linux/
+          cd dist && tar czf pump-linux.tar.gz pump-linux
+      - uses: actions/upload-artifact@v4
+        with: { name: pump-linux, path: dist/pump-linux.tar.gz }
+
+  release:
+    needs: [tests, windows, macos, linux]
+    if: github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { path: artifacts }
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          files=$(find artifacts -type f \( -name '*.zip' -o -name '*.tar.gz' \))
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            gh release create "$GITHUB_REF_NAME" $files --title "…pump $GITHUB_REF_NAME" --notes "Mastering plugins by wake. See INSTALL.txt in each zip."
+          else
+            gh release delete latest --yes --cleanup-tag 2>/dev/null || true
+            gh release create latest $files --prerelease --title "…pump (latest build)" \
+              --notes "Newest build from main ($GITHUB_SHA). Windows: pump-windows.zip. Mac: pump-macos.zip. Install steps are in INSTALL.txt inside each zip."
+          fi

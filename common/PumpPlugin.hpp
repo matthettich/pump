@@ -1,0 +1,147 @@
+// pump: DPF plugin base. Turns a ParamSpec table into host parameters, exposes the factory presets as host
+// programs, keeps the UI's A/B and theme state, and gives subclasses a block-processing hook.
+#pragma once
+
+#include "DistrhoPlugin.hpp"
+#include "PumpParams.hpp"
+#include "dsp/Util.hpp"
+#include <atomic>
+#include <string>
+#include <vector>
+
+START_NAMESPACE_DISTRHO
+
+using pump::ParamSpec;
+using pump::Preset;
+
+// UI-only state keys (saved with the session, never read by the DSP)
+static constexpr const char* kPumpStateKeys[] = { "theme", "abA", "abB", "abSel", "preset", "ui" };
+static constexpr uint32_t kPumpNumStates = 6;
+
+class PumpPlugin : public Plugin {
+public:
+    PumpPlugin(const ParamSpec* specs, uint32_t numParams, const std::vector<Preset>* presets)
+        : Plugin(numParams, presets ? (uint32_t)presets->size() : 0, kPumpNumStates),
+          fSpecs(specs), fNumParams(numParams), fPresets(presets),
+          fValues(numParams), fChanged(numParams)
+    {
+        for (uint32_t i = 0; i < numParams; ++i)
+        {
+            fValues[i].store(specs[i].def, std::memory_order_relaxed);
+            fChanged[i].store(true, std::memory_order_relaxed);
+        }
+        for (uint32_t i = 0; i < kPumpNumStates; ++i) fStates[i] = "";
+    }
+
+    const ParamSpec* specs() const { return fSpecs; }
+    uint32_t numParams() const { return fNumParams; }
+
+protected:
+    const char* getMaker() const override { return "wake"; }
+    const char* getHomePage() const override { return "https://github.com/matthettich/pump"; }
+    const char* getLicense() const override { return "Proprietary"; }
+    uint32_t getVersion() const override { return d_version(0, 1, 0); }
+
+    void initParameter(uint32_t index, Parameter& p) override
+    {
+        const ParamSpec& s = fSpecs[index];
+        p.name = s.name;
+        p.shortName = s.shortName;
+        p.symbol = s.symbol;
+        p.ranges.min = s.min;
+        p.ranges.max = s.max;
+        p.ranges.def = s.def;
+        p.hints = 0;
+        if (s.flags & pump::kPAutomatable) p.hints |= kParameterIsAutomatable;
+        if (s.flags & pump::kPInteger) p.hints |= kParameterIsInteger;
+        if (s.flags & pump::kPBoolean) p.hints |= kParameterIsBoolean | kParameterIsInteger;
+        if (s.flags & pump::kPOutput) p.hints = kParameterIsOutput;
+        if (s.flags & pump::kPHidden) p.hints |= kParameterIsHidden;
+        if (s.scale == pump::PScale::Log && s.min > 0.0f) p.hints |= kParameterIsLogarithmic;
+        switch (s.unit)
+        {
+        case pump::PUnit::dB: p.unit = "dB"; break;
+        case pump::PUnit::Hz: p.unit = "Hz"; break;
+        case pump::PUnit::ms: p.unit = "ms"; break;
+        case pump::PUnit::Percent: p.unit = "%"; break;
+        case pump::PUnit::LU: p.unit = "LU"; break;
+        case pump::PUnit::Octave: p.unit = "oct"; break;
+        case pump::PUnit::Seconds: p.unit = "s"; break;
+        default: break;
+        }
+        if (s.choices)
+        {
+            const int n = s.numChoices();
+            ParameterEnumerationValue* const ev = new ParameterEnumerationValue[n];
+            for (int k = 0; k < n; ++k) { ev[k].value = s.min + (float)k; ev[k].label = s.choices[k]; }
+            p.enumValues.count = (uint8_t)n;
+            p.enumValues.restrictedMode = true;
+            p.enumValues.values = ev;
+            p.hints |= kParameterIsInteger;
+        }
+        if (s.flags & pump::kPBypass)
+            p.initDesignation(kParameterDesignationBypass);
+    }
+
+    float getParameterValue(uint32_t index) const override { return fValues[index].load(std::memory_order_relaxed); }
+
+    void setParameterValue(uint32_t index, float value) override
+    {
+        if (fSpecs[index].flags & pump::kPOutput) return;
+        fValues[index].store(fSpecs[index].clamp(value), std::memory_order_relaxed);
+        fChanged[index].store(true, std::memory_order_release);
+        fAnyChanged.store(true, std::memory_order_release);
+    }
+
+    void initProgramName(uint32_t index, String& name) override
+    {
+        if (fPresets && index < fPresets->size()) name = (*fPresets)[index].name;
+    }
+
+    void loadProgram(uint32_t index) override
+    {
+        if (!fPresets || index >= fPresets->size()) return;
+        for (uint32_t i = 0; i < fNumParams; ++i)
+            if (!(fSpecs[i].flags & (pump::kPOutput | pump::kPBypass))) setParameterValue(i, fSpecs[i].def);
+        for (const auto& pv : (*fPresets)[index].values)
+            for (uint32_t i = 0; i < fNumParams; ++i)
+                if (std::strcmp(fSpecs[i].symbol, pv.symbol) == 0) { setParameterValue(i, pv.value); break; }
+    }
+
+    void initState(uint32_t index, State& state) override
+    {
+        state.key = kPumpStateKeys[index];
+        state.defaultValue = "";
+        state.label = kPumpStateKeys[index];
+        state.hints = kStateIsOnlyForUI;
+    }
+    void setState(const char* key, const char* value) override
+    {
+        for (uint32_t i = 0; i < kPumpNumStates; ++i)
+            if (std::strcmp(key, kPumpStateKeys[i]) == 0) fStates[i] = value;
+    }
+    String getState(const char* key) const override
+    {
+        for (uint32_t i = 0; i < kPumpNumStates; ++i)
+            if (std::strcmp(key, kPumpStateKeys[i]) == 0) return String(fStates[i].c_str());
+        return String();
+    }
+
+    // For subclasses: the current value of a parameter (any thread).
+    float pv(uint32_t i) const { return fValues[i].load(std::memory_order_relaxed); }
+    // On the audio thread: true once if anything changed since the last call.
+    bool takeAnyChanged() { return fAnyChanged.exchange(false, std::memory_order_acq_rel); }
+    bool takeChanged(uint32_t i) { return fChanged[i].exchange(false, std::memory_order_acq_rel); }
+    // Output (meter) parameters
+    void setOutput(uint32_t i, float v) { fValues[i].store(v, std::memory_order_relaxed); }
+
+    const ParamSpec* fSpecs;
+    uint32_t fNumParams;
+    const std::vector<Preset>* fPresets;
+    std::vector<std::atomic<float>> fValues;
+    std::vector<std::atomic<bool>> fChanged;
+    std::atomic<bool> fAnyChanged { true };
+    std::string fStates[kPumpNumStates];
+};
+
+END_NAMESPACE_DISTRHO
