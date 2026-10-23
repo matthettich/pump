@@ -1,5 +1,5 @@
-// pump multiband UI: the display behaviour BAND, WIDE and HEAT share (an identical copy lives in each plugin folder
-// so the plugins stay independent). Band regions between draggable crossover handles, a strip of per-band S / M / B
+// pump multiband UI: the display behaviour BAND, WIDE and HEAT share. Band regions between draggable crossover
+// handles, a strip of per-band S / M / B
 // keys across the top of the display, and the multiband / standard interaction set:
 //   drag a crossover handle (Shift: fine), double-click it to type (Tab: next crossover), wheel on it: 1/12 octave
 //   Alt + click-and-hold a band: hear only that band while held (slide across to switch bands)
@@ -7,10 +7,13 @@
 //   wheel in a band: main amount (Shift: fine); double-click a band: type its main amount (Tab: second amount)
 //   right-click a band: band menu; keys 1-4 select, Left/Right step, S / M / B toggle the selected band, Esc unsolos
 // S / M / B keys: click toggles, click-and-hold acts only while held, Ctrl/Cmd-click makes it exclusive.
+// The Alt-hold listen is momentary, so it is not a host parameter (hosts would save it with the session): the UI
+// sets an atomic on the plugin (bindListen()), and clears it on release and when the editor closes.
 #pragma once
 
 #include "ui/PumpUI.hpp"
 #include "dsp/Multiband.hpp"
+#include <atomic>
 
 START_NAMESPACE_DISTRHO
 
@@ -19,6 +22,11 @@ public:
     MultibandUI(const ParamSpec* specs, uint32_t numParams, const std::vector<Preset>* presets, const Accent& accent,
                 const char* tag, float w, float h, int bypassParam)
         : PumpUI(specs, numParams, presets, accent, tag, w, h, bypassParam) {}
+    ~MultibandUI() override
+    {
+        // closing the editor mid-hold must not leave the plugin listening to one band
+        if (listenTarget) listenTarget->store(-1, std::memory_order_relaxed);
+    }
 
 protected:
     static constexpr double kLo = 15.0, kHi = 22000.0;
@@ -26,9 +34,13 @@ protected:
     static constexpr int kBands = pump::mb::kMaxBands;
 
     // ---- what a plugin provides ---------------------------------------------------------------------------------
+    // From the constructor: the plugin's listen atomic (-1 = off, 0..3 = hear only that band; nullptr without
+    // direct access) and followRate() with the plugin's sample rate (also from tick(): hosts don't always tell the
+    // editor about a rate change); setupAnalyzers() is then called whenever the rate changes.
+    void bindListen(std::atomic<int>* a) { listenTarget = a; }
+    virtual void setupAnalyzers(double) {}
     virtual int pBands() const = 0;
     virtual int pXover(int k) const = 0;
-    virtual int pListen() const = 0;               // hidden parameter: 0 = off, 1..4 = hear only that band
     virtual int pSolo(int b) const = 0;
     virtual int pMute(int) const { return -1; }
     virtual int pBandBypass(int) const { return -1; }
@@ -55,7 +67,20 @@ protected:
 
     // ---- geometry ------------------------------------------------------------------------------------------------
     int numBands() const { return pump::clampv((int)value(pBands()), 1, kBands); }
-    double rate() const { const double s = sampleRate(); return s > 0 ? s : 48000.0; }
+    double rate() const
+    {
+        if (anaRate > 0.0) return anaRate;
+        const double s = sampleRate();
+        return s > 0 ? s : 48000.0;
+    }
+    // the rate the plugin runs at (from the constructor, tick() and the host's notification): re-sets the analyzers
+    void followRate(double sr)
+    {
+        if (!(sr > 0.0) || sr == anaRate) return;
+        anaRate = sr;
+        setupAnalyzers(sr);
+    }
+    void onSampleRateChanged(double sr) override { followRate(sr); }
     void effXo(double e[3]) const
     {
         const float x[3] = { value(pXover(0)), value(pXover(1)), value(pXover(2)) };
@@ -132,7 +157,10 @@ protected:
     bool bandFlag(int b, int t) const { const int p = flagParam(b, t); return p >= 0 && value(p) >= 0.5f; }
     int flagParam(int b, int t) const { return t == 0 ? pSolo(b) : (t == 1 ? pMute(b) : pBandBypass(b)); }
     bool anySolo() const { for (int b = 0; b < numBands(); ++b) if (bandFlag(b, 0)) return true; return false; }
-    int listening() const { return (int)value(pListen()) - 1; }
+    // momentary Alt-hold listening: the plugin's atomic (never a host parameter, so never saved, undone or echoed)
+    int listening() const { return listenTarget ? listenTarget->load(std::memory_order_relaxed) : -1; }
+    void setListening(int b) { if (listenTarget) listenTarget->store(b, std::memory_order_relaxed); }
+    void stopListening() { if (listening() >= 0) { setListening(-1); setStatus(""); } }
     // Ctrl/Cmd-click on S / M / B: this band only (again: clear them all)
     void exclusive(int b, int t)
     {
@@ -149,15 +177,6 @@ protected:
         static const char* what[] = { "Solo", "Mute", "Bypass" };
         setStatus(onlyThis ? std::string(what[t]) + " cleared on all bands" : std::string(what[t]) + ": band " + std::to_string(b + 1) + " only");
     }
-    // A change that is not an undo step (momentary listening). Still a host gesture.
-    void setQuiet(int p, float v)
-    {
-        const bool h = fApplyingHistory;
-        fApplyingHistory = true;
-        setParamGesture(p, v);
-        fApplyingHistory = h;
-    }
-    void stopListening() { if (value(pListen()) != 0.0f) { setQuiet(pListen(), 0.0f); setStatus(""); } }
 
     // Call from the plugin UI's constructor (after its own controls): the S / M / B keys in the strip.
     void buildStrip()
@@ -297,7 +316,7 @@ protected:
         {
             dmode = dmListen; listenBand = b;
             select(b);
-            setQuiet(pListen(), (float)(b + 1));
+            setListening(b);
             setStatus("Listening to band " + std::to_string(b + 1) + " (" + bandRange(b) + ") while held");
             return true;
         }
@@ -332,7 +351,7 @@ protected:
         {
         case dmListen: {
             const int b = regionAt(std::max(disp.x, std::min(disp.r() - 1, x)));
-            if (b != listenBand) { listenBand = b; setQuiet(pListen(), (float)(b + 1)); select(b); setStatus("Listening to band " + std::to_string(b + 1) + " (" + bandRange(b) + ")"); }
+            if (b != listenBand) { listenBand = b; setListening(b); select(b); setStatus("Listening to band " + std::to_string(b + 1) + " (" + bandRange(b) + ")"); }
             return;
         }
         case dmXover: {
@@ -520,6 +539,9 @@ protected:
     int dragXo = -1, dragBand = -1, hoverXo = -1, hoverBand = -1, listenBand = -1;
     float startV = 0.0f, lastX = 0.0f, lastY = 0.0f, eff = 0.0f;
     Button* stripBtn[kBands][3] = {};
+    double anaRate = 0.0;                          // the rate the analyzers are set up for (0 = not yet)
+private:
+    std::atomic<int>* listenTarget = nullptr;
 };
 
 END_NAMESPACE_DISTRHO

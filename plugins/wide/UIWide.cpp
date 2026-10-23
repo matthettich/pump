@@ -62,17 +62,16 @@ public:
         outDial->tip = "Output gain";
 
         buildStrip();
-        if (auto* p = static_cast<PluginWide*>(pluginPtr())) plug = p;
-        mid.setup(rate()); side.setup(rate());
-        mid.setRange(kLo, kHi); side.setRange(kLo, kHi);
+        if (auto* p = static_cast<PluginWide*>(pluginPtr())) { plug = p; bindListen(&p->listenHold); }
+        followRate(plug && plug->getSampleRate() > 0.0 ? plug->getSampleRate() : rate());
         rebind();
     }
 
 protected:
     // ---- MultibandUI hooks ----
+    void setupAnalyzers(double sr) override { mid.setup(sr); side.setup(sr); mid.setRange(kLo, kHi); side.setRange(kLo, kHi); }
     int pBands() const override { return kNumBandsP; }
     int pXover(int k) const override { return xoverParam(k); }
-    int pListen() const override { return kListen; }
     int pSolo(int b) const override { return bandParam(b, kSolo); }
     int pMute(int b) const override { return bandParam(b, kMute); }
     int pBandBypass(int b) const override { return bandParam(b, kBandBypass); }
@@ -172,6 +171,7 @@ protected:
     void tick(float dt) override
     {
         if (!plug) return;
+        followRate(plug->getSampleRate());   // (re-sets the analyzers after a rate change)
         mid.update(&plug->midRing, nullptr, dt);
         side.update(&plug->sideRing, nullptr, dt);
         const float k = std::min(1.0f, dt * 6.0f);

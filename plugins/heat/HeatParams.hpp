@@ -12,7 +12,9 @@ constexpr int kNumBands = 4;
 
 enum Global : int {
     kOutGain = 0, kMix, kOversampling, kAutoGain, kXoverMode, kNumBandsP, kXover1, kXover2, kXover3,
-    kBypass, kListen,   // kListen: Alt-solo from the display (hidden, UI-driven): 0 = off, 1..4 = that band only
+    kBypass, kListen,   // kListen: unused placeholder (kept so parameter indices / ids never shift). The Alt-hold
+                        // listen goes through the plugin's listenHold atomic: a hidden parameter is saved with
+                        // the session, and a stale value would silence the plugin
     kNumGlobals
 };
 enum BandField : int { kMode = 0, kDrive, kBandMix, kLevel, kSolo, kMute, kBandBypass, kBandStride };
@@ -45,7 +47,7 @@ inline const std::vector<ParamSpec>& params()
     v.push_back({ "xover2", "Crossover 2", "Xover 2", 20, 20000, 3000, PUnit::Hz, PScale::Log, A, nullptr, 1 });
     v.push_back({ "xover3", "Crossover 3", "Xover 3", 20, 20000, 9000, PUnit::Hz, PScale::Log, A, nullptr, 1 });
     v.push_back({ "bypass", "Bypass", "Bypass", 0, 1, 0, PUnit::None, PScale::Linear, A | kPBoolean | kPBypass, nullptr, 1 });
-    v.push_back({ "listen_band", "Listen Band", "Listen", 0, 4, 0, PUnit::None, PScale::Linear, kPInteger | kPHidden, nullptr, 1 });
+    v.push_back({ "listen_band", "Listen Band", "Listen", 0, 4, 0, PUnit::None, PScale::Linear, kPInteger | kPHidden, nullptr, 1 });   // unused placeholder (see kListen)
     for (int b = 0; b < kNumBands; ++b)
     {
         const std::string n = std::to_string(b + 1), p = "b" + n + "_", N = "Band " + n + " ";

@@ -16,6 +16,7 @@ public:
         syncAll();
         engine.prepare(getSampleRate(), (int)getBufferSize());
         bypass.prepare(getSampleRate(), 1 << 15, (int)std::max<uint32_t>(getBufferSize(), 8192));
+        reportLatency();
     }
 
     // feeds for the UI: output L/R (vectorscope) and mid/side (spectra)
@@ -23,6 +24,10 @@ public:
     pump::MeterValue outPeak[2];
     Engine engine;
     int latencyNow() const { return engine.latency(); }
+
+    // The editor's Alt-hold listen (never a host parameter: not saved with the session, not undone, not touched by
+    // host gesture echoes). -1 = off, 0..3 = hear only that band (a band >= the band count counts as off).
+    std::atomic<int> listenHold { -1 };
 
 protected:
     const char* getLabel() const override { return "pump_wide"; }
@@ -33,7 +38,14 @@ protected:
         syncAll();
         engine.prepare(getSampleRate(), (int)getBufferSize());
         bypass.prepare(getSampleRate(), 1 << 15, (int)std::max<uint32_t>(getBufferSize(), 8192));
-        lastLatency = -1;
+        reportLatency();
+    }
+    // hosts (CLAP especially) read the latency right after activation, before the first block
+    void reportLatency()
+    {
+        lastLatency = engine.latency();
+        setLatency((uint32_t)lastLatency);
+        bypass.setLatency(lastLatency);
     }
     void sampleRateChanged(double) override { activate(); }
 
@@ -55,7 +67,7 @@ protected:
         engine.setXoverMode((int)pv(kXoverMode));
         engine.setBands((int)pv(kNumBandsP));
         engine.setCrossovers(pv(kXover1), pv(kXover2), pv(kXover3));
-        engine.setListen((int)pv(kListen) - 1);
+        // (kListen is an unused placeholder: the listen band is listenHold, read in run())
     }
     void syncAll()
     {
@@ -79,6 +91,7 @@ protected:
             if (global) syncGlobals();
             for (int b = 0; b < kNumBands; ++b) if (dirty[b]) syncBand(b);
         }
+        engine.setListen(listenHold.load(std::memory_order_relaxed));   // every block: the editor's Alt-hold
         float* L = outputs[0];
         float* R = outputs[1];
         if (L != inputs[0]) std::memcpy(L, inputs[0], sizeof(float) * frames);
@@ -91,6 +104,10 @@ protected:
             float* l = L + done;
             float* r = R + done;
             bypass.capture(l, r, n);
+            // a NaN / Inf from upstream would otherwise stay in the filters and decorrelators for good (the bypass
+            // path, captured above, stays a plain pass-through)
+            pump::sanitizeBlock(l, n);
+            pump::sanitizeBlock(r, n);
             engine.process(l, r, n);
             const int lat = engine.latency();
             if (lat != lastLatency) { setLatency((uint32_t)lat); bypass.setLatency(lat); lastLatency = lat; }

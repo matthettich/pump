@@ -23,6 +23,11 @@
 // for small signals), then a slow per-band level match (300 ms RMS of the band's dry vs wet signal, limited to
 // -6..+18 dB, frozen in silence) takes out the level the curve's compression removed. Long-term band levels follow
 // the input; only the saturation's short-term density changes.
+//
+// Oversampling and crossover-type changes fade out, switch and fade back in (8 ms; asking for the setting in use
+// again before the fade-out ends just fades back in). A non-finite value (the plugin sanitizes its input) can't get
+// stuck: paths that are off (DC blocker, wet signal at mix 0) are left out rather than multiplied by 0, and a band
+// whose filters, oversampler or level match went non-finite is cleared at the end of the chunk (so is the output).
 #pragma once
 
 #include "dsp/Oversampler.hpp"
@@ -128,8 +133,8 @@ public:
     // ---- settings (audio thread, block start) ----
     void setBands(int n) { nb = clampv(n, 1, kNumBands); split.setBands(nb); }
     void setCrossovers(float a, float b, float c) { split.setCrossovers(a, b, c); }
-    void setXoverMode(int m) { m = m ? 1 : 0; if (m != wantMode) { wantMode = m; pending = true; } }
-    void setOversampling(int idx) { idx = clampv(idx, 0, 3); if (idx != wantLg) { wantLg = idx; pending = true; } }
+    void setXoverMode(int m) { wantMode = m ? 1 : 0; updatePending(); }
+    void setOversampling(int idx) { wantLg = clampv(idx, 0, 3); updatePending(); }
     void setAutoGain(bool on) { autoGain = on; }
     void setMix(float pct) { mixPct = clampv((double)pct, 0.0, 100.0); }
     void setOutput(float db) { outDb = db; }
@@ -170,13 +175,23 @@ private:
 
     double targetWeight(int b) const
     {
-        if (listen >= 0) return b == listen ? 1.0 : 0.0;
+        if (listen >= 0 && listen < nb) return b == listen ? 1.0 : 0.0;
         bool anySolo = false;
         for (int k = 0; k < nb; ++k) anySolo = anySolo || set[k].solo;
         if (b >= nb) return anySolo ? 0.0 : 1.0;
         return anySolo ? (set[b].solo ? 1.0 : 0.0) : (set[b].mute ? 0.0 : 1.0);
     }
     int osLatency() const { return curLg == 0 ? 0 : os[0][curLg - 1].latency(); }
+    // a change fades out, switches, fades back in; setting what is in use again cancels it
+    void updatePending() { pending = wantMode != split.getMode() || wantLg != curLg; }
+    // a band whose state went non-finite: start its curve, filters, oversampler and level match afresh
+    void clearBand(int b)
+    {
+        BandState& s = st[b];
+        if (curLg > 0) os[b][curLg - 1].reset();
+        for (int ch = 0; ch < 2; ++ch) { s.dry[ch].clear(); s.xPrev[ch] = 0; s.hf[ch] = 0; s.dcX[ch] = s.dcY[ch] = 0; s.pre[ch].reset(); s.de[ch].reset(); }
+        s.msDry = s.msWet = s.msOut = 0.0; s.agc = 1.0;
+    }
 
     void applyStructural()
     {
@@ -228,7 +243,9 @@ private:
             trans.setTarget(0.0);
             if (!trans.isSmoothing() && trans.current() <= 0.0) { applyStructural(); trans.setTarget(1.0); }
         }
+        else trans.setTarget(1.0);   // (a change that was undone during the fade-out: straight back in)
         split.process(L, R, n);
+        bool bad = false;
         const int used = std::min(kNumBands, std::max(nb, split.bandsInUse()));
         const int F = 1 << curLg;
         const double osr = sr * F;
@@ -254,16 +271,10 @@ private:
                 if (p.mode == kTape) for (int ch = 0; ch < 2; ++ch) { s.pre[ch].reset(); s.de[ch].reset(); s.hf[ch] = 0.0; }
             }
             s.asym.setTarget(asymmetric(s.mode) ? 1.0 : 0.0);
-            if (b >= used) s.unusedFor += n; else s.unusedFor = 0;
+            if (b >= used) s.unusedFor = std::min(s.unusedFor + n, 1 << 30); else s.unusedFor = 0;   // (capped: no overflow)
             if (s.unusedFor > osLatency() + kChunk)
             {
-                if (!s.idle)
-                {
-                    if (curLg > 0) os[b][curLg - 1].reset();
-                    for (int ch = 0; ch < 2; ++ch) { s.dry[ch].clear(); s.xPrev[ch] = 0; s.hf[ch] = 0; s.dcX[ch] = s.dcY[ch] = 0; s.pre[ch].reset(); s.de[ch].reset(); }
-                    s.msDry = s.msWet = s.msOut = 0.0; s.agc = 1.0;
-                    s.idle = true;
-                }
+                if (!s.idle) { clearBand(b); s.idle = true; }
                 for (int i = 0; i < n; ++i) { s.drive.next(); s.bmix.next(); s.level.next(); s.weight.next(); s.bypassFade.next(); s.autoBlend.next(); s.asym.next(); }
                 agFeed[b].store(0.0f, std::memory_order_relaxed);
                 inFeed[b].store(-120.0f, std::memory_order_relaxed);
@@ -324,7 +335,7 @@ private:
                 o.downsample(wl, wr, n);
             }
             // ---- base rate: DC, auto gain, band mix / level, global mix, solo weighting
-            double eIn = 0, eOut = 0;
+            double eIn = 0, eOut = 0, chk = 0;
             for (int i = 0; i < n; ++i)
             {
                 const double asym = s.asym.next();
@@ -339,10 +350,13 @@ private:
                 {
                     d[ch] = s.dry[ch].process(xin[ch][i]);
                     double v = (ch ? wr : wl)[i];
-                    // DC blocker for the asymmetric curves (blended in and out with the curve)
+                    // DC blocker for the asymmetric curves (blended in and out with the curve; when it's out it is
+                    // left out, not multiplied by 0, which would pass on a NaN it holds)
                     const double y = v - s.dcX[ch] + dcR * s.dcY[ch];
                     s.dcX[ch] = v; s.dcY[ch] = y;
-                    v += (y - v) * asym;
+                    chk += v + y;
+                    if (asym >= 1.0) v = y;
+                    else if (asym > 0.0) v += (y - v) * asym;
                     w[ch] = v / g;   // static part of auto gain (exact for small signals)
                 }
                 // level match (slow, stereo-linked, frozen in silence)
@@ -358,18 +372,26 @@ private:
                 {
                     const double raw = w[ch] * g;                         // the curve's own level (auto gain off)
                     const double wet = raw + (w[ch] * s.agc - raw) * ab;  // auto gain on: static + level match
-                    const double band = lv * (d[ch] + bm * (wet - d[ch]));
-                    const double o = wt * (d[ch] + gm[i] * (band - d[ch]));
+                    // (at mix 0 the wet signal is left out, not multiplied by 0)
+                    const double band = lv * (bm > 0.0 ? d[ch] + bm * (wet - d[ch]) : d[ch]);
+                    const double o = wt * (gm[i] > 0.0f ? d[ch] + gm[i] * (band - d[ch]) : d[ch]);
                     (ch ? R : L)[i] += (float)o;
                     eIn += d[ch] * d[ch]; eOut += o * o;
+                    chk += d[ch];
                 }
             }
             s.msOut += (eOut / (2.0 * n) - s.msOut) * std::min(1.0, n / (0.3 * sr));
+            // backstop: a NaN / Inf in this band (input, curve and filter states, oversampler, level match) is
+            // cleared here, once per chunk
+            chk += s.msDry + s.msWet + s.msOut + s.agc;
+            for (int ch = 0; ch < 2; ++ch) chk += s.xPrev[ch] + s.hf[ch] + s.pre[ch].s + s.de[ch].s;
+            if (!std::isfinite(chk)) { clearBand(b); bad = true; }
             agFeed[b].store((float)(autoGain ? gainToDb(s.agc) : 0.0), std::memory_order_relaxed);
             inFeed[b].store((float)(10.0 * std::log10(std::max(1e-12, s.msDry))), std::memory_order_relaxed);
             outFeed[b].store((float)(10.0 * std::log10(std::max(1e-12, s.msOut))), std::memory_order_relaxed);
         }
         for (int i = 0; i < n; ++i) { L[i] *= og[i]; R[i] *= og[i]; }
+        if (bad) { sanitizeBlock(L, n); sanitizeBlock(R, n); }   // never pass a non-finite sample on
     }
 
     double sr = 48000.0;
