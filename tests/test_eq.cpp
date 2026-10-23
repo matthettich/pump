@@ -133,6 +133,23 @@ int main()
         // the 440 Hz sine with up to +12 dB moves at most ~ 2*pi*440/48000 * 1.0 per sample
         CHECK(maxJump < 0.08, "sweeping a +12 dB bell 200 Hz -> 20 kHz: largest sample step %.4f (no clicks)", maxJump);
     }
+    // stress: switch phase mode and quality while bands keep changing (worker thread rebuilding kernels)
+    {
+        Engine e; e.prepare(48000, 512);
+        std::mt19937 rng(3);
+        std::vector<float> L(512), R(512);
+        bool finite = true;
+        for (int blk = 0; blk < 600; ++blk)
+        {
+            BandSpec s; s.shape = (Shape)(rng() % 8); s.freq = 30.0 * std::pow(600.0, (rng() % 1000) / 1000.0); s.gainDb = (int)(rng() % 25) - 12; s.q = 0.3 + (rng() % 100) / 20.0; s.slope = 12;
+            e.setBand((int)(rng() % 6), true, false, s, (int)(rng() % 5), (rng() % 3) == 0, -6, -30);
+            if (blk % 37 == 0) e.setPhaseMode((int)(rng() % 2), (int)(rng() % 3));
+            for (int i = 0; i < 512; ++i) L[(size_t)i] = R[(size_t)i] = 0.2f * (float)std::sin(0.05 * (blk * 512 + i));
+            e.process(L.data(), R.data(), 512);
+            for (float v : L) if (!std::isfinite(v) || std::fabs(v) > 100.0f) finite = false;
+        }
+        CHECK(finite, "600 blocks of random band changes with phase/quality switches: output finite and bounded");
+    }
     printf(fails ? "\n%d FAILED\n" : "\nall passed\n", fails);
     return fails ? 1 : 0;
 }

@@ -297,7 +297,9 @@ private:
 
     void configureLinear()
     {
-        if (phaseMode != 1) { stopWorker(); return; }
+        // the kernel worker must not be building against the convolver while it is re-prepared
+        stopWorker();
+        if (phaseMode != 1) return;
         const int base = linQuality == 0 ? 4096 : linQuality == 1 ? 8192 : linQuality == 2 ? 16384 : 32768;
         int fftN = base;
         if (sr > 50000.0) fftN *= 2;
