@@ -1,0 +1,39 @@
+--- a/distrho/src/DistrhoPluginAU.cpp	2026-10-23 14:59:29.660799623 -0600
++++ b/distrho/src/DistrhoPluginAU.cpp	2026-10-23 14:59:29.662358266 -0600
+@@ -2188,6 +2188,9 @@
+     // AUv2 related fields
+     OSStatus fLastRenderError;
+     PropertyListeners fPropertyListeners;
++   #if DISTRHO_PLUGIN_WANT_LATENCY
++    uint32_t fLastNotifiedLatency = 0;
++   #endif
+     RenderListeners fRenderListeners;
+   #if DISTRHO_PLUGIN_NUM_INPUTS != 0
+     UInt32 fInputConnectionBus;
+@@ -2412,6 +2415,26 @@
+                 notifyPropertyListeners('DPFp', kAudioUnitScope_Global, i);
+             }
+         }
++
++       #if DISTRHO_PLUGIN_WANT_LATENCY
++        // tell the host when the plugin's latency changes (it was only ever answered on query, so hosts never
++        // re-aligned after e.g. a switch to linear phase), the same way output parameter changes are announced
++        const uint32_t latency = fPlugin.getLatency();
++        if (latency != fLastNotifiedLatency)
++        {
++            fLastNotifiedLatency = latency;
++            notifyPropertyListeners(kAudioUnitProperty_Latency, kAudioUnitScope_Global, 0);
++
++            AudioUnitEvent pevent;
++            std::memset(&pevent, 0, sizeof(pevent));
++            pevent.mEventType                       = kAudioUnitEvent_PropertyChange;
++            pevent.mArgument.mProperty.mAudioUnit   = fComponent;
++            pevent.mArgument.mProperty.mPropertyID  = kAudioUnitProperty_Latency;
++            pevent.mArgument.mProperty.mScope       = kAudioUnitScope_Global;
++            pevent.mArgument.mProperty.mElement     = 0;
++            AUEventListenerNotify(NULL, NULL, &pevent);
++        }
++       #endif
+     }
+ 
+     void setLastRenderError(const OSStatus err)
