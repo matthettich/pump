@@ -23,9 +23,11 @@ jobs:
       - name: DSP tests
         run: |
           set -o pipefail
+          # GitHub keeps only 10 annotations per step: report the failing test and the log tail as one annotation each
           make tests 2>&1 | tee tests.log \
-            || { grep -E "^== build|FAIL|not ok|error|Error|Assert|Segmentation|terminate" tests.log | tail -15 | while IFS= read -r l; do echo "::error::$l"; done; \
-                 tail -8 tests.log | while IFS= read -r l; do echo "::error::$l"; done; exit 1; }
+            || { echo "::error::failed in $(grep '^== build' tests.log | tail -1)";
+                 echo "::error::$(grep -E 'FAIL|not ok|Assert|Segmentation|terminate|Aborted' tests.log | tail -12 | sed ':a;N;$!ba;s/\n/%0A/g')";
+                 echo "::error::$(tail -25 tests.log | sed ':a;N;$!ba;s/\n/%0A/g')"; exit 1; }
 
   windows:
     runs-on: ubuntu-24.04
