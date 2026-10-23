@@ -20,6 +20,7 @@ public:
 
     // feeds for the UI (analyzers)
     pump::ScopeRing preRing { 1 << 15 }, postRing { 1 << 15 };
+    pump::MeterValue outPeak[2];   // max-hold since the UI last read it
     Engine engine;
 
     double dynOffset(int band) const { return engine.dynOffset(band); }
@@ -106,7 +107,9 @@ protected:
             audition.set(pv(kAudition) >= 0.5f, pv(kAuditionFreq), pv(kAuditionQ));
             audition.process(l, r, n);
             bypass.apply(l, r, n, pv(kBypass) >= 0.5f);
-            for (int i = 0; i < n; ++i) postRing.push(0.5f * (l[i] + r[i]));
+            float pl = 0.0f, pr = 0.0f;
+            for (int i = 0; i < n; ++i) { postRing.push(0.5f * (l[i] + r[i])); pl = std::max(pl, std::fabs(l[i])); pr = std::max(pr, std::fabs(r[i])); }
+            outPeak[0].setMax(pl); outPeak[1].setMax(pr);
             done += (uint32_t)n;
         }
     }
