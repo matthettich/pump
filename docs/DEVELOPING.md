@@ -35,11 +35,25 @@ plugins/<name>/          one folder per plugin (see plugins/eq for the complete 
   Makefile, pffft.c, fonts.cpp   (copy from plugins/eq; pffft.c goes in FILES_DSP only, fonts.cpp in FILES_UI only)
 tests/test_<name>.cpp    offline tests; `make tests` builds each with -Iplugins/<name>
 tools/shot.sh            headless screenshot of a standalone build
+tools/apply-dpf-patches.sh  applies patches/dpf/*.patch to DPF (run by make; see patches/dpf/README.md)
+patches/dpf/             fixes to DPF that pump carries until they're upstream
+docs/ROADMAP.md          planned work and known issues deferred from audits
 ```
 
 ## Conventions
 
 - Parameter **symbols never change** once released (sessions and presets store them).
+- Parameters are **append-only**: VST3 parameter ids are DPF's indices, so inserting or removing one shifts every
+  later id and breaks automation in saved sessions. An unused parameter stays as a hidden placeholder (the EQ's
+  `audition*` parameters are).
+- Listening and display state (solo, audition, analyzer mode) is flagged `kPNoUndo`: it isn't part of undo, A/B or
+  presets. Things that only last while a key or mouse button is held (Alt-hold solo/audition) don't go through
+  parameters at all: the UI sets atomics on the plugin (direct access), so they're never saved or echoed by hosts.
+- Nothing that allocates, locks, joins threads or builds kernels runs on the audio thread. The EQ's linear-phase
+  convolver is built on its worker thread and swapped in at a block boundary (see `Engine::pollLinear`); old objects
+  are handed back to the worker to be freed.
+- The command modifier is `cmdKey(mod)`: Cmd on macOS (where Ctrl-click means right-click, mapped in `onMouse`),
+  Ctrl elsewhere.
 - Parameters are atomics on the plugin; `run()` calls `takeAnyChanged()` / `takeChanged(i)` and pushes changes to the
   engine at block start. No allocation, locks or file access on the audio thread.
 - Report latency with `setLatency()` (from `run()` when it changes) and keep the bypass path latency-matched
@@ -68,6 +82,9 @@ DISPLAY_NUM=:101 tools/shot.sh bin/pump-eq /tmp/eq.png 1 0 4  # preset 1, light,
 The standalone (`jack`) build runs headless with `PUMP_TEST_AUDIO=/home/claude/testkit/mix.f32` (8 bars of drums,
 bass, pads and a lead with two deliberate resonances, peaking at -6 dBFS). `PUMP_TEST_PRESET=<n>` loads a factory
 preset at startup and `PUMP_TEST_DARK=1` starts dark — both only matter for screenshots.
+
+`make` applies the DPF patches first (also when a plugin is built directly with `make -C plugins/eq`); with a DPF
+that isn't a git checkout (DPF_PATH=...) it uses patch(1).
 
 CI (`.github/workflows/build.yml`) cross-compiles Windows x64 with MinGW (posix threads), builds macOS universal,
 builds Linux, runs `make tests`, and refreshes the `latest` pre-release on every push to main.

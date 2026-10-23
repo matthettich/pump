@@ -22,7 +22,39 @@ enum PFlags : unsigned {
     kPOutput      = 1u << 3,   // read-only meter value for hosts
     kPBypass      = 1u << 4,   // the host bypass parameter
     kPHidden      = 1u << 5,   // not shown to hosts (kept for state)
+    kPNoUndo      = 1u << 6,   // listening/display state (solo, analyzer): not part of undo, A/B or presets
 };
+
+// Locale-independent number parsing: optional sign, digits, '.' or ',' as the decimal point, optional exponent.
+// (strtod follows the host process's locale and also accepts "nan"/"inf", neither of which we want.)
+inline double parseNumber(const char* s, const char** end)
+{
+    const char* p = s;
+    while (*p == ' ') ++p;
+    bool neg = false;
+    if (*p == '+' || *p == '-') { neg = *p == '-'; ++p; }
+    double v = 0.0; bool digits = false;
+    while (*p >= '0' && *p <= '9') { v = v * 10.0 + (*p - '0'); ++p; digits = true; }
+    if ((*p == '.' || *p == ',') && p[1] >= '0' && p[1] <= '9')
+    {
+        ++p;
+        double scale = 0.1;
+        while (*p >= '0' && *p <= '9') { v += (*p - '0') * scale; scale *= 0.1; ++p; digits = true; }
+    }
+    else if ((*p == '.' || *p == ',') && digits) ++p;   // "12." is 12
+    if (!digits) { if (end) *end = s; return 0.0; }
+    if ((*p == 'e' || *p == 'E') && ((p[1] >= '0' && p[1] <= '9') || ((p[1] == '-' || p[1] == '+') && p[2] >= '0' && p[2] <= '9')))
+    {
+        ++p;
+        bool eneg = false;
+        if (*p == '+' || *p == '-') { eneg = *p == '-'; ++p; }
+        int e = 0;
+        while (*p >= '0' && *p <= '9') { if (e < 400) e = e * 10 + (*p - '0'); ++p; }
+        v *= std::pow(10.0, eneg ? -e : e);
+    }
+    if (end) *end = p;
+    return neg ? -v : v;
+}
 
 struct ParamSpec {
     const char* symbol;       // stable id (saved in sessions and presets): never rename
@@ -65,6 +97,7 @@ struct ParamSpec {
     }
     float clamp(float v) const
     {
+        if (!std::isfinite(v)) v = std::isnan(v) ? def : (v > 0 ? max : min);   // never let NaN/inf through
         v = v < min ? min : (v > max ? max : v);
         if (flags & (kPInteger | kPBoolean)) v = std::round(v);
         return v;
@@ -116,6 +149,13 @@ struct ParamSpec {
     // control puts it halfway along its range. Returns false if nothing usable was typed.
     bool parse(const char* text, float& out) const
     {
+        float v = 0.0f;
+        if (!parseRaw(text, v) || !std::isfinite(v)) return false;
+        out = v;
+        return true;
+    }
+    bool parseRaw(const char* text, float& out) const
+    {
         while (*text == ' ') ++text;
         const size_t len = std::strlen(text);
         // note names for frequencies
@@ -133,7 +173,7 @@ struct ParamSpec {
                 if (e != p)
                 {
                     double cents = 0.0;
-                    if (*e == '+' || *e == '-') cents = std::strtod(e, nullptr);
+                    if (*e == '+' || *e == '-') { const char* ce = nullptr; cents = parseNumber(e, &ce); if (ce == e) cents = 0.0; }
                     const double midi = 12.0 * (oct + 1) + s + cents / 100.0;
                     out = clamp((float)(440.0 * std::pow(2.0, (midi - 69.0) / 12.0)));
                     return true;
@@ -143,8 +183,8 @@ struct ParamSpec {
         // "50%" on a control whose unit isn't percent: a position along the range
         if (len >= 2 && text[len - 1] == '%' && unit != PUnit::Percent)
         {
-            char* e = nullptr;
-            const double pc = std::strtod(text, &e);
+            const char* e = nullptr;
+            const double pc = parseNumber(text, &e);
             if (e != text) { out = fromNorm((float)(pc / 100.0)); return true; }
         }
         if (choices)
@@ -162,8 +202,8 @@ struct ParamSpec {
             if (strncasecmp_portable(text, "on", 2) == 0) { out = 1.0f; return true; }
             if (strncasecmp_portable(text, "of", 2) == 0) { out = 0.0f; return true; }
         }
-        char* end = nullptr;
-        double v = std::strtod(text, &end);
+        const char* end = nullptr;
+        double v = parseNumber(text, &end);
         if (end == text) return false;
         while (*end == ' ') ++end;
         if ((*end == 'x' || *end == 'X') && unit == PUnit::dB) v = 20.0 * std::log10(std::max(v, 1e-6));   // "2x" = +6 dB
