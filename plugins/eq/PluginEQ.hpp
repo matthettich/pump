@@ -23,6 +23,12 @@ public:
     pump::MeterValue outPeak[2];   // max-hold since the UI last read it
     Engine engine;
 
+    // Listening driven by the editor's Alt-hold (never host parameters: not saved with the session, not undone,
+    // not touched by host gesture echoes). -1 / false = off.
+    std::atomic<int> soloHold { -1 };
+    std::atomic<bool> auditionOn { false };
+    std::atomic<float> auditionFreq { 1000.0f }, auditionQ { 2.0f };
+
     double dynOffset(int band) const { return engine.dynOffset(band); }
     int latencyNow() const { return engine.latency(); }
 
@@ -36,7 +42,11 @@ protected:
         bypass.prepare(getSampleRate(), 1 << 17, (int)std::max<uint32_t>(getBufferSize(), 8192));
         audition.prepare(getSampleRate());
         syncAll();
-        lastLatency = -1;
+        engine.finishPending();   // a session saved in linear phase: build it now, not on the audio thread later
+        // report latency here: hosts (CLAP especially) read it right after activation
+        lastLatency = engine.latency();
+        setLatency((uint32_t)lastLatency);
+        bypass.setLatency(lastLatency);
     }
     void sampleRateChanged(double) override { activate(); }
 
@@ -48,7 +58,12 @@ protected:
         engine.setAutoGain(pv(kAutoGain) >= 0.5f);
         engine.setDynTimes(pv(kDynAttack), pv(kDynRelease));
         engine.setPhaseMode((int)pv(kPhase), (int)pv(kLinQuality));
-        engine.setSolo((int)pv(kSolo) - 1);
+        syncSolo();
+    }
+    void syncSolo()
+    {
+        const int hold = soloHold.load(std::memory_order_relaxed);
+        engine.setSolo(hold >= 0 ? hold : (int)pv(kSolo) - 1);
     }
     void syncBand(int b)
     {
@@ -84,9 +99,9 @@ protected:
                 engine.setAutoGain(pv(kAutoGain) >= 0.5f);
                 engine.setDynTimes(pv(kDynAttack), pv(kDynRelease));
                 engine.setPhaseMode((int)pv(kPhase), (int)pv(kLinQuality));
-                engine.setSolo((int)pv(kSolo) - 1);
             }
         }
+        syncSolo();   // every block: the editor's Alt-hold solo isn't a parameter
         const int lat = engine.latency();
         if (lat != lastLatency) { setLatency((uint32_t)lat); bypass.setLatency(lat); lastLatency = lat; }
 
@@ -104,11 +119,17 @@ protected:
             bypass.capture(l, r, n);
             for (int i = 0; i < n; ++i) preRing.push(0.5f * (l[i] + r[i]));
             engine.process(l, r, n);
-            audition.set(pv(kAudition) >= 0.5f, pv(kAuditionFreq), pv(kAuditionQ));
+            audition.set(auditionOn.load(std::memory_order_relaxed), auditionFreq.load(std::memory_order_relaxed), auditionQ.load(std::memory_order_relaxed));
             audition.process(l, r, n);
             bypass.apply(l, r, n, pv(kBypass) >= 0.5f);
             float pl = 0.0f, pr = 0.0f;
-            for (int i = 0; i < n; ++i) { postRing.push(0.5f * (l[i] + r[i])); pl = std::max(pl, std::fabs(l[i])); pr = std::max(pr, std::fabs(r[i])); }
+            for (int i = 0; i < n; ++i)
+            {
+                // never hand a non-finite sample to the host (a NaN input, or a state that went bad)
+                if (!std::isfinite(l[i])) l[i] = 0.0f;
+                if (!std::isfinite(r[i])) r[i] = 0.0f;
+                postRing.push(0.5f * (l[i] + r[i])); pl = std::max(pl, std::fabs(l[i])); pr = std::max(pr, std::fabs(r[i]));
+            }
             outPeak[0].setMax(pl); outPeak[1].setMax(pr);
             done += (uint32_t)n;
         }

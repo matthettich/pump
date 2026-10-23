@@ -55,3 +55,48 @@ should say so rather than look empty or wrong.
 
 Make the registry generic (plugin type + feed interface) so the compressor, limiter etc. can join the same list, as
 the does across EQ, compressor, de-esser and gate.
+
+## Known issues deferred from the EQ audit (2026-10-23)
+
+The audit's confirmed bugs were fixed (see the commit "EQ: fixes from a full audit"). These were found too but need
+more design or DPF work; listed roughly by impact.
+
+### DSP
+- **Matched design near Nyquist / infeasible matches** (`common/dsp/Biquad.hpp` `matchedDesign`, `bestDesign`):
+  clamping `B2` keeps DC/Nyquist exact (fixes low cuts at very low Q leaking up to +7 dB at DC), but on its own it
+  makes some +30 dB high shelves at 17–20 kHz much worse (8 → 60+ dB error in a 92k-design sweep), because
+  `sectionError` ignores every point where the analog response is below -30 dB. Needs the clamp *and* a selection
+  metric that penalises output above the floor where the analog is below it, verified with the full sweep.
+- **Bands set above Nyquist** (Frequency goes to 30 kHz at any rate): pole mapping wraps; resonant band pass/high cut
+  at 30 kHz at 48k can boost +16…+50 dB around 14–18 kHz. Fix: a candidate design with the pole frequency clamped
+  below Nyquist (or clamp the design frequency, as `designDetector` does), picked with the improved metric above.
+- **Band order between modes** with mixed L/R and M/S bands differs (linear phase applies all L/R bands, then M/S).
+- **Auto gain ignores stereo placement** (side-only bands change the mono estimate; +1.5 dB with "Wide air").
+- **Solo of a Left/Right/Mid/Side band** plays that band's region of both channels: decide whether it should solo
+  only the band's own channel (EQ does).
+- The dynamic detector in zero latency listens to the band's input in the serial chain (after earlier bands), in
+  linear phase to the plugin input; identical unless other bands overlap the detector region.
+
+### Host integration (mostly DPF)
+- **AU latency changes aren't reported** (DPF AU: "TODO report latency changes"): Logic won't re-align when switching
+  to linear phase until the plugin is re-inserted. Needs a main-thread notification of `kAudioUnitProperty_Latency`.
+- **AU host automation reaches the UI on the render thread** (DPF notifies the UI synchronously from
+  `auSetParameter`); ramped AU parameter events are dropped.
+- **CLAP: UI edits aren't delivered while the host isn't processing** (DPF only drains its UI queue in `process()`;
+  `flush` doesn't, and it never calls `request_flush`).
+- **Sample-accurate automation:** DPF applies VST3 changes at block start/end only, CLAP all at block start, AU
+  ignores offsets. Would need DPF to split `run()` at event offsets.
+- **Hosts ignore the logarithmic hint**, so Frequency and Q automation lanes are linear in VST3/CLAP/AU.
+- **The UI's 300 ms echo filter** can override a legitimate host change made within 300 ms of a UI edit (host undo,
+  touch automation); a history of the values the UI itself sent would let it reject only stale echoes.
+- **UI undo history isn't cleared** when the host recalls a state (plugin UNDO can re-apply the pre-recall settings);
+  state-only changes (A/B COPY, display range) don't mark the host project dirty.
+- **VST3 parameter ids shifted by one** when host programs were removed (2026-10-23): Live sets saved with an earlier
+  build have automation/mappings on the neighbouring parameter (values still restore, by symbol). Decide whether to
+  reserve the old id slot (which would then break sets saved since). From now on parameters are append-only.
+
+### UI
+- Precise trackpad scrolling counts every small event as a full wheel step (accumulate fractional deltas).
+- Ctrl/Cmd-clicking the only selected node doesn't deselect it; the preset name stays in the header after undoing a
+  preset load.
+- `dynOffset`/`latencyNow` are plain reads of audio-thread data (formally a race; display only).

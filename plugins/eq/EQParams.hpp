@@ -12,7 +12,8 @@ constexpr int kNumBands = 24;
 
 enum Global : int {
     kOutGain = 0, kGainScale, kAutoGain, kPhase, kLinQuality, kDynAttack, kDynRelease, kAnalyzer, kSolo, kBypass,
-    kAudition, kAuditionFreq, kAuditionQ,   // Alt-solo: hear only the region under the mouse (UI-driven, hidden)
+    kAudition, kAuditionFreq, kAuditionQ,   // unused placeholders (kept so parameter indices/ids never shift): Alt-hold
+                                            // audition and solo are driven through PluginEQ's atomics instead
     kNumGlobals
 };
 enum BandField : int {
@@ -50,12 +51,12 @@ inline const std::vector<ParamSpec>& params()
     v.push_back({ "lin_quality", "Linear Phase Quality", "Quality", 0, 3, 1, PUnit::None, PScale::Linear, kPInteger, kQualityNames, 1 });
     v.push_back({ "dyn_attack", "Dynamic Attack", "Attack", 0.5f, 200, 10, PUnit::ms, PScale::Log, A, nullptr, 1 });
     v.push_back({ "dyn_release", "Dynamic Release", "Release", 10, 2000, 120, PUnit::ms, PScale::Log, A, nullptr, 1 });
-    v.push_back({ "analyzer", "Analyzer", "Analyzer", 0, 3, 3, PUnit::None, PScale::Linear, kPInteger, kAnalyzerNames, 1 });
-    v.push_back({ "solo", "Solo Band", "Solo", 0, kNumBands, 0, PUnit::None, PScale::Linear, kPInteger, nullptr, 1 });
+    v.push_back({ "analyzer", "Analyzer", "Analyzer", 0, 3, 3, PUnit::None, PScale::Linear, kPInteger | kPNoUndo, kAnalyzerNames, 1 });
+    v.push_back({ "solo", "Solo Band", "Solo", 0, kNumBands, 0, PUnit::None, PScale::Linear, kPInteger | kPNoUndo, nullptr, 1 });
     v.push_back({ "bypass", "Bypass", "Bypass", 0, 1, 0, PUnit::None, PScale::Linear, A | kPBoolean | kPBypass, nullptr, 1 });
-    v.push_back({ "audition", "Audition", "Audition", 0, 1, 0, PUnit::None, PScale::Linear, kPBoolean | kPHidden, nullptr, 1 });
-    v.push_back({ "audition_freq", "Audition Frequency", "Aud Freq", 20, 20000, 1000, PUnit::Hz, PScale::Log, kPHidden, nullptr, 1 });
-    v.push_back({ "audition_q", "Audition Q", "Aud Q", 0.3f, 12, 2, PUnit::None, PScale::Log, kPHidden, nullptr, 1 });
+    v.push_back({ "audition", "Audition", "Audition", 0, 1, 0, PUnit::None, PScale::Linear, kPBoolean | kPHidden | kPNoUndo, nullptr, 1 });
+    v.push_back({ "audition_freq", "Audition Frequency", "Aud Freq", 20, 20000, 1000, PUnit::Hz, PScale::Log, kPHidden | kPNoUndo, nullptr, 1 });
+    v.push_back({ "audition_q", "Audition Q", "Aud Q", 0.3f, 12, 2, PUnit::None, PScale::Log, kPHidden | kPNoUndo, nullptr, 1 });
     for (int b = 0; b < kNumBands; ++b)
     {
         const std::string n = std::to_string(b + 1), p = "b" + n + "_", N = "Band " + n + " ";

@@ -30,6 +30,8 @@ public:
         for (int i = 0; i < n; ++i)
         {
             const float t = (float)fade.next();
+            // fully bypassed means exactly the dry signal (L + (dry - L) * 1 stays NaN if L is NaN)
+            if (t >= 1.0f) { L[i] = dryL[(size_t)i]; R[i] = dryR[(size_t)i]; continue; }
             L[i] += (dryL[(size_t)i] - L[i]) * t;
             R[i] += (dryR[(size_t)i] - R[i]) * t;
         }

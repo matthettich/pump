@@ -45,6 +45,17 @@ struct Rect {
 
 class PumpUI;
 
+// The "command" modifier of standard-style shortcuts: Cmd on macOS (where Ctrl-click means right-click), Ctrl
+// elsewhere (the Windows/Super key also counts there).
+inline bool cmdKey(uint mod)
+{
+   #ifdef __APPLE__
+    return (mod & kModifierSuper) != 0;
+   #else
+    return (mod & (kModifierControl | kModifierSuper)) != 0;
+   #endif
+}
+
 // ---------------------------------------------------------------------------------------------------------------
 // Controls
 
@@ -70,6 +81,7 @@ struct Dial : Control {
     enum Size { Small, Medium, Large } size = Medium;
     bool bipolar = false;     // arc from the centre (gains)
     float dragStartNorm = 0, dragStartY = 0, dragStartX = 0;
+    int dragParam = -1;       // the parameter a drag started on (the control may be re-bound mid-drag)
     void draw(PumpUI& ui) override;
     bool mouseDown(PumpUI& ui, float x, float y, int button, uint mod) override;
     void mouseDrag(PumpUI& ui, float x, float y, uint mod) override;
@@ -86,6 +98,7 @@ struct SliderRow : Control {
     float labelW = 92, valueW = 74;
     bool bipolar = false;
     float dragStartNorm = 0, dragStartX = 0;
+    int dragParam = -1;
     void draw(PumpUI& ui) override;
     bool mouseDown(PumpUI& ui, float x, float y, int button, uint mod) override;
     void mouseDrag(PumpUI& ui, float x, float y, uint mod) override;
@@ -297,27 +310,30 @@ public:
             const std::string now = serialize();
             if (now != fGestureBefore)
             {
-                fUndo.push_back(fGestureBefore);
-                if (fUndo.size() > 200) fUndo.erase(fUndo.begin());
-                fRedo.clear();
+                undoStack().push_back(fGestureBefore);
+                if (undoStack().size() > 200) undoStack().erase(undoStack().begin());
+                redoStack().clear();
             }
         }
     }
-    bool canUndo() const { return !fUndo.empty(); }
-    bool canRedo() const { return !fRedo.empty(); }
+    // each A/B slot has its own history, so undo never carries one slot's settings into the other
+    std::vector<std::string>& undoStack() { return fUndo[fABSel]; }
+    std::vector<std::string>& redoStack() { return fRedo[fABSel]; }
+    bool canUndo() const { return !fUndo[fABSel].empty(); }
+    bool canRedo() const { return !fRedo[fABSel].empty(); }
     void undo()
     {
-        if (fUndo.empty()) return;
-        fRedo.push_back(serialize());
-        const std::string s = fUndo.back(); fUndo.pop_back();
+        if (undoStack().empty()) return;
+        redoStack().push_back(serialize());
+        const std::string s = undoStack().back(); undoStack().pop_back();
         fApplyingHistory = true; deserialize(s); fApplyingHistory = false;
         onPresetApplied(); setStatus("Undo"); repaint();
     }
     void redo()
     {
-        if (fRedo.empty()) return;
-        fUndo.push_back(serialize());
-        const std::string s = fRedo.back(); fRedo.pop_back();
+        if (redoStack().empty()) return;
+        undoStack().push_back(serialize());
+        const std::string s = redoStack().back(); redoStack().pop_back();
         fApplyingHistory = true; deserialize(s); fApplyingHistory = false;
         onPresetApplied(); setStatus("Redo"); repaint();
     }
@@ -568,6 +584,7 @@ public:
         {
             char b[32]; std::snprintf(b, sizeof b, "%.2fk", fValues[(size_t)param] / 1000.0f); fEdit.text = b;
         }
+        fEdit.original = fEdit.text;
         fEdit.selectAll = true;
         repaint();
     }
@@ -589,6 +606,7 @@ protected:
     void parameterChanged(uint32_t index, float value) override
     {
         if (index >= fNum) return;
+        value = fSpecs[index].clamp(value);   // hosts can send anything (CLAP passes raw values; NaN)
         // Hosts (Ableton Live especially) echo our own edits back late, sometimes with older values. Live (VST3,
         // plugins with more than 64 parameters) goes further: when a gesture begins on a parameter it pushes the
         // value *it* believes to the DSP, which can land after our new value and revert it there while this UI
@@ -596,7 +614,9 @@ protected:
         // not accepted but answered: re-send our value so host, DSP and UI agree again.
         if (value != fValues[index] && nowSeconds() - fLocalSet[index] < 0.3)
         {
+            editParameter(index, true);   // VST3 wants every perform-edit inside begin/end
             setParameterValue(index, fValues[index]);
+            editParameter(index, false);
             return;
         }
         fValues[index] = value;
@@ -671,10 +691,16 @@ protected:
     bool onMouse(const MouseEvent& ev) override
     {
         const float x = (float)ev.pos.getX() / fScale, y = (float)ev.pos.getY() / fScale;
+        uint button = ev.button, mod = ev.mod;
+       #ifdef __APPLE__
+        if (button == kMouseButtonLeft && (mod & kModifierControl)) { button = kMouseButtonRight; mod &= ~(uint)kModifierControl; }
+       #endif
         if (ev.press)
         {
-            const bool dbl = (ev.time - fLastClickTime) < 350 && std::fabs(x - fLastClickX) < 4 && std::fabs(y - fLastClickY) < 4 && ev.button == fLastClickButton;
-            fLastClickTime = dbl ? 0 : ev.time; fLastClickX = x; fLastClickY = y; fLastClickButton = ev.button;
+            // a release can get lost (window lost focus/capture mid-drag): end that drag before starting anything
+            finishPointer(x, y);
+            const bool dbl = (ev.time - fLastClickTime) < 350 && std::fabs(x - fLastClickX) < 4 && std::fabs(y - fLastClickY) < 4 && button == fLastClickButton;
+            fLastClickTime = dbl ? 0 : ev.time; fLastClickX = x; fLastClickY = y; fLastClickButton = button;
             // menus first
             if (fMenu.open)
             {
@@ -704,10 +730,10 @@ protected:
             {
                 Control* c = fControls[(size_t)i].get();
                 if (!c->visible || !c->enabled || !c->r.contains(x, y)) continue;
-                const bool reset = (ev.mod & (kModifierControl | kModifierSuper | kModifierAlt)) != 0;
+                const bool reset = cmdKey(mod) || (mod & kModifierAlt) != 0;
                 if (c->param >= 0 && c->wantsTextEntry())
                 {
-                    if (ev.button == kMouseButtonRight || (dbl && ev.button == kMouseButtonLeft))
+                    if (button == kMouseButtonRight || (dbl && button == kMouseButtonLeft))
                     {
                         if (fActive) { fActive->mouseUp(*this, x, y); fActive = nullptr; }
                         std::vector<std::pair<int, Rect>> ring;
@@ -717,18 +743,18 @@ protected:
                         openTextEntry(c->param, c->valueRect(), ring);
                         return true;
                     }
-                    if (reset && ev.button == kMouseButtonLeft)
+                    if (reset && button == kMouseButtonLeft)
                     {
                         setParamGesture(c->param, fSpecs[c->param].def);
                         return true;
                     }
                 }
-                if (c->mouseDown(*this, x, y, (int)ev.button, ev.mod)) { fActive = c; return true; }
+                if (c->mouseDown(*this, x, y, (int)button, mod)) { fActive = c; return true; }
                 return true;
             }
             if (y > kHeaderH && y < H - kFooterH)
             {
-                if (bodyMouseDown(x, y, (int)ev.button, ev.mod, dbl)) { fBodyActive = true; return true; }
+                if (bodyMouseDown(x, y, (int)button, mod, dbl)) { fBodyActive = true; return true; }
             }
             return false;
         }
@@ -737,6 +763,19 @@ protected:
         if (fActive) { fActive->mouseUp(*this, x, y); fActive = nullptr; repaint(); return true; }
         if (fBodyActive) { fBodyActive = false; bodyMouseUp(x, y); repaint(); return true; }
         return false;
+    }
+
+    // End whatever the mouse was doing (drag, hold, audition) as if the button had been released here.
+    void finishPointer(float x, float y)
+    {
+        if (fActive) { Control* c = fActive; fActive = nullptr; c->mouseUp(*this, x, y); }
+        if (fBodyActive) { fBodyActive = false; bodyMouseUp(x, y); }
+        fResizing = false;
+    }
+    void uiFocus(bool focus, DGL_NAMESPACE::CrossingMode mode) override
+    {
+        UI::uiFocus(focus, mode);
+        if (!focus) { finishPointer(fLastClickX, fLastClickY); repaint(); }
     }
 
     bool onMotion(const MotionEvent& ev) override
@@ -772,6 +811,7 @@ protected:
     {
         const float x = (float)ev.pos.getX() / fScale, y = (float)ev.pos.getY() / fScale;
         const float dy = (float)ev.delta.getY();
+        if (dy == 0.0f) return false;   // horizontal wheel / trackpad end-of-gesture: not "down"
         if (fMenu.open)
         {
             const float total = fMenu.itemH * (float)fMenu.items.size() + 8.0f;
@@ -796,12 +836,17 @@ protected:
     {
         if (!fEdit.active)
         {
-            if (!ev.press) return keyRelease(ev.key, ev.mod);
-            const bool cmd = (ev.mod & (kModifierControl | kModifierSuper)) != 0;
             const uint k = ev.key >= 'A' && ev.key <= 'Z' ? ev.key + 32 : ev.key;
+            if (fMenu.open || fHelpOpen)   // a popup is up: keys don't reach the plugin (Esc / ? close it)
+            {
+                if (ev.press && (ev.key == kKeyEscape || (fHelpOpen && (ev.key == '?' || k == '/' || ev.key == kKeyF1))))
+                { fHelpOpen = false; fMenu.open = false; repaint(); }
+                return true;
+            }
+            if (!ev.press) return keyRelease(ev.key, ev.mod);
+            const bool cmd = cmdKey(ev.mod);
             if (cmd && k == 'z') { if (ev.mod & kModifierShift) redo(); else undo(); return true; }
             if (cmd && k == 'y') { redo(); return true; }
-            if (ev.key == kKeyEscape && (fHelpOpen || fMenu.open)) { fHelpOpen = false; fMenu.open = false; repaint(); return true; }
             if (ev.key == '?' || k == '/' || ev.key == kKeyF1) { fHelpOpen = !fHelpOpen; repaint(); return true; }
             return keyPress(ev.key, ev.mod);
         }
@@ -987,7 +1032,7 @@ protected:
         if (!fEdit.active) return;
         fEdit.active = false;
         float v;
-        if (fSpecs[fEdit.param].parse(fEdit.text.c_str(), v)) setParamGesture(fEdit.param, v);
+        if (fEdit.text != fEdit.original && fSpecs[fEdit.param].parse(fEdit.text.c_str(), v)) setParamGesture(fEdit.param, v);
         repaint();
     }
     void tabTextEntry(bool back)
@@ -1009,7 +1054,7 @@ protected:
         char buf[96];
         for (uint32_t i = 0; i < fNum; ++i)
         {
-            if (fSpecs[i].flags & (pump::kPOutput | pump::kPBypass)) continue;
+            if (fSpecs[i].flags & (pump::kPOutput | pump::kPBypass | pump::kPNoUndo)) continue;
             std::snprintf(buf, sizeof buf, "%s=%.9g;", fSpecs[i].symbol, fValues[i]);
             s += buf;
         }
@@ -1024,9 +1069,12 @@ protected:
             const size_t eq = s.find('=', p), sc = s.find(';', p);
             if (eq == std::string::npos || sc == std::string::npos || eq > sc) break;
             const std::string key = s.substr(p, eq - p);
-            const float v = (float)std::atof(s.substr(eq + 1, sc - eq - 1).c_str());
-            for (uint32_t i = 0; i < fNum; ++i)
-                if (key == fSpecs[i].symbol) { setParamGesture((int)i, v); break; }
+            const std::string num = s.substr(eq + 1, sc - eq - 1);
+            const char* end = nullptr;
+            const float v = (float)pump::parseNumber(num.c_str(), &end);   // '.' or ',' whatever the locale
+            if (end != num.c_str())
+                for (uint32_t i = 0; i < fNum; ++i)
+                    if (key == fSpecs[i].symbol) { if (!(fSpecs[i].flags & pump::kPNoUndo)) setParamGesture((int)i, v); break; }
             p = sc + 1;
         }
         endGroup();
@@ -1038,7 +1086,7 @@ protected:
         beginGroup();
         for (uint32_t i = 0; i < fNum; ++i)
         {
-            if (fSpecs[i].flags & (pump::kPOutput | pump::kPBypass)) continue;
+            if (fSpecs[i].flags & (pump::kPOutput | pump::kPBypass | pump::kPNoUndo)) continue;
             float v = fSpecs[i].def;
             for (const auto& pv : pr.values) if (std::strcmp(pv.symbol, fSpecs[i].symbol) == 0) { v = pv.value; break; }
             setParamGesture((int)i, v);
@@ -1057,7 +1105,12 @@ protected:
         setState(fABSel ? "abB" : "abA", fAB[fABSel].c_str());
         fABSel = i;
         setState("abSel", i ? "B" : "A");
-        if (!fAB[i].empty()) deserialize(fAB[i]);
+        if (!fAB[i].empty())
+        {
+            fApplyingHistory = true;   // switching slots is not an undo step
+            deserialize(fAB[i]);
+            fApplyingHistory = false;
+        }
         else { fAB[i] = serialize(); setState(i ? "abB" : "abA", fAB[i].c_str()); }
         onPresetApplied();
         repaint();
@@ -1066,6 +1119,7 @@ protected:
     {
         const int other = 1 - fABSel;
         fAB[other] = serialize();
+        fUndo[other].clear(); fRedo[other].clear();   // its old history no longer applies
         setState(other ? "abB" : "abA", fAB[other].c_str());
         fStatus = std::string("Copied to ") + (other ? "B" : "A");
         repaint();
@@ -1177,8 +1231,8 @@ protected:
     Button* fThemeBtn = nullptr;
     Button* fBypassBtn = nullptr;
     struct { bool open = false; Rect r; std::vector<std::string> items; int current = -1, hover = -1; float itemH = 22, scroll = 0; std::function<void(int)> onPick; } fMenu;
-    struct { bool active = false; int param = -1; Rect r; std::string text; bool selectAll = true; std::vector<std::pair<int, Rect>> ring; } fEdit;
-    std::vector<std::string> fUndo, fRedo;
+    struct { bool active = false; int param = -1; Rect r; std::string text, original; bool selectAll = true; std::vector<std::pair<int, Rect>> ring; } fEdit;
+    std::vector<std::string> fUndo[2], fRedo[2];   // per A/B slot
     std::string fGestureBefore;
     int fGestureDepth = 0;
     bool fApplyingHistory = false;
@@ -1228,18 +1282,20 @@ inline void Dial::draw(PumpUI& ui)
 inline bool Dial::mouseDown(PumpUI& ui, float x, float y, int button, uint)
 {
     if (button != kMouseButtonLeft) return false;
-    dragStartNorm = ui.norm(param); dragStartX = x; dragStartY = y;
-    ui.beginEdit(param);
+    dragParam = param;
+    dragStartNorm = ui.norm(dragParam); dragStartX = x; dragStartY = y;
+    ui.beginEdit(dragParam);
     return true;
 }
 inline void Dial::mouseDrag(PumpUI& ui, float x, float y, uint mod)
 {
+    if (dragParam < 0) return;
     const float sens = (mod & kModifierShift) ? 0.0008f : 0.005f;
     const float d = ((x - dragStartX) - (y - dragStartY)) * sens;
-    ui.setParamNorm(param, dragStartNorm + d);
-    if (mod & kModifierShift) { dragStartNorm = ui.norm(param); dragStartX = x; dragStartY = y; }
+    ui.setParamNorm(dragParam, dragStartNorm + d);
+    if (mod & kModifierShift) { dragStartNorm = ui.norm(dragParam); dragStartX = x; dragStartY = y; }
 }
-inline void Dial::mouseUp(PumpUI& ui, float, float) { ui.endEdit(param); }
+inline void Dial::mouseUp(PumpUI& ui, float, float) { if (dragParam >= 0) ui.endEdit(dragParam); dragParam = -1; }
 inline bool Dial::scroll(PumpUI& ui, float dy, uint mod)
 {
     const ParamSpec& s = ui.spec(param);
@@ -1266,18 +1322,20 @@ inline void SliderRow::draw(PumpUI& ui)
 inline bool SliderRow::mouseDown(PumpUI& ui, float x, float, int button, uint)
 {
     if (button != kMouseButtonLeft) return false;
-    dragStartNorm = ui.norm(param); dragStartX = x;
-    ui.beginEdit(param);
+    dragParam = param;
+    dragStartNorm = ui.norm(dragParam); dragStartX = x;
+    ui.beginEdit(dragParam);
     return true;
 }
 inline void SliderRow::mouseDrag(PumpUI& ui, float x, float, uint mod)
 {
+    if (dragParam < 0) return;
     const float barW = std::max(40.0f, r.w - labelW - valueW - 8.0f);
     const float d = (x - dragStartX) / barW * ((mod & kModifierShift) ? 0.15f : 1.0f);
-    ui.setParamNorm(param, dragStartNorm + d);
-    if (mod & kModifierShift) { dragStartNorm = ui.norm(param); dragStartX = x; }
+    ui.setParamNorm(dragParam, dragStartNorm + d);
+    if (mod & kModifierShift) { dragStartNorm = ui.norm(dragParam); dragStartX = x; }
 }
-inline void SliderRow::mouseUp(PumpUI& ui, float, float) { ui.endEdit(param); }
+inline void SliderRow::mouseUp(PumpUI& ui, float, float) { if (dragParam >= 0) ui.endEdit(dragParam); dragParam = -1; }
 inline bool SliderRow::scroll(PumpUI& ui, float dy, uint mod)
 {
     const ParamSpec& s = ui.spec(param);
@@ -1305,7 +1363,7 @@ inline bool Button::mouseDown(PumpUI& ui, float, float, int button, uint mod)
     if (button != kMouseButtonLeft) return false;
     pressed = true;
     pressTime = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
-    if (onExclusive && (mod & (kModifierControl | kModifierSuper))) { onExclusive(); return true; }
+    if (onExclusive && cmdKey(mod)) { onExclusive(); return true; }
     if (param >= 0) ui.setParamGesture(param, ui.value(param) >= 0.5f ? ui.spec(param).min : ui.spec(param).max);
     else if (onClick) onClick();
     return true;
@@ -1389,9 +1447,9 @@ inline void MenuButton::draw(PumpUI& ui)
     ui.keyBox(r, false, false, nullptr, 3.0f);
     std::string s = textFn ? textFn() : (param >= 0 ? ui.spec(param).format(ui.value(param)) : label);
     const float pad = arrows ? 26.0f : 10.0f;
-    if (!label.empty() && !textFn && param >= 0)
+    if (!label.empty() && param >= 0)
         ui.textAt(r.x + pad, r.cy(), label, PumpUI::kLabel, 10.5f, t.ink2, NanoVG::ALIGN_LEFT | NanoVG::ALIGN_MIDDLE, 1.0f);
-    const float lw = (!label.empty() && !textFn && param >= 0) ? ui.textWidth(label, PumpUI::kLabel, 10.5f, 1.0f) + 8.0f : 0.0f;
+    const float lw = (!label.empty() && param >= 0) ? ui.textWidth(label, PumpUI::kLabel, 10.5f, 1.0f) + 8.0f : 0.0f;
     ui.save();
     ui.scissor(r.x + pad + lw, r.y, r.w - 2 * pad - lw - 12.0f, r.h);
     ui.textAt(r.x + pad + lw, r.cy() + 0.5f, s, PumpUI::kLabel, 12.5f, enabled ? t.ink : t.dim, NanoVG::ALIGN_LEFT | NanoVG::ALIGN_MIDDLE, 0.6f);

@@ -6,7 +6,9 @@
 #include "dsp/FFT.hpp"
 #include "dsp/Dynamics.hpp"
 #include "EQParams.hpp"
+#include <chrono>
 #include <condition_variable>
+#include <memory>
 #include <mutex>
 #include <thread>
 
@@ -31,6 +33,9 @@ struct BandState {
     double offset = 0.0;    // current dynamic gain offset, dB
     bool needFull = true;   // shape/freq/q/slope changed: full design
     double lastGain = 1e9;  // the gain the target was designed for
+    double lastStatic = 1e9;// the static gain (gain scale applied) at the last design
+    double anchor = 1e9;    // the gain the matching points were chosen at (full design)
+    float mix = 0.0f;       // 0..1: fades a band in/out when it's switched on/off (no clicks)
 
     bool active() const { return used && !bypass; }
 };
@@ -62,17 +67,33 @@ class Engine {
 public:
     static constexpr int kBands = kNumBands;
     static constexpr int kChunk = 16;
+    static constexpr int kScratch = 4096;   // linear phase: detector input is processed in pieces of this size
+    static constexpr int kLinBlock = 512;   // convolver partition size
+    static constexpr int kDesignsPerBlock = 4;
 
+    Engine() { wRetire.reserve(8); }
     ~Engine() { stopWorker(); }
 
+    // Not on the audio thread (activate()): allocates, and builds a linear-phase kernel synchronously if needed.
     void prepare(double sampleRate, int maxBlock)
     {
+        stopWorker();   // nothing may build against the old rate while it changes
         sr = sampleRate;
         maxBlk = std::max(1, maxBlock);
-        for (auto& b : bands) { b.hasCur = false; b.needFull = true; for (auto& c : b.st) for (auto& s : c) s.reset(); }
-        outSmooth.setRamp((int)(0.02 * sr)); outSmooth.reset(dbToGain(outGainDb + autoGainDb));
+        fadeStep = (float)(1.0 / std::max(1.0, 0.01 * sr));   // band on/off fades: 10 ms
+        for (auto& b : bands) { resetBand(b); b.mix = b.active() ? 1.0f : 0.0f; b.env = -120.0; }
+        outSmooth.setRamp((int)(0.02 * sr)); outSmooth.reset(dbToGain(outGainDb + (autoGain ? autoGainDb : 0.0)));
         soloDet[0].reset(); soloDet[1].reset(); soloDet2[0].reset(); soloDet2[1].reset();
-        configureLinear();
+        soloFor = -2;   // the solo filter is designed for a sample rate too
+        for (auto& d : detDly) { d.setMaxDelay(1 << 17); d.setDelay(0); }
+        scratchL.assign((size_t)kScratch, 0.0f); scratchR.assign((size_t)kScratch, 0.0f);
+        // whatever the worker had in flight was for the old rate
+        wNext.reset(); wNextReady = false; wPending = false; wReconfPending = false; wKernelTarget.reset();
+        for (auto& c : wRetire) c.reset();
+        wRetire.clear();
+        conv.reset(); convN = 0; phaseMode = 0;
+        if (wantMode == 1) buildLinearNow();
+        startWorker();
     }
 
     // --- settings (call from the audio thread at block start) ---
@@ -80,13 +101,15 @@ public:
     void setBand(int i, bool used, bool bypass, const BandSpec& s, int place, bool dyn, float range, float thresh)
     {
         BandState& b = bands[i];
+        const bool wasActive = b.active();
         const bool shapeChange = s.shape != b.spec.shape || s.freq != b.spec.freq || s.q != b.spec.q || s.slope != b.spec.slope;
         if (shapeChange) b.needFull = true;
         if (b.used != used || b.place != place) b.needFull = true;
-        if (!used || !b.used) { for (auto& c : b.st) for (auto& x : c) x.reset(); b.hasCur = false; }
         b.used = used; b.bypass = bypass; b.spec = s; b.place = place; b.dyn = dyn && shapeHasGain(s.shape);
         b.dynRange = range; b.dynThresh = thresh;
         if (!b.dyn) b.offset = 0.0;
+        // a band switched back on starts from rest (stale filter state would replay as a burst) and fades in
+        if (!wasActive && b.active() && b.mix <= 0.0f) resetBand(b);
         linDirty = true;
         autoDirty = true;
     }
@@ -95,13 +118,31 @@ public:
     void setAutoGain(bool on) { if (on != autoGain) { autoGain = on; autoDirty = true; } }
     void setDynTimes(double atkMs, double relMs) { atkMsV = atkMs; relMsV = relMs; }
     void setSolo(int bandIndex) { solo = bandIndex; }   // -1 none
-    // phase: 0 zero latency, 1 linear; quality 0..3
+    // phase: 0 zero latency, 1 linear; quality 0..3. Switching to linear phase (or to another quality) never
+    // blocks the audio thread: a convolver of the new size is built on the worker and swapped in by process()
+    // a few blocks later, together with the new latency. Until then the current mode keeps running.
     void setPhaseMode(int mode, int quality)
     {
-        if (mode == phaseMode && quality == linQuality) return;
-        phaseMode = mode; linQuality = quality;
-        for (auto& b : bands) { b.needFull = true; b.hasCur = false; b.offset = 0.0; for (auto& c : b.st) for (auto& x : c) x.reset(); }
-        configureLinear();
+        if (mode == wantMode && quality == wantQuality) return;
+        wantMode = mode; wantQuality = quality;
+        if (mode != 1)
+        {
+            if (phaseMode == 1) { phaseMode = 0; resetBandFilters(); }
+            return;
+        }
+        if (phaseMode == 1 && convN == fftFor(quality)) { wantGen = curGen; return; }   // already running at that size
+        ++wantGen;
+    }
+    // Blocking: finish a pending switch to linear phase now. For activate() and offline use, never the audio thread.
+    void finishPending()
+    {
+        if (wantMode != 1 || curGen == wantGen) return;
+        stopWorker();
+        wNext.reset(); wNextReady = false; wReconfPending = false; wPending = false; wKernelTarget.reset();
+        for (auto& c : wRetire) c.reset();
+        wRetire.clear();
+        buildLinearNow();
+        startWorker();
     }
     int latency() const { return phaseMode == 1 ? linLatency : 0; }
 
@@ -114,15 +155,12 @@ public:
 
     void process(float* L, float* R, int n)
     {
+        // a non-finite input sample must never get into filter states, detectors or the FIR history
+        for (int i = 0; i < n; ++i) { if (!std::isfinite(L[i])) L[i] = 0.0f; if (!std::isfinite(R[i])) R[i] = 0.0f; }
         if (autoDirty) { updateAutoGain(); autoDirty = false; }
-        if (phaseMode == 1)
-        {
-            if (linDirty) { requestKernel(); linDirty = false; }
-            conv.process(L, R, n);
-            processDynamicDeltas(L, R, n);
-        }
-        else
-            processZeroLatency(L, R, n);
+        if (wantMode == 1 && curGen != wantGen) pollLinear();
+        if (phaseMode == 1) processLinear(L, R, n);
+        else processZeroLatency(L, R, n);
 
         // solo (audition): replace the output with the selected band's region of the signal
         if (solo >= 0 && solo < kBands && bands[solo].used)
@@ -153,18 +191,45 @@ public:
     }
 
 private:
+    void resetBand(BandState& b)
+    {
+        b.needFull = true; b.hasCur = false; b.offset = 0.0; b.anchor = 1e9; b.lastStatic = 1e9;
+        for (auto& c : b.st) for (auto& x : c) x.reset();
+        for (auto& c : b.detSt) for (auto& x : c) x.reset();
+    }
+    void resetBandFilters() { for (auto& b : bands) { resetBand(b); b.mix = b.active() ? 1.0f : 0.0f; } }
+
     // ----- zero latency -----
-    void designBand(BandState& b, bool full)
+    enum Design { kFast = 0, kAnchor, kFull };
+    // Matching points (bestDesign) are chosen by a full design at the band's static gain (plus the dynamic range
+    // for dynamic bands, where the gain spends its time). A fast redesign reuses them, which is only accurate
+    // near that gain: at 0 dB every choice fits, so a band created flat and then boosted must be re-anchored.
+    double anchorGain(const BandState& b) const { return effGain(b) + (b.dyn ? (double)b.dynRange : 0.0); }
+    void designBand(BandState& b, Design how)
     {
         BandSpec s = b.spec;
         s.gainDb = effGain(b) + b.offset;
         const AnalogBand a = analogPrototype(s, sr);
-        if (full || b.target.n != a.n) b.target.design(a, sr);
+        const int prevN = b.hasCur ? b.cur.n : 0;
+        if (how != kFast || b.target.n != a.n || b.anchor > 1e8)
+        {
+            BandSpec sa = b.spec; sa.gainDb = anchorGain(b);
+            const AnalogBand aa = analogPrototype(sa, sr);
+            if (aa.n == a.n) { b.target.design(aa, sr); if (std::fabs(sa.gainDb - s.gainDb) > 1e-9) b.target.redesignFast(a); }
+            else b.target.design(a, sr);
+            b.anchor = sa.gainDb;
+        }
         else b.target.redesignFast(a);
         b.lastGain = s.gainDb;
-        if (!b.hasCur || b.cur.n != b.target.n) { b.cur = b.target; b.hasCur = true; b.rampLeft = 0; }
+        b.lastStatic = effGain(b);
+        if (!b.hasCur || b.cur.n != b.target.n)
+        {
+            // sections that weren't running hold stale state: start them from rest
+            for (int k = prevN; k < b.target.n; ++k) { b.st[0][k].reset(); b.st[1][k].reset(); }
+            b.cur = b.target; b.hasCur = true; b.rampLeft = 0;
+        }
         else b.rampLeft = 4;
-        if (full) { designDetector(b.spec, sr, b.det, b.detN); }
+        if (how == kFull) { designDetector(b.spec, sr, b.det, b.detN); }
         b.needFull = false;
     }
 
@@ -176,10 +241,9 @@ private:
         --b.rampLeft;
     }
 
-    inline double detectLevel(BandState& b, const float* L, const float* R, int s0, int s1, bool fromDelta = false)
+    // peak level of the band region over [s0, s1) of the detector input, on the band's own channel
+    inline double detectLevel(BandState& b, const float* L, const float* R, int s0, int s1)
     {
-        (void)fromDelta;
-        // peak level of the band region over the chunk, on the band's own channel
         double pk = 0.0;
         for (int i = s0; i < s1; ++i)
         {
@@ -202,10 +266,12 @@ private:
 
     inline void updateDynamic(BandState& b, double levelDb, int samples)
     {
+        if (!std::isfinite(levelDb)) levelDb = -120.0;
         // envelope in dB: attack when rising
         const double ca = std::exp(-samples / (std::max(0.05, atkMsV) * 0.001 * sr));
         const double cr = std::exp(-samples / (std::max(1.0, relMsV) * 0.001 * sr));
         b.env = levelDb + (b.env - levelDb) * (levelDb > b.env ? ca : cr);
+        if (!std::isfinite(b.env)) b.env = -120.0;
         // 2:1 soft-knee law toward the dynamic range
         const double over = b.env - b.dynThresh, knee = 6.0;
         double amt;
@@ -218,24 +284,58 @@ private:
 
     void processZeroLatency(float* L, float* R, int n)
     {
+        // full designs cost ~0.1 ms each: a preset load, A/B or mode switch changes all 24 bands at once, so they
+        // are spread over a few blocks (a band waiting for its turn keeps its old curve, or fades in when new)
+        int budget = kDesignsPerBlock;
         for (int bi = 0; bi < kBands; ++bi)
         {
             BandState& b = bands[bi];
-            if (!b.active()) continue;
-            if (b.needFull || !b.hasCur) designBand(b, true);
-            else if (std::fabs(effGain(b) + b.offset - b.lastGain) > 1e-6) designBand(b, false);
+            const bool on = b.active();
+            if (!on && b.mix <= 0.0f) continue;
+            if (on)
+            {
+                if (b.needFull || !b.hasCur)
+                {
+                    if (budget > 0) { designBand(b, kFull); --budget; }
+                    else if (!b.hasCur) { b.mix = 0.0f; continue; }   // not designed yet: silent this block
+                }
+                else
+                {
+                    const double ag = anchorGain(b), d = std::fabs(ag - b.anchor);
+                    const bool staticMoved = std::fabs(effGain(b) - b.lastStatic) > 1e-6;
+                    // re-anchor when far from the anchor, when leaving a ~0 dB anchor, or once the gain settles
+                    const bool reanchor = d > 1.0 || (std::fabs(b.anchor) < 0.5 && std::fabs(ag) >= 0.5) || (d > 1e-6 && !staticMoved);
+                    if (reanchor && budget > 0) { designBand(b, kAnchor); --budget; }
+                    else if (std::fabs(effGain(b) + b.offset - b.lastGain) > 1e-6) designBand(b, kFast);
+                }
+            }
+            else if (!b.hasCur) { b.mix = 0.0f; continue; }   // nothing running to fade out
             for (int s0 = 0; s0 < n; s0 += kChunk)
             {
                 const int s1 = std::min(n, s0 + kChunk);
-                if (b.dyn)
+                if (on && b.dyn)
                 {
                     updateDynamic(b, detectLevel(b, L, R, s0, s1), s1 - s0);
-                    if (std::fabs(effGain(b) + b.offset - b.lastGain) > 0.01) designBand(b, false);
+                    if (std::fabs(effGain(b) + b.offset - b.lastGain) > 0.01) designBand(b, kFast);
                 }
                 stepCoeffs(b);
+                const float target = on ? 1.0f : 0.0f;
+                if (b.mix == target) { if (on) filterSpan(b, L, R, s0, s1); continue; }   // faded out: passes dry
+                float inL[kChunk], inR[kChunk];
+                for (int i = s0; i < s1; ++i) { inL[i - s0] = L[i]; inR[i - s0] = R[i]; }
                 filterSpan(b, L, R, s0, s1);
+                float m = b.mix;
+                for (int i = s0; i < s1; ++i)
+                {
+                    m = on ? std::min(1.0f, m + fadeStep) : std::max(0.0f, m - fadeStep);
+                    L[i] = inL[i - s0] + (L[i] - inL[i - s0]) * m;
+                    R[i] = inR[i - s0] + (R[i] - inR[i - s0]) * m;
+                }
+                b.mix = m;
             }
             for (auto& c : b.st) for (auto& x : c) x.sanitize();
+            for (auto& c : b.detSt) for (auto& x : c) x.sanitize();
+            if (!on && b.mix <= 0.0f) resetBand(b);   // fully faded out: next time it starts from rest
         }
     }
 
@@ -272,9 +372,30 @@ private:
     }
 
     // ----- linear phase -----
+    int fftFor(int quality) const
+    {
+        int fftN = quality <= 0 ? 4096 : quality == 1 ? 8192 : quality == 2 ? 16384 : 32768;
+        if (sr > 50000.0) fftN *= 2;
+        if (sr > 100000.0) fftN *= 2;
+        return fftN;
+    }
+    void processLinear(float* L, float* R, int n)
+    {
+        if (linDirty) { linDirty = false; requestKernel(); }   // requestKernel re-arms linDirty if it can't hand off now
+        for (int off = 0; off < n; off += kScratch)
+        {
+            const int m = std::min(kScratch, n - off);
+            float* l = L + off; float* r = R + off;
+            // dynamic detectors listen to the input (delayed to line up with the FIR output), as in zero latency
+            // mode: not to the FIR output, which already contains the band's own static boost/cut
+            for (int i = 0; i < m; ++i) { scratchL[(size_t)i] = detDly[0].process(l[i]); scratchR[(size_t)i] = detDly[1].process(r[i]); }
+            conv->process(l, r, m);
+            processDynamicDeltas(l, r, scratchL.data(), scratchR.data(), m);
+        }
+    }
     // Dynamic bands in linear-phase mode: the static curve is in the FIR; the dynamic part is a minimum-phase
     // filter of just the offset (unity when the band is idle), applied after it.
-    void processDynamicDeltas(float* L, float* R, int n)
+    void processDynamicDeltas(float* L, float* R, const float* dL, const float* dR, int n)
     {
         for (int bi = 0; bi < kBands; ++bi)
         {
@@ -284,50 +405,97 @@ private:
             for (int s0 = 0; s0 < n; s0 += kChunk)
             {
                 const int s1 = std::min(n, s0 + kChunk);
-                updateDynamic(b, detectLevel(b, L, R, s0, s1), s1 - s0);
+                updateDynamic(b, detectLevel(b, dL, dR, s0, s1), s1 - s0);
                 BandSpec s = b.spec; s.gainDb = b.offset;
                 const AnalogBand a = analogPrototype(s, sr);
-                if (!b.hasCur || b.target.n != a.n) { b.target.design(a, sr); b.cur = b.target; b.hasCur = true; b.rampLeft = 0; }
+                if (!b.hasCur || b.target.n != a.n || b.anchor != (double)b.dynRange)
+                {
+                    // matching points chosen at the full dynamic range (at 0 dB every choice looks equally good)
+                    BandSpec sa = b.spec; sa.gainDb = b.dynRange;
+                    const AnalogBand aa = analogPrototype(sa, sr);
+                    if (aa.n == a.n) { b.target.design(aa, sr); b.target.redesignFast(a); }
+                    else b.target.design(a, sr);
+                    b.anchor = b.dynRange;
+                    if (!b.hasCur || b.cur.n != b.target.n)
+                    {
+                        const int prevN = b.hasCur ? b.cur.n : 0;
+                        for (int k = prevN; k < b.target.n; ++k) { b.st[0][k].reset(); b.st[1][k].reset(); }
+                        b.cur = b.target; b.hasCur = true; b.rampLeft = 0;
+                    }
+                    else b.rampLeft = 2;
+                }
                 else { b.target.redesignFast(a); b.rampLeft = 2; }
                 stepCoeffs(b);
                 filterSpan(b, L, R, s0, s1);
             }
+            for (auto& c : b.st) for (auto& x : c) x.sanitize();
+            for (auto& c : b.detSt) for (auto& x : c) x.sanitize();
         }
-    }
-
-    void configureLinear()
-    {
-        // the kernel worker must not be building against the convolver while it is re-prepared
-        stopWorker();
-        if (phaseMode != 1) return;
-        const int base = linQuality == 0 ? 4096 : linQuality == 1 ? 8192 : linQuality == 2 ? 16384 : 32768;
-        int fftN = base;
-        if (sr > 50000.0) fftN *= 2;
-        if (sr > 100000.0) fftN *= 2;
-        linFFT = fftN;
-        conv.prepare(512, fftN);
-        linLatency = (fftN / 2 - 1) + conv.latency();
-        startWorker();
-        linDirty = true;
-        // build the first kernel right away (synchronously) so there is no pass-through gap
-        buildKernel(snapshot(), true);
     }
 
     struct Snapshot {
         struct Bd { bool on; BandSpec s; int place; } b[kNumBands];
         double scale;
+        double sr;
     };
     Snapshot snapshot() const
     {
         Snapshot s;
         for (int i = 0; i < kBands; ++i) { s.b[i].on = bands[i].active(); s.b[i].s = bands[i].spec; s.b[i].place = bands[i].place; }
         s.scale = gainScale;
+        s.sr = sr;
         return s;
     }
 
-    void buildKernel(const Snapshot& snap, bool now)
+    void adopt(std::shared_ptr<StereoConvolver> c, int N)
     {
-        const int N = linFFT, half = N / 2;
+        const bool wasLinear = phaseMode == 1;
+        conv = std::move(c);   // conv was empty (handed to the worker) or this isn't the audio thread
+        convN = N; phaseMode = 1;
+        linLatency = (N / 2 - 1) + conv->latency();
+        for (auto& d : detDly) { d.clear(); d.setDelay(linLatency); }
+        if (!wasLinear) resetBandFilters();
+        linDirty = true;   // the kernel was built from the settings at request time
+    }
+    // not on the audio thread
+    void buildLinearNow()
+    {
+        const int N = fftFor(wantQuality);
+        auto c = std::make_shared<StereoConvolver>();
+        c->prepare(kLinBlock, N);
+        buildKernel(*c, N, snapshot(), true);
+        adopt(std::move(c), N);
+        curGen = wReqGen = wantGen;
+    }
+    // audio thread: swap in a convolver the worker finished, or ask for one
+    void pollLinear()
+    {
+        std::unique_lock<std::mutex> lk(wMutex, std::try_to_lock);
+        if (!lk.owns_lock()) return;
+        if (wNextReady && wNextGen == wantGen)
+        {
+            if (conv && wRetire.size() >= wRetire.capacity()) return;   // the worker hasn't freed earlier ones yet
+            if (conv) wRetire.push_back(std::move(conv));                // freed on the worker, never here
+            std::shared_ptr<StereoConvolver> c = std::move(wNext);
+            const int N = wNextN;
+            wNextReady = false;
+            lk.unlock();
+            wCv.notify_one();
+            adopt(std::move(c), N);
+            curGen = wantGen;
+            return;
+        }
+        if (wReqGen != wantGen)
+        {
+            wReqGen = wantGen; wReqN = fftFor(wantQuality); wReqSnap = snapshot(); wReconfPending = true;
+            lk.unlock();
+            wCv.notify_one();
+        }
+    }
+
+    void buildKernel(StereoConvolver& target, int N, const Snapshot& snap, bool now)
+    {
+        const int half = N / 2;
         std::vector<double> HL((size_t)half + 1, 1.0), HR((size_t)half + 1, 1.0), HM((size_t)half + 1, 1.0), HS((size_t)half + 1, 1.0);
         bool ms = false;
         for (int i = 0; i < kBands; ++i)
@@ -335,7 +503,7 @@ private:
             const auto& bd = snap.b[i];
             if (!bd.on) continue;
             BandSpec s = bd.s; s.gainDb = s.gainDb * snap.scale * 0.01;
-            const AnalogBand a = analogPrototype(s, sr);
+            const AnalogBand a = analogPrototype(s, snap.sr);
             std::vector<double>* tgt[2] = { nullptr, nullptr };
             switch (bd.place)
             {
@@ -390,16 +558,16 @@ private:
         make(0, irs[0]); make(3, irs[3]);
         if (cross) { make(1, irs[1]); make(2, irs[2]); }
         const float* p[4] = { irs[0].data(), cross ? irs[1].data() : nullptr, cross ? irs[2].data() : nullptr, irs[3].data() };
-        auto k = conv.makeKernel(p, taps);
-        if (now) conv.setKernelNow(k); else conv.setKernel(k);
+        auto k = target.makeKernel(p, taps);
+        if (now) target.setKernelNow(k); else target.setKernel(k);
     }
 
     void requestKernel()
     {
         std::unique_lock<std::mutex> lk(wMutex, std::try_to_lock);
         if (!lk.owns_lock()) { linDirty = true; return; }
-        wSnap = snapshot();
-        wPending = true;
+        // wKernelTarget is always empty or shares an object that wRetire/conv also hold: never freed here
+        wSnap = snapshot(); wKernelTarget = conv; wKernelN = convN; wPending = true;
         lk.unlock();
         wCv.notify_one();
     }
@@ -411,12 +579,34 @@ private:
             std::unique_lock<std::mutex> lk(wMutex);
             while (!wQuit)
             {
-                wCv.wait(lk, [this] { return wPending || wQuit; });
+                wCv.wait_for(lk, std::chrono::milliseconds(50), [this] { return wQuit || wPending || wReconfPending || !wRetire.empty(); });
                 if (wQuit) break;
-                const Snapshot s = wSnap;
+                // take every job under the lock (the audio thread only ever try-locks it), work without it
+                std::vector<std::shared_ptr<StereoConvolver>> dead;
+                for (auto& c : wRetire) dead.push_back(std::move(c));
+                wRetire.clear();   // keeps its capacity: the audio thread pushes without allocating
+                const bool reconf = wReconfPending; const int rN = wReqN, rGen = wReqGen;
+                Snapshot rs; if (reconf) rs = wReqSnap;
+                wReconfPending = false;
+                const bool kern = wPending; Snapshot ks; if (kern) ks = wSnap;
+                std::shared_ptr<StereoConvolver> target = std::move(wKernelTarget);
+                const int kN = wKernelN;
                 wPending = false;
                 lk.unlock();
-                buildKernel(s, false);
+                dead.clear();   // retired convolvers are freed here
+                if (reconf)
+                {
+                    auto c = std::make_shared<StereoConvolver>();
+                    c->prepare(kLinBlock, rN);
+                    buildKernel(*c, rN, rs, true);
+                    std::shared_ptr<StereoConvolver> stale;
+                    lk.lock();
+                    if (rGen == wReqGen) { stale = std::move(wNext); wNext = std::move(c); wNextN = rN; wNextGen = rGen; wNextReady = true; }
+                    lk.unlock();
+                    // `stale`, or `c` if it's no longer wanted, is freed here
+                }
+                if (kern && target) buildKernel(*target, kN, ks, false);
+                target.reset();
                 lk.lock();
             }
         });
@@ -435,6 +625,7 @@ private:
         BandState& b = bands[solo];
         if (soloFor != solo || soloSpec != b.spec)
         {
+            if (soloFor != solo) { soloDet[0].reset(); soloDet[1].reset(); soloDet2[0].reset(); soloDet2[1].reset(); }
             designDetector(b.spec, sr, soloC, soloN);
             soloFor = solo; soloSpec = b.spec;
         }
@@ -445,6 +636,7 @@ private:
             y = soloDet[1].process(soloC[0], y); y = soloDet2[1].process(soloC[1], y);
             L[i] = (float)x; R[i] = (float)y;
         }
+        soloDet[0].sanitize(); soloDet[1].sanitize(); soloDet2[0].sanitize(); soloDet2[1].sanitize();
     }
 
     // ----- auto gain: compensate the curve's average level over the musically dense range -----
@@ -462,6 +654,7 @@ private:
 
     double sr = 48000.0;
     int maxBlk = 512;
+    float fadeStep = 1.0f / 480.0f;
     BandState bands[kNumBands];
     double gainScale = 100.0, outGainDb = 0.0, autoGainDb = 0.0;
     bool autoGain = false, autoDirty = true;
@@ -472,14 +665,23 @@ private:
     BiquadState soloDet[2], soloDet2[2];
     LinearSmoother outSmooth;
 
-    int phaseMode = 0, linQuality = 1, linFFT = 8192, linLatency = 0;
+    // phase mode: what's running (audio thread) vs. what was asked for
+    int phaseMode = 0, linLatency = 0, convN = 0;
+    int wantMode = 0, wantQuality = 1, wantGen = 0, curGen = 0;
     bool linDirty = true;
-    StereoConvolver conv;
+    std::shared_ptr<StereoConvolver> conv;
+    DelayLine detDly[2];
+    std::vector<float> scratchL, scratchR;
+
+    // worker (kernel builds, convolver builds, frees); everything below is guarded by wMutex
     std::thread wThread;
     std::mutex wMutex;
     std::condition_variable wCv;
-    Snapshot wSnap;
-    bool wPending = false, wQuit = false;
+    bool wQuit = false;
+    bool wPending = false; Snapshot wSnap {}; std::shared_ptr<StereoConvolver> wKernelTarget; int wKernelN = 0;
+    bool wReconfPending = false; int wReqN = 0, wReqGen = 0; Snapshot wReqSnap {};
+    std::shared_ptr<StereoConvolver> wNext; bool wNextReady = false; int wNextN = 0, wNextGen = -1;
+    std::vector<std::shared_ptr<StereoConvolver>> wRetire;
 };
 
 }} // namespace pump::eq
