@@ -9,10 +9,14 @@ PLUGINS := $(patsubst plugins/%/Makefile,%,$(wildcard plugins/*/Makefile))
 
 all: $(PLUGINS)
 
-$(PLUGINS):
+# fixes to DPF that pump carries as patches (patches/dpf/README.md); applied once, before any plugin builds
+dpf-patches:
+	@sh tools/apply-dpf-patches.sh
+
+$(PLUGINS): dpf-patches
 	$(MAKE) -C plugins/$@
 
-jack:
+jack: dpf-patches
 	for p in $(PLUGINS); do $(MAKE) -C plugins/$$p jack || exit 1; done
 
 # --- offline DSP tests (no UI, no plugin framework) ---
@@ -35,4 +39,4 @@ tests: $(TESTS)
 clean:
 	rm -rf bin build
 
-.PHONY: all jack tests clean $(PLUGINS)
+.PHONY: all jack tests clean dpf-patches $(PLUGINS)

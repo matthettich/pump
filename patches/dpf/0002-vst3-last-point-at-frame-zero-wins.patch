@@ -1,0 +1,43 @@
+diff --git a/distrho/src/DistrhoPluginVST3.cpp b/distrho/src/DistrhoPluginVST3.cpp
+index fe10161..24a0678 100644
+--- a/distrho/src/DistrhoPluginVST3.cpp
++++ b/distrho/src/DistrhoPluginVST3.cpp
+@@ -1592,18 +1592,32 @@ public:
+                 }
+                #endif
+ 
+-                if (v3_cpp_obj(queue)->get_point_count(queue) <= 0)
++                const int32_t pcount = v3_cpp_obj(queue)->get_point_count(queue);
++
++                if (pcount <= 0)
+                     continue;
+ 
+-                // if there are any parameter changes at frame 0, handle them here
+-                if (v3_cpp_obj(queue)->get_point(queue, 0, &offset, &normalized) != V3_OK)
+-                    break;
++                // if there are any parameter changes at frame 0, handle them here.
++                // A host may queue several points at frame 0 for one block (Ableton Live sends the value it
++                // believes when a gesture begins, then the value the UI performed); only the last one counts.
++                bool haveFrameZero = false;
++                double frameZero = 0.0;
++
++                for (int32_t j = 0; j < pcount; ++j)
++                {
++                    if (v3_cpp_obj(queue)->get_point(queue, j, &offset, &normalized) != V3_OK)
++                        break;
++                    if (offset != 0)
++                        break;
++                    haveFrameZero = true;
++                    frameZero = normalized;
++                }
+ 
+-                if (offset != 0)
++                if (! haveFrameZero)
+                     continue;
+ 
+                 const uint32_t index = rindex - kVst3InternalParameterCount;
+-                _setNormalizedPluginParameterValue(index, normalized);
++                _setNormalizedPluginParameterValue(index, frameZero);
+             }
+         }
+ 

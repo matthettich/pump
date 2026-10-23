@@ -1,0 +1,14 @@
+diff --git a/distrho/src/DistrhoPluginVST3.cpp b/distrho/src/DistrhoPluginVST3.cpp
+index 7295c89..fe10161 100644
+--- a/distrho/src/DistrhoPluginVST3.cpp
++++ b/distrho/src/DistrhoPluginVST3.cpp
+@@ -2946,6 +2946,9 @@ private:
+         if (fLastKnownLatency != latency)
+         {
+             fLastKnownLatency = latency;
++            // the cached value is what gets normalized: without this the host is sent the constructor's latency
++            // forever, sees no change, and never restarts the component for the new latency
++            fCachedParameterValues[kVst3InternalParameterLatency] = latency;
+ 
+             normalized = plainParameterToNormalized(kVst3InternalParameterLatency,
+                                                     fCachedParameterValues[kVst3InternalParameterLatency]);
