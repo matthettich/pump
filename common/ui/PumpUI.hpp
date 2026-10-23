@@ -589,9 +589,16 @@ protected:
     void parameterChanged(uint32_t index, float value) override
     {
         if (index >= fNum) return;
-        // Hosts (Ableton Live especially) echo our own edits back late, sometimes with older values; ignore echoes
-        // for a parameter this UI changed itself in the last 300 ms so drags don't jitter or snap back.
-        if (value != fValues[index] && nowSeconds() - fLocalSet[index] < 0.3) return;
+        // Hosts (Ableton Live especially) echo our own edits back late, sometimes with older values. Live (VST3,
+        // plugins with more than 64 parameters) goes further: when a gesture begins on a parameter it pushes the
+        // value *it* believes to the DSP, which can land after our new value and revert it there while this UI
+        // still shows the edit. So for a parameter this UI changed itself in the last 300 ms, a differing echo is
+        // not accepted but answered: re-send our value so host, DSP and UI agree again.
+        if (value != fValues[index] && nowSeconds() - fLocalSet[index] < 0.3)
+        {
+            setParameterValue(index, fValues[index]);
+            return;
+        }
         fValues[index] = value;
         onParamChanged((int)index, value);
         repaint();
