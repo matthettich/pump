@@ -1,6 +1,7 @@
 // pump: parameter and preset descriptions shared by every plugin's DSP and UI (no framework dependency).
 #pragma once
 
+#include <algorithm>
 #include <cctype>
 #include <cmath>
 #include <cstdio>
@@ -110,9 +111,42 @@ struct ParamSpec {
         }
     }
 
-    // Parse typed text ("1.2k", "-3", "50%", "4:1", "inf"). Returns false if nothing usable was typed.
+    // Parse typed text, FabFilter style: "1.2k", "-3", "4:1", "inf"; frequencies also as note names ("A4" = 440 Hz,
+    // "C#3+13" = 13 cents above C#3); dB also as a gain factor ("2x" = +6.02 dB); and "50%" on any non-percent
+    // control puts it halfway along its range. Returns false if nothing usable was typed.
     bool parse(const char* text, float& out) const
     {
+        while (*text == ' ') ++text;
+        const size_t len = std::strlen(text);
+        // note names for frequencies
+        if (unit == PUnit::Hz && len >= 2)
+        {
+            static const int semis[7] = { 9, 11, 0, 2, 4, 5, 7 };   // A B C D E F G relative to C
+            const char c = (char)std::toupper((unsigned char)text[0]);
+            if (c >= 'A' && c <= 'G')
+            {
+                const char* p = text + 1;
+                int s = semis[c - 'A'];
+                if (*p == '#') { ++s; ++p; } else if (*p == 'b') { --s; ++p; }
+                char* e = nullptr;
+                const long oct = std::strtol(p, &e, 10);
+                if (e != p)
+                {
+                    double cents = 0.0;
+                    if (*e == '+' || *e == '-') cents = std::strtod(e, nullptr);
+                    const double midi = 12.0 * (oct + 1) + s + cents / 100.0;
+                    out = clamp((float)(440.0 * std::pow(2.0, (midi - 69.0) / 12.0)));
+                    return true;
+                }
+            }
+        }
+        // "50%" on a control whose unit isn't percent: a position along the range
+        if (len >= 2 && text[len - 1] == '%' && unit != PUnit::Percent)
+        {
+            char* e = nullptr;
+            const double pc = std::strtod(text, &e);
+            if (e != text) { out = fromNorm((float)(pc / 100.0)); return true; }
+        }
         if (choices)
         {
             for (int i = 0; i < numChoices(); ++i)
@@ -132,7 +166,8 @@ struct ParamSpec {
         double v = std::strtod(text, &end);
         if (end == text) return false;
         while (*end == ' ') ++end;
-        if (*end == 'k' || *end == 'K') v *= 1000.0;
+        if ((*end == 'x' || *end == 'X') && unit == PUnit::dB) v = 20.0 * std::log10(std::max(v, 1e-6));   // "2x" = +6 dB
+        else if (*end == 'k' || *end == 'K') v *= 1000.0;
         else if (unit == PUnit::ms && (*end == 's' || *end == 'S') && end[1] != 'm') v *= 1000.0;
         out = clamp((float)v);
         return true;

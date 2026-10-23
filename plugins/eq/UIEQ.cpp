@@ -28,6 +28,7 @@ public:
         freqDial = addDial(-1, "FREQ", Dial::Medium);
         gainDial = addDial(-1, "GAIN", Dial::Medium, true);
         qDial = addDial(-1, "Q", Dial::Medium);
+        freqDial->tabGroup = gainDial->tabGroup = qDial->tabGroup = 1;
         slopeMenu = addMenu(-1, "SLOPE");
         placeSeg = addSegmented(-1, { "ST", "L", "R", "M", "S" });
         placeSeg->tip = "Stereo placement: both channels, left, right, mid or side";
@@ -35,12 +36,14 @@ public:
         dynBtn->small = true;
         rangeDial = addDial(-1, "RANGE", Dial::Small, true);
         threshDial = addDial(-1, "THRESH", Dial::Small);
+        rangeDial->tabGroup = threshDial->tabGroup = 2;
         bandBypassBtn = addToggle(-1, "BYPASS");
         bandBypassBtn->small = true;
         soloBtn = addButton("SOLO", [this]() { if (sel >= 0) setParamGesture(kSolo, (int)value(kSolo) == sel + 1 ? 0.0f : (float)(sel + 1)); },
                             [this]() { return sel >= 0 && (int)value(kSolo) == sel + 1; });
         soloBtn->small = true;
-        soloBtn->tip = "Listen to just this band's region";
+        soloBtn->holdMomentary = true;
+        soloBtn->tip = "Hear only this band's region (click = latch, click-and-hold = while held; Alt-hold a node does the same)";
         delBtn = addButton("DELETE", [this]() { if (sel >= 0) deleteBand(sel); });
         delBtn->small = true;
 
@@ -169,8 +172,24 @@ protected:
     void select(int b)
     {
         sel = b;
+        if (b >= 0 && !selMask[b]) { for (bool& m : selMask) m = false; selMask[b] = true; }
         rebind();
         repaint();
+    }
+    void selectOnly(int b)
+    {
+        for (bool& m : selMask) m = false;
+        if (b >= 0) selMask[b] = true;
+        sel = b;
+        rebind();
+        repaint();
+    }
+    std::vector<int> selectedBands() const
+    {
+        std::vector<int> v;
+        for (int b = 0; b < kNumBands; ++b) if (selMask[b] && bandUsed(b)) v.push_back(b);
+        if (v.empty() && sel >= 0 && bandUsed(sel)) v.push_back(sel);
+        return v;
     }
     void rebind()
     {
@@ -198,7 +217,7 @@ protected:
 
     int freeBand() const { for (int b = 0; b < kNumBands; ++b) if (!bandUsed(b)) return b; return -1; }
 
-    int createBand(double f, float gainDb)
+    int createBand(double f, float gainDb, bool dynamic = false)
     {
         const int b = freeBand();
         if (b < 0) { setStatus("All 24 bands are in use"); return -1; }
@@ -210,16 +229,17 @@ protected:
         else if (f > 9000.0) { shape = 2; q = 0.707f; }
         auto set = [&](int field, float v) { setParamGesture(bandParam(b, field), v); };
         set(kShape, (float)shape); set(kFreq, (float)f); set(kGain, std::round(g * 10.0f) / 10.0f); set(kQ, q);
-        set(kSlope, (float)slope); set(kPlace, 0); set(kDyn, 0); set(kBandBypass, 0);
+        set(kSlope, (float)slope); set(kPlace, 0); set(kDyn, dynamic && shape <= 2 ? 1.0f : 0.0f); set(kBandBypass, 0);
         set(kDynRange, -6.0f); set(kDynThresh, -30.0f);
         set(kUsed, 1.0f);
-        select(b);
+        selectOnly(b);
         return b;
     }
     void deleteBand(int b)
     {
         if ((int)value(kSolo) == b + 1) setParamGesture(kSolo, 0);
         setParamGesture(bandParam(b, kUsed), 0.0f);
+        selMask[b] = false;
         if (sel == b) { sel = -1; for (int k = 0; k < kNumBands; ++k) if (bandUsed(k)) { sel = k; break; } }
         rebind();
     }
@@ -314,6 +334,7 @@ protected:
                 strokeColor(withAlpha2(c, 0.9f)); strokeWidth(1.2f); stroke();
             }
         }
+        for (int p = 0; p < NP; ++p) { curveX[p] = xs[p]; curveDb[p] = (float)total[p]; }
         // the combined curve
         if (theme.dark)
         {
@@ -329,8 +350,8 @@ protected:
         {
             if (!bandUsed(b)) continue;
             float x, y; nodePos(b, x, y);
-            const bool isSel = b == sel, byp = bandBypassed(b), hov = b == hover;
-            const float rr = isSel ? 9.0f : 8.0f;
+            const bool isSel = b == sel || selMask[b], byp = bandBypassed(b), hov = b == hover;
+            const float rr = b == sel ? 9.0f : 8.0f;
             beginPath(); circle(x + 2.0f, y + 2.0f, rr); fillColor(theme.dim); fill();
             beginPath(); circle(x, y, rr);
             fillColor(byp ? theme.bg : (isSel ? theme.neon : (hov ? theme.panel2 : theme.bg)));
@@ -370,8 +391,34 @@ protected:
             fillRect(tb, theme.ink);
             textAt(tb.cx(), tb.cy(), s, kMono, 11.0f, theme.on, ALIGN_CENTER | ALIGN_MIDDLE);
         }
-        else if (sel < 0)
+        else if (sel < 0 && dmode == dmNone)
+        {
             textAt(display.cx(), display.cy() - 40, "DOUBLE-CLICK TO ADD A BAND", kLabel, 14.0f, theme.ink2, ALIGN_CENTER | ALIGN_MIDDLE, 2.0f);
+            textAt(display.cx(), display.cy() - 18, "HOLD ALT AND DRAG TO LISTEN TO A FREQUENCY RANGE", kLabel, 11.0f, theme.ink2, ALIGN_CENTER | ALIGN_MIDDLE, 1.5f);
+        }
+        if (dmode == dmRect)
+        {
+            const Rect rr(std::min(pressX, curX), std::min(pressY, curY), std::fabs(curX - pressX), std::fabs(curY - pressY));
+            fillRect(rr, withAlpha2(theme.ink, 0.06f));
+            strokeRect(rr, theme.ink2, 1.0f);
+        }
+        if (dmode == dmAudition || dmode == dmSoloHold)
+        {
+            double f, q;
+            std::string label;
+            if (dmode == dmAudition) { f = value(kAuditionFreq); q = value(kAuditionQ); label = "LISTEN  " + spec(kAuditionFreq).format((float)f); }
+            else { f = bandFreq(soloBand); q = std::max(0.3f, bandQ(soloBand)); label = "SOLO BAND " + std::to_string(soloBand + 1); }
+            const double half = std::asinh(1.0 / (2.0 * q)) / std::log(2.0);   // half bandwidth in octaves
+            const float x0 = xOfF(f * std::pow(2.0, -half)), x1 = xOfF(f * std::pow(2.0, half));
+            fillRect(Rect(display.x, display.y, std::max(0.0f, x0 - display.x), display.h), withAlpha2(theme.bg, 0.55f));
+            fillRect(Rect(x1, display.y, std::max(0.0f, display.r() - x1), display.h), withAlpha2(theme.bg, 0.55f));
+            line(x0, display.y, x0, display.b(), theme.second, 1.5f);
+            line(x1, display.y, x1, display.b(), theme.second, 1.5f);
+            const float tw = textWidth(label, kLabel, 12.0f, 1.0f) + 16.0f;
+            const Rect lb(std::max(display.x + 6, std::min(display.r() - tw - 6, xOfF(f) - tw * 0.5f)), display.y + 10, tw, 22);
+            fillRect(lb, theme.second);
+            textAt(lb.cx(), lb.cy(), label, kLabel, 12.0f, theme.bg, ALIGN_CENTER | ALIGN_MIDDLE, 1.0f);
+        }
         restore();
 
         // bottom panels
@@ -402,99 +449,336 @@ protected:
     }
 
     // ---------------------------------------------------------------- mouse on the display
+    // FabFilter Pro-Q conventions, plus Ozone's Alt-solo:
+    //   double-click / Ctrl-click empty: new band (Alt + double-click: a dynamic band); drag the curve: new band
+    //   drag a node: frequency + gain of all selected bands; Shift: fine; Alt while dragging: lock to one axis;
+    //   Ctrl/Cmd + vertical drag: Q; wheel: Q (cuts: slope), Ctrl/Cmd + wheel: gain, Alt + wheel: dynamic range
+    //   Alt + click-and-hold a node: solo that band while held; Alt + hold empty space: listen to the region
+    //   under the mouse (drag to sweep, wheel for width)
+    //   Ctrl/Cmd + click a node: add to selection; Shift + click: select a range; drag empty space: select
+    //   Ctrl/Cmd + Alt + click a node: next shape; Alt + Shift + click: next slope; double-click a node: type values
+    enum DragMode { dmNone = 0, dmNodes, dmRect, dmAudition, dmSoloHold, dmPending };
+
+    bool nearCurve(float x, float y) const
+    {
+        for (int p = 0; p < kCurvePts - 1; ++p)
+            if (x >= curveX[p] && x <= curveX[p + 1])
+            {
+                const float t = (x - curveX[p]) / std::max(1e-3f, curveX[p + 1] - curveX[p]);
+                const float yc = yOfDb(curveDb[p] + (curveDb[p + 1] - curveDb[p]) * t);
+                return std::fabs(yc - y) < 7.0f;
+            }
+        return false;
+    }
+
+    void startNodeDrag(float x, float y)
+    {
+        dragSet = selectedBands();
+        for (int b : dragSet) { orig[b][0] = bandFreq(b); orig[b][1] = bandGain(b); orig[b][2] = bandQ(b); }
+        beginGroup();
+        for (int b : dragSet) { beginEdit(bandParam(b, kFreq)); beginEdit(bandParam(b, kGain)); beginEdit(bandParam(b, kQ)); }
+        dmode = dmNodes;
+        pressX = lastX = x; pressY = lastY = y;
+        effX = effY = 0.0f;
+        axis = 0;
+        dragBand = sel;
+    }
+
     bool bodyMouseDown(float x, float y, int button, uint mod, bool dbl) override
     {
         if (!display.contains(x, y)) return false;
+        const bool alt = (mod & kModifierAlt) != 0, cmd = (mod & (kModifierControl | kModifierSuper)) != 0, shift = (mod & kModifierShift) != 0;
         const int b = nodeAt(x, y);
+        pressX = curX = x; pressY = curY = y;
         if (button == kMouseButtonRight)
         {
-            if (b >= 0) { select(b); bandMenu(b, x, y); }
+            if (b >= 0) { if (!selMask[b]) selectOnly(b); else { sel = b; rebind(); } bandMenu(b, x, y); }
+            else backgroundMenu(x, y);
             return false;
         }
+        if (button != kMouseButtonLeft) return false;
+        const double scale = std::max(0.05f, std::fabs(value(kGainScale) * 0.01f));
         if (b >= 0)
         {
-            if (dbl) { setParamGesture(bandParam(b, kBandBypass), bandBypassed(b) ? 0.0f : 1.0f); return false; }
-            if (mod & (kModifierControl | kModifierSuper)) { deleteBand(b); return false; }
-            select(b);
-            dragBand = b;
-            dragX = x; dragY = y;
-            dragF = bandFreq(b); dragG = bandGain(b); dragQ = bandQ(b);
-            dragQMode = (mod & kModifierAlt) != 0;
-            beginEdit(bandParam(b, kFreq)); beginEdit(bandParam(b, kGain)); beginEdit(bandParam(b, kQ));
-            return true;
-        }
-        if (dbl)
-        {
-            const double scale = std::max(0.05f, std::fabs(value(kGainScale) * 0.01f));
-            const int nb = createBand(fOfX(x), dbOfY(y) / (float)scale);
-            if (nb >= 0)
+            if (alt && cmd) { cycleShape(b); return false; }
+            if (alt && shift) { cycleSlope(b); return false; }
+            if (alt)
             {
-                dragBand = nb; dragX = x; dragY = y; dragF = bandFreq(nb); dragG = bandGain(nb); dragQ = bandQ(nb); dragQMode = false;
-                beginEdit(bandParam(nb, kFreq)); beginEdit(bandParam(nb, kGain)); beginEdit(bandParam(nb, kQ));
+                // Ozone Alt-solo on a node: hear this band's region while the button is held
+                prevSolo = (int)value(kSolo);
+                soloBand = b;
+                setParam(kSolo, (float)(b + 1));
+                dmode = dmSoloHold;
                 return true;
             }
+            if (cmd) { selMask[b] = !selMask[b]; sel = selMask[b] ? b : (selectedBands().empty() ? -1 : selectedBands().front()); rebind(); return false; }
+            if (shift && sel >= 0)
+            {
+                const double f0 = std::min(bandFreq(sel), bandFreq(b)), f1 = std::max(bandFreq(sel), bandFreq(b));
+                for (int k = 0; k < kNumBands; ++k) if (bandUsed(k) && bandFreq(k) >= f0 && bandFreq(k) <= f1) selMask[k] = true;
+                sel = b; rebind();
+                return false;
+            }
+            if (dbl) { selectOnly(b); openNodeEntry(b); return false; }
+            if (!selMask[b]) selectOnly(b);
+            else { sel = b; rebind(); }
+            startNodeDrag(x, y);
+            return true;
+        }
+        // empty space
+        if (alt && !dbl)
+        {
+            dmode = dmAudition;
+            setParam(kAuditionFreq, (float)fOfX(x));
+            setParam(kAudition, 1.0f);
+            return true;
+        }
+        if (dbl || cmd)
+        {
+            const int nb = createBand(fOfX(x), dbOfY(y) / (float)scale, alt);
+            if (nb >= 0) { startNodeDrag(x, y); return true; }
             return false;
         }
-        select(-1);
-        return false;
+        if (nearCurve(x, y)) { dmode = dmPending; return true; }
+        dmode = dmRect;
+        return true;
     }
+
     void bodyMouseDrag(float x, float y, uint mod) override
     {
-        if (dragBand < 0) return;
-        const int b = dragBand;
+        curX = x; curY = y;
+        const bool alt = (mod & kModifierAlt) != 0, cmd = (mod & (kModifierControl | kModifierSuper)) != 0;
         const float fine = (mod & kModifierShift) ? 0.15f : 1.0f;
-        if (dragQMode)
+        switch (dmode)
         {
-            const float q = dragQ * std::pow(2.0f, -(y - dragY) / 60.0f * fine);
-            setParam(bandParam(b, kQ), q);
+        case dmAudition:
+            setParam(kAuditionFreq, (float)fOfX(std::max(display.x, std::min(display.r(), x))));
+            setStatus("Listening around " + spec(kAuditionFreq).format(value(kAuditionFreq)) + "  (wheel: width)");
+            return;
+        case dmPending:
+            if (std::fabs(x - pressX) + std::fabs(y - pressY) > 4.0f)
+            {
+                const double scale = std::max(0.05f, std::fabs(value(kGainScale) * 0.01f));
+                const int nb = createBand(fOfX(pressX), dbOfY(pressY) / (float)scale);
+                if (nb >= 0) { startNodeDrag(pressX, pressY); bodyMouseDrag(x, y, mod); }
+                else dmode = dmNone;
+            }
+            return;
+        case dmNodes: {
+            effX += (x - lastX) * fine;
+            effY += (y - lastY) * fine;
+            lastX = x; lastY = y;
+            float dx = effX, dy = effY;
+            if (alt)   // lock to the dominant axis (Pro-Q)
+            {
+                if (axis == 0 && std::fabs(dx) + std::fabs(dy) > 6.0f) axis = std::fabs(dx) >= std::fabs(dy) ? 1 : 2;
+                if (axis == 1) dy = 0.0f; else if (axis == 2) dx = 0.0f;
+            }
+            else axis = 0;
+            const double scale = std::max(0.05f, std::fabs(value(kGainScale) * 0.01f));
+            for (int b : dragSet)
+            {
+                setParam(bandParam(b, kFreq), (float)(orig[b][0] * std::pow(kHi / kLo, (double)(dx / display.w))));
+                if (cmd || !pump::shapeHasGain(bandShape(b)))
+                    setParam(bandParam(b, kQ), orig[b][2] * std::pow(2.0f, -dy / 60.0f));
+                else
+                    setParam(bandParam(b, kGain), orig[b][1] - dy / (display.h * 0.5f - 14.0f) * dbRange / (float)scale);
+            }
+            if (dragBand >= 0) setStatus(bandReadout(dragBand));
             return;
         }
-        // frequency from x (log), gain from y; Shift = fine
-        const double f = dragF * std::pow(kHi / kLo, (double)((x - dragX) / display.w * fine));
-        setParam(bandParam(b, kFreq), (float)f);
-        if (pump::shapeHasGain(bandShape(b)))
-        {
-            const double scale = std::max(0.05f, std::fabs(value(kGainScale) * 0.01f));
-            setParam(bandParam(b, kGain), dragG + (dbOfY(y) - dbOfY(dragY)) * fine / (float)scale);
+        default:
+            return;
         }
-        else
-        {
-            const float q = dragQ * std::pow(2.0f, -(y - dragY) / 60.0f * fine);
-            setParam(bandParam(b, kQ), q);
-        }
-        if (mod & kModifierShift) { dragX = x; dragY = y; dragF = bandFreq(b); dragG = bandGain(b); dragQ = bandQ(b); }
     }
-    void bodyMouseUp(float, float) override
+
+    void bodyMouseUp(float x, float y) override
     {
-        if (dragBand >= 0)
+        switch (dmode)
         {
-            endEdit(bandParam(dragBand, kFreq)); endEdit(bandParam(dragBand, kGain)); endEdit(bandParam(dragBand, kQ));
+        case dmNodes:
+            for (int b : dragSet) { endEdit(bandParam(b, kFreq)); endEdit(bandParam(b, kGain)); endEdit(bandParam(b, kQ)); }
+            endGroup();
+            break;
+        case dmSoloHold:
+            setParam(kSolo, (float)prevSolo);
+            break;
+        case dmAudition:
+            setParam(kAudition, 0.0f);
+            break;
+        case dmRect: {
+            const Rect rr(std::min(pressX, x), std::min(pressY, y), std::fabs(x - pressX), std::fabs(y - pressY));
+            if (rr.w < 4 && rr.h < 4) { selectOnly(-1); break; }
+            for (bool& m : selMask) m = false;
+            sel = -1;
+            for (int b = 0; b < kNumBands; ++b)
+            {
+                if (!bandUsed(b)) continue;
+                float nx, ny; nodePos(b, nx, ny);
+                if (rr.contains(nx, ny)) { selMask[b] = true; if (sel < 0) sel = b; }
+            }
+            rebind();
+            break;
         }
+        case dmPending:
+            selectOnly(-1);
+            break;
+        default: break;
+        }
+        dmode = dmNone;
         dragBand = -1;
+        dragSet.clear();
     }
+
     void bodyHover(float x, float y) override
     {
         hover = display.contains(x, y) ? nodeAt(x, y) : -1;
-        if (hover >= 0) setStatus("Band " + std::to_string(hover + 1) + ": drag to move, Alt-drag or wheel for Q, double-click to bypass, right-click for options");
+        if (hover >= 0) setStatus(bandReadout(hover) + "    drag · Alt-hold: solo · wheel: Q · double-click: type · right-click: menu");
         else if (display.contains(x, y))
         {
-            char buf[64]; std::snprintf(buf, sizeof buf, "%s   %+.1f dB", spec(bandParam(0, kFreq)).format((float)fOfX(x)).c_str(), dbOfY(y));
+            char buf[160];
+            std::snprintf(buf, sizeof buf, "%s  %+.1f dB    double-click: add band · Alt-hold: listen · drag: select", spec(kAuditionFreq).format((float)fOfX(x)).c_str(), dbOfY(y));
             setStatus(buf);
         }
     }
+
     bool bodyScroll(float x, float y, float dy, uint mod) override
     {
-        const int b = nodeAt(x, y);
+        if (dmode == dmAudition)
+        {
+            setParam(kAuditionQ, value(kAuditionQ) * std::pow(2.0f, dy > 0 ? 0.2f : -0.2f));
+            char b[48]; std::snprintf(b, sizeof b, "Listen width: Q %.2f", value(kAuditionQ)); setStatus(b);
+            return true;
+        }
+        int b = nodeAt(x, y);
+        if (b < 0 && sel >= 0 && bandUsed(sel) && std::fabs(x - xOfF(bandFreq(sel))) < 30.0f) b = sel;
         if (b < 0) return false;
-        const float k = (mod & kModifierShift) ? 0.02f : 0.1f;
-        setParamGesture(bandParam(b, kQ), bandQ(b) * std::pow(2.0f, dy > 0 ? k * 4 : -k * 4));
-        setStatus(paramStatus(bandParam(b, kQ)));
+        const bool alt = (mod & kModifierAlt) != 0, cmd = (mod & (kModifierControl | kModifierSuper)) != 0, shift = (mod & kModifierShift) != 0;
+        const float dir = dy > 0 ? 1.0f : -1.0f;
+        const pump::Shape sh = bandShape(b);
+        if (alt && bandDyn(b)) setParamGesture(bandParam(b, kDynRange), value(bandParam(b, kDynRange)) + dir * (shift ? 0.1f : 0.5f));
+        else if (cmd && pump::shapeHasGain(sh)) setParamGesture(bandParam(b, kGain), bandGain(b) + dir * (shift ? 0.1f : 0.5f));
+        else if ((sh == pump::Shape::LowCut || sh == pump::Shape::HighCut) && !shift)
+            setParamGesture(bandParam(b, kSlope), value(bandParam(b, kSlope)) + dir);
+        else setParamGesture(bandParam(b, kQ), bandQ(b) * std::pow(2.0f, dir * (shift ? 0.02f : 0.1f)));
+        setStatus(bandReadout(b));
         return true;
     }
-    bool keyPress(uint key, uint) override
+
+    std::string bandReadout(int b) const
     {
-        if ((key == kKeyDelete || key == kKeyBackspace) && sel >= 0) { deleteBand(sel); return true; }
+        std::string s = "Band " + std::to_string(b + 1) + "  " + kShapeNames[(int)bandShape(b)] + "  " + spec(bandParam(b, kFreq)).format(bandFreq(b));
+        if (pump::shapeHasGain(bandShape(b))) s += "  " + spec(bandParam(b, kGain)).format(bandGain(b));
+        char q[32]; std::snprintf(q, sizeof q, "  Q %.2f", bandQ(b)); s += q;
+        if (pump::shapeHasSlope(bandShape(b)) && !pump::shapeHasGain(bandShape(b))) s += std::string("  ") + kSlopeNames[pump::clampv((int)value(bandParam(b, kSlope)), 0, 8)];
+        return s;
+    }
+
+    void openNodeEntry(int b)
+    {
+        float nx, ny; nodePos(b, nx, ny);
+        const Rect r(std::max(display.x + 4, std::min(display.r() - 104, nx - 50)), ny < display.y + 50 ? ny + 16 : ny - 38, 100, 22);
+        std::vector<std::pair<int, Rect>> ring = { { bandParam(b, kFreq), r } };
+        if (pump::shapeHasGain(bandShape(b))) ring.push_back({ bandParam(b, kGain), r });
+        ring.push_back({ bandParam(b, kQ), r });
+        openTextEntry(bandParam(b, kFreq), r, ring);
+        setStatus("Type a value (1k, A4, C#3+13); Tab: next field (frequency, gain, Q); Enter: done");
+    }
+
+    void cycleShape(int b)
+    {
+        static const int order[] = { 0, 1, 2, 7, 3, 4, 5, 6 };
+        int k = 0; for (int i = 0; i < 8; ++i) if (order[i] == (int)bandShape(b)) k = i;
+        setParamGesture(bandParam(b, kShape), (float)order[(k + 1) % 8]);
+        setStatus(bandReadout(b));
+        rebind();
+    }
+    void cycleSlope(int b)
+    {
+        const pump::Shape sh = bandShape(b);
+        int v = (int)value(bandParam(b, kSlope));
+        if (sh == pump::Shape::LowShelf || sh == pump::Shape::HighShelf || sh == pump::Shape::TiltShelf) v = v <= 0 ? 1 : (v <= 1 ? 3 : 0);   // 6 -> 12 -> 24 dB/oct
+        else v = (v + 1) % 9;
+        setParamGesture(bandParam(b, kSlope), (float)v);
+        setStatus(bandReadout(b));
+    }
+
+    // copy/paste (Pro-Q): band settings, shared between instances in this process
+    static std::vector<std::vector<float>>& clip() { static std::vector<std::vector<float>> c; return c; }
+    void copyBands(const std::vector<int>& bands)
+    {
+        clip().clear();
+        for (int b : bands) { std::vector<float> v; for (int f = 0; f < kBandStride; ++f) v.push_back(value(bandParam(b, f))); clip().push_back(v); }
+        setStatus("Copied " + std::to_string(bands.size()) + (bands.size() == 1 ? " band" : " bands"));
+    }
+    void pasteBands()
+    {
+        if (clip().empty()) { setStatus("Nothing copied yet"); return; }
+        beginGroup();
+        for (bool& m : selMask) m = false;
+        int last = -1;
+        for (const auto& v : clip())
+        {
+            const int b = freeBand();
+            if (b < 0) break;
+            for (int f = 0; f < kBandStride; ++f) if (f != kUsed) setParamGesture(bandParam(b, f), v[(size_t)f]);
+            setParamGesture(bandParam(b, kUsed), 1.0f);
+            selMask[b] = true; last = b;
+        }
+        endGroup();
+        sel = last; rebind();
+        setStatus("Pasted");
+    }
+    void deleteSelected()
+    {
+        const auto v = selectedBands();
+        if (v.empty()) return;
+        beginGroup();
+        for (int b : v) deleteBand(b);
+        endGroup();
+    }
+
+    bool keyPress(uint key, uint mod) override
+    {
+        const bool cmd = (mod & (kModifierControl | kModifierSuper)) != 0;
+        const uint k = key >= 'A' && key <= 'Z' ? key + 32 : key;
+        if (key == kKeyDelete || key == kKeyBackspace) { deleteSelected(); return true; }
+        if (cmd && k == 'a') { for (int b = 0; b < kNumBands; ++b) selMask[b] = bandUsed(b); if (sel < 0) for (int b = 0; b < kNumBands; ++b) if (bandUsed(b)) { sel = b; break; } rebind(); repaint(); return true; }
+        if (cmd && k == 'c') { copyBands(selectedBands()); return true; }
+        if (cmd && k == 'v') { pasteBands(); return true; }
+        if (cmd && k == 'd') { copyBands(selectedBands()); pasteBands(); return true; }
+        if (!cmd && k == 'b') { beginGroup(); for (int b : selectedBands()) setParamGesture(bandParam(b, kBandBypass), bandBypassed(b) ? 0.0f : 1.0f); endGroup(); return true; }
+        if (key == kKeyEscape) { selectOnly(-1); return true; }
+        if (key == kKeyLeft || key == kKeyRight)
+        {
+            // previous/next band by frequency
+            std::vector<int> v; for (int b = 0; b < kNumBands; ++b) if (bandUsed(b)) v.push_back(b);
+            if (v.empty()) return true;
+            std::sort(v.begin(), v.end(), [this](int a, int b) { return bandFreq(a) < bandFreq(b); });
+            int i = 0; for (size_t j = 0; j < v.size(); ++j) if (v[j] == sel) i = (int)j;
+            i = key == kKeyLeft ? (i + (int)v.size() - 1) % (int)v.size() : (i + 1) % (int)v.size();
+            selectOnly(v[(size_t)i]);
+            return true;
+        }
         return false;
+    }
+
+    std::vector<std::pair<std::string, std::string>> helpLines() override
+    {
+        return {
+            { "Double-click / Ctrl+click", "add a band there (Alt + double-click: a dynamic band); or drag the curve" },
+            { "Drag a node", "frequency and gain (all selected bands); Alt while dragging: one axis" },
+            { "Ctrl/Cmd + drag up/down", "Q (width); mouse wheel on a node: Q, on cuts: slope" },
+            { "Ctrl/Cmd + wheel  ·  Alt + wheel", "gain  ·  dynamic range" },
+            { "Alt + hold a node", "solo: hear only that band while held" },
+            { "Alt + hold / drag empty space", "listen to the region under the mouse (wheel: width)" },
+            { "Ctrl/Cmd+click · Shift+click · drag", "add to selection · select a range · box-select" },
+            { "Ctrl/Cmd+Alt+click · Alt+Shift+click", "next shape · next slope" },
+            { "Double-click a node", "type frequency, Tab to gain and Q (1k, A4, C#3+13)" },
+            { "Right-click", "band menu (shape, placement, dynamic, copy, delete) or display menu (paste)" },
+            { "Delete · B · Esc · ◀ ▶", "delete · bypass · deselect · previous/next band" },
+            { "Ctrl/Cmd + A / C / V / D", "select all / copy / paste / duplicate bands" },
+        };
     }
 
     void bandMenu(int b, float x, float y)
@@ -507,14 +791,31 @@ protected:
         it.push_back("-");
         it.push_back(bandDyn(b) ? "Dynamic: off" : "Dynamic: on");
         it.push_back(bandBypassed(b) ? "Enable band" : "Bypass band");
+        it.push_back("Copy");
         it.push_back("Delete band");
         openMenu(Rect(x, y, 10, 10), it, -1, [this, b](int i) {
-            if (i >= 1 && i <= 8) setParamGesture(bandParam(b, kShape), (float)(i - 1));
-            else if (i >= 10 && i <= 14) setParamGesture(bandParam(b, kPlace), (float)(i - 10));
+            const auto selv = selectedBands();
+            beginGroup();
+            if (i >= 1 && i <= 8) for (int k : selv) setParamGesture(bandParam(k, kShape), (float)(i - 1));
+            else if (i >= 10 && i <= 14) for (int k : selv) setParamGesture(bandParam(k, kPlace), (float)(i - 10));
             else if (i == 16) setParamGesture(bandParam(b, kDyn), bandDyn(b) ? 0.0f : 1.0f);
-            else if (i == 17) setParamGesture(bandParam(b, kBandBypass), bandBypassed(b) ? 0.0f : 1.0f);
-            else if (i == 18) deleteBand(b);
+            else if (i == 17) { const float v = bandBypassed(b) ? 0.0f : 1.0f; for (int k : selv) setParamGesture(bandParam(k, kBandBypass), v); }
+            else if (i == 18) copyBands(selv);
+            else if (i == 19) deleteSelected();
+            endGroup();
             rebind();
+        });
+    }
+    void backgroundMenu(float x, float y)
+    {
+        std::vector<std::string> it = { "Paste", "Copy all bands", "Select all", "-", "Delete all bands", "-", "Range ±3 dB", "Range ±6 dB", "Range ±12 dB", "Range ±24 dB", "Range ±30 dB" };
+        openMenu(Rect(x, y, 10, 10), it, -1, [this](int i) {
+            static const int rr[] = { 3, 6, 12, 24, 30 };
+            if (i == 0) pasteBands();
+            else if (i == 1) { std::vector<int> v; for (int b = 0; b < kNumBands; ++b) if (bandUsed(b)) v.push_back(b); copyBands(v); }
+            else if (i == 2) { for (int b = 0; b < kNumBands; ++b) selMask[b] = bandUsed(b); rebind(); }
+            else if (i == 4) { beginGroup(); for (int b = 0; b < kNumBands; ++b) if (bandUsed(b)) deleteBand(b); endGroup(); }
+            else if (i >= 6) { dbRange = (float)rr[i - 6]; rangeBtn->label = "±" + std::to_string(rr[i - 6]); saveUi(); }
         });
     }
 
@@ -536,8 +837,14 @@ private:
     Rect display, bandPanel, globalPanel;
     float dbRange = 12.0f;
     int sel = -1, hover = -1, dragBand = -1;
-    float dragX = 0, dragY = 0, dragF = 0, dragG = 0, dragQ = 1;
-    bool dragQMode = false;
+    bool selMask[kNumBands] = {};
+    DragMode dmode = dmNone;
+    std::vector<int> dragSet;
+    float orig[kNumBands][3] = {};
+    float pressX = 0, pressY = 0, curX = 0, curY = 0, lastX = 0, lastY = 0, effX = 0, effY = 0;
+    int axis = 0, prevSolo = 0, soloBand = 0;
+    static constexpr int kCurvePts = 220;
+    float curveX[kCurvePts] = {}, curveDb[kCurvePts] = {};
 
     MenuButton *bandSel, *slopeMenu, *qualMenu, *anaMenu;
     Segmented *shapeSeg, *placeSeg, *phaseSeg;
