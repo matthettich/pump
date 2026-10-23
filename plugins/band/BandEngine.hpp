@@ -13,7 +13,12 @@
 //   lookahead  the band's audio is delayed by the lookahead; the detector is not
 // Mix blends each band between its unprocessed and processed signal (the dry path is the split signal itself, so
 // parallel mixing never comb-filters against the analog crossover's allpass). Solo/mute/listen weight the bands
-// after that. All settings glide; mode switches and lookahead/crossover-type changes fade out and back in (8 ms).
+// after that. All settings glide; mode switches and lookahead/crossover-type changes fade out and back in (8 ms;
+// a change undone before the fade-out ends just fades back in). Switching Peak / RMS keeps the envelopes: the RMS
+// window starts filled at the band's current level and the reading crossfades to the new kind over 20 ms, so the
+// gain carries on and moves to the new reading smoothly.
+// A non-finite value (the plugin sanitizes its input) can't get stuck: a band whose input or state went non-finite
+// is cleared at the end of the chunk (keeping its envelope when that is still finite), and so is the chunk's output.
 //
 // Auto makeup (Compress bands only): adds back half the gain reduction the band's static curve applies to a
 // -6 dBFS peak (-9 dB RMS) level, i.e. a fixed, material-independent estimate that never pumps; Expand and
@@ -89,23 +94,36 @@ public:
         mixS.reset(mixPct * 0.01); outS.reset(dbToGain(outDb));
         for (int b = 0; b < kNumBands; ++b) { snapBand(b); st[b].weight.reset(targetWeight(b)); st[b].bypassFade.reset(set[b].bypass ? 1.0 : 0.0); }
         resetDetectors();
+        detFade = 0;
     }
 
     // ---- settings (audio thread, block start) ----
     void setBands(int n) { n = clampv(n, 1, kNumBands); if (n != nb) { nb = n; split.setBands(nb); updateHolds(); } }
     void setCrossovers(float a, float b, float c) { split.setCrossovers(a, b, c); updateHolds(); }
-    void setXoverMode(int m) { m = m ? 1 : 0; if (m != wantMode) { wantMode = m; structuralPending = true; } }
-    void setLookahead(float ms)
+    // Structural settings: a change fades out, switches and fades back in; setting the value in use again (a toggle
+    // and back before the fade-out ended) cancels it and fades straight back in.
+    void setXoverMode(int m) { wantMode = m ? 1 : 0; updatePending(); }
+    // kept in ms and converted at the rate in use when applied (prepare() may follow at a new rate)
+    void setLookahead(float ms) { wantLaMs = clampv((double)ms, 0.0, kMaxLookaheadMs); updatePending(); }
+    void setDetection(int d)
     {
-        const int la = (int)std::lround(clampv((double)ms, 0.0, kMaxLookaheadMs) * 0.001 * sr);
-        if (la != wantLa) { wantLa = la; structuralPending = true; }
+        d = d ? 1 : 0;
+        if (d == detRms) return;
+        detRms = d;
+        // keep the envelopes (the gain carries on): the RMS window starts full at the band's current level, and the
+        // detector reading crossfades from the old kind to the new one over the window's length, so the gain moves
+        // to the new reading smoothly in both directions (no jump, no click; Upward's instant ceiling included).
+        // Switched back during a crossfade: it reverses from where it is (the RMS window is running then).
+        if (detRms && detFade == 0)
+            for (auto& b : st)
+                for (int ch = 0; ch < 2; ++ch) { const double g = dbToGain(b.env[ch]); b.rms[ch].reset(g * g); }
+        detFade = detFade > 0 ? std::max(1, rmsLen - detFade) : rmsLen;
     }
-    void setDetection(int d) { if ((d ? 1 : 0) != detRms) { detRms = d ? 1 : 0; resetDetectors(); } }
     void setLink(float pct) { link = clampv((double)pct, 0.0, 100.0) * 0.01; }
     void setMix(float pct) { mixPct = clampv((double)pct, 0.0, 100.0); }
     void setOutput(float db) { outDb = db; }
     void setAutoMakeup(bool on) { autoMk = on; }
-    void setListen(int band) { listen = band; }   // -1 = off
+    void setListen(int band) { listen = band; }   // -1 = off (a band >= the band count is off too)
     void setBand(int b, const BandSettings& s)
     {
         if (s.mode != set[b].mode) st[b].glide = (int)(0.012 * sr);
@@ -149,7 +167,7 @@ private:
     // they keep weight 1 here (a second fade would dip the sum while the count changes).
     double targetWeight(int b) const
     {
-        if (listen >= 0) return b == listen ? 1.0 : 0.0;
+        if (listen >= 0 && listen < nb) return b == listen ? 1.0 : 0.0;
         bool anySolo = false;
         for (int k = 0; k < nb; ++k) anySolo = anySolo || set[k].solo;
         if (b >= nb) return anySolo ? 0.0 : 1.0;
@@ -166,6 +184,21 @@ private:
         for (auto& b : st)
             for (int ch = 0; ch < 2; ++ch) { b.hold[ch].reset(); b.rms[ch].reset(0.0); b.env[ch] = -120.0; b.ceil[ch] = 0.0; }
     }
+    // A band whose input or state went non-finite: clear what holds it (detectors, the lookahead delay), keeping the
+    // envelope and gains where they are still finite so the band carries on at the gain it had.
+    void recoverBand(BandState& s)
+    {
+        for (int ch = 0; ch < 2; ++ch)
+        {
+            if (!std::isfinite(s.env[ch])) s.env[ch] = -120.0;
+            if (!std::isfinite(s.gOut[ch])) s.gOut[ch] = 0.0;
+            if (!std::isfinite(s.ceil[ch])) s.ceil[ch] = 0.0;
+            const double g = dbToGain(s.env[ch]);
+            s.hold[ch].reset(); s.rms[ch].reset(g * g); s.dly[ch].clear();
+        }
+    }
+    int laSamples() const { return clampv((int)std::lround(wantLaMs * 0.001 * sr), 0, maxLa); }
+    void updatePending() { structuralPending = wantMode != split.getMode() || laSamples() != curLa; }
     void updateHolds()
     {
         double e[3];
@@ -180,7 +213,7 @@ private:
     void applyStructural()
     {
         split.setMode(wantMode);
-        curLa = clampv(wantLa, 0, maxLa);
+        curLa = laSamples();
         for (auto& b : st) for (int ch = 0; ch < 2; ++ch) { b.dly[ch].clear(); b.dly[ch].setDelay(curLa); }
         split.setBands(nb);
         updateHolds();
@@ -195,12 +228,21 @@ private:
             trans.setTarget(0.0);
             if (!trans.isSmoothing() && trans.current() <= 0.0) { applyStructural(); resetDetectors(); trans.setTarget(1.0); }
         }
+        else trans.setTarget(1.0);   // (a change that was undone during the fade-out: straight back in)
         split.process(L, R, n);
+        bool bad = false;
         const int used = std::min(kNumBands, std::max(nb, split.bandsInUse()));
         mixS.setTarget(mixPct * 0.01);
         outS.setTarget(dbToGain(outDb));
-        float mixv[kChunk], outv[kChunk];
+        float mixv[kChunk], outv[kChunk], detT[kChunk];
         for (int i = 0; i < n; ++i) { mixv[i] = (float)mixS.next(); outv[i] = (float)(outS.next() * trans.next()); L[i] = 0.0f; R[i] = 0.0f; }
+        // after a Detection switch: how far the reading has crossfaded to the new kind (0 = old, 1 = new)
+        const bool detFading = detFade > 0;
+        if (detFading)
+        {
+            for (int i = 0; i < n; ++i) detT[i] = 1.0f - (float)std::max(0, detFade - i) / (float)std::max(1, rmsLen);
+            detFade = std::max(0, detFade - n);
+        }
         for (int b = 0; b < kNumBands; ++b)
         {
             BandState& s = st[b];
@@ -208,7 +250,7 @@ private:
             s.weight.setTarget(targetWeight(b));
             s.bypassFade.setTarget(p.bypass ? 1.0 : 0.0);
             // a band that carries nothing any more keeps running until its delayed tail has played out
-            if (b >= used) s.unusedFor += n; else s.unusedFor = 0;
+            if (b >= used) s.unusedFor = std::min(s.unusedFor + n, 1 << 30); else s.unusedFor = 0;   // (capped: no overflow)
             if (s.unusedFor > curLa + kChunk)
             {
                 if (!s.idle)
@@ -227,8 +269,10 @@ private:
             const double cr = std::exp(-1.0 / (std::max(1.0, (double)p.release) * 0.001 * sr));
             const double mkT = makeupTarget(b);
             double extreme = 0.0;
+            float chk = 0.0f;   // non-finite input shows up here (once per chunk, see recoverBand)
             for (int i = 0; i < n; ++i)
             {
+                chk += x[0][i] + x[1][i];
                 // glide the curve parameters
                 s.thr += (p.thresh - s.thr) * smoothK;
                 s.ratio += (p.ratio - s.ratio) * smoothK;
@@ -240,7 +284,13 @@ private:
                 for (int ch = 0; ch < 2; ++ch)
                 {
                     const float v = x[ch][i];
-                    const float d = detRms ? (float)std::sqrt(std::max(0.0, s.rms[ch].process((double)v * v))) : std::fabs(v);
+                    float d;
+                    if (detFading)
+                    {
+                        const float rv = (float)std::sqrt(std::max(0.0, s.rms[ch].process((double)v * v))), av = std::fabs(v);
+                        d = detRms ? av + (rv - av) * detT[i] : rv + (av - rv) * detT[i];
+                    }
+                    else d = detRms ? (float)std::sqrt(std::max(0.0, s.rms[ch].process((double)v * v))) : std::fabs(v);
                     const float h = s.hold[ch].process(d);
                     lv[ch] = h > 1e-6f ? (double)gainToDbF(h) : -120.0;
                 }
@@ -274,20 +324,27 @@ private:
                 }
                 if (s.glide > 0) --s.glide;
             }
+            if (!std::isfinite((double)chk + s.env[0] + s.env[1] + s.gOut[0] + s.gOut[1] + s.ceil[0] + s.ceil[1]))
+            {
+                recoverBand(s);
+                bad = true;
+                extreme = 0.0;
+            }
             grFeed[b].store((float)extreme, std::memory_order_relaxed);
             lvFeed[b].store((float)std::max(s.env[0], s.env[1]), std::memory_order_relaxed);
             mkFeed[b].store((float)s.makeup, std::memory_order_relaxed);
         }
         for (int i = 0; i < n; ++i) { L[i] *= outv[i]; R[i] *= outv[i]; }
+        if (bad) { sanitizeBlock(L, n); sanitizeBlock(R, n); }   // never pass a non-finite sample on
     }
 
     double sr = 48000.0;
     mb::Splitter split;
     BandSettings set[kNumBands];
     BandState st[kNumBands];
-    int nb = 3, wantMode = 0, wantLa = 0, curLa = 0, maxLa = 482, rmsLen = 960, detRms = 0, listen = -1;
+    int nb = 3, wantMode = 0, curLa = 0, maxLa = 482, rmsLen = 960, detRms = 0, detFade = 0, listen = -1;
     bool structuralPending = false, autoMk = false;
-    double link = 1.0, mixPct = 100.0, outDb = 0.0, smoothK = 0.001, glideK = 0.01;
+    double wantLaMs = 0.0, link = 1.0, mixPct = 100.0, outDb = 0.0, smoothK = 0.001, glideK = 0.01;
     LinearSmoother mixS, outS, trans;
     std::atomic<float> grFeed[kNumBands] {}, lvFeed[kNumBands] {}, mkFeed[kNumBands] {};
 };

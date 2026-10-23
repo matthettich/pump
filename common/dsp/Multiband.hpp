@@ -1,5 +1,4 @@
-// pump multiband: the band splitter used by BAND, WIDE and HEAT (an identical copy lives in each plugin folder so
-// the plugins stay independent of each other). Framework-free.
+// pump multiband: the band splitter shared by BAND, WIDE and HEAT. Framework-free.
 //
 //  Analog:  a 4-leaf Linkwitz-Riley 24 dB/oct tree (the common LR4Split / LR4Allpass), zero latency: a root split
 //           at crossover 2, the low side split at crossover 1 and the high side at crossover 3, each side with the
@@ -12,6 +11,11 @@
 //           last band is the delayed input minus the others, so the bands always sum to the delayed input exactly,
 //           also while new kernels crossfade in. Kernels are designed on a worker thread into a spare slot and
 //           swapped in (crossfaded over one 512-sample block) with no locks or allocation on the audio thread.
+//           They are only asked for while linear phase is in use (a crossover dragged or automated in Analog mode
+//           would otherwise keep the worker designing kernels nobody hears); switching to Linear asks for the
+//           current settings, built while the engines' crossover-type fade (and the FIR's own latency) runs.
+// Non-finite input (the plugins sanitize theirs) can't get stuck: the analog tree's states are checked once per
+// process() call and cleared if they went non-finite; the linear path is FIR only and flushes by itself.
 #pragma once
 
 #include "dsp/Crossover.hpp"
@@ -225,7 +229,12 @@ private:
             wSteps = wRamp;
             curRouteNb = nb;
         }
-        // linear: ask the worker for matching kernels (also in analog mode, so a switch finds them ready)
+        // linear: ask the worker for matching kernels, only while linear phase is in use (setMode() switching to
+        // Linear comes through here too, via resetStates(), and asks for the current settings then)
+        if (mode == kLinear) requestKernels();
+    }
+    void requestKernels()
+    {
         bool changed = reqNb.load(std::memory_order_relaxed) != nb;
         for (int k = 0; k < 3; ++k) changed = changed || reqF[k].load(std::memory_order_relaxed) != (float)eff[k];
         if (changed)
@@ -252,11 +261,28 @@ private:
         }
     }
 
-    void resetStates()
+    void clearTree()
     {
+        for (int ch = 0; ch < 2; ++ch) { sLo[ch].reset(); sRoot[ch].reset(); sHi[ch].reset(); apLo[ch].reset(); apHi[ch].reset(); }
+    }
+    // false if a NaN / Inf got into the analog tree's (recursive) states
+    bool treeFinite() const
+    {
+        double s = 0.0;
         for (int ch = 0; ch < 2; ++ch)
         {
-            sLo[ch].reset(); sRoot[ch].reset(); sHi[ch].reset(); apLo[ch].reset(); apHi[ch].reset();
+            for (const LR4Split* p : { &sLo[ch], &sRoot[ch], &sHi[ch] })
+                s += p->lp1.ic1 + p->lp1.ic2 + p->lp2.ic1 + p->lp2.ic2 + p->hp1.ic1 + p->hp1.ic2 + p->hp2.ic1 + p->hp2.ic2;
+            s += apLo[ch].f.ic1 + apLo[ch].f.ic2 + apHi[ch].f.ic1 + apHi[ch].f.ic2;
+        }
+        return std::isfinite(s);
+    }
+
+    void resetStates()
+    {
+        clearTree();
+        for (int ch = 0; ch < 2; ++ch)
+        {
             for (auto& b : fdl[ch]) b.clear();
             inBuf[ch].clear();
             dly[ch].clear();
@@ -283,6 +309,8 @@ private:
             blkNb[0] = blkNb[1] = slotNb[active.load(std::memory_order_relaxed)];
             swapPending.store(false, std::memory_order_release);
         }
+        // backstop (the plugins sanitize their input): one non-finite sample would stay in the tree for good
+        if (!treeFinite()) clearTree();
         constexpr int kChunk = 32;
         const double a = 1.0 - std::exp(-kChunk / (0.006 * sr));   // split points glide (time constant 6 ms)
         const float* in[2] = { L, R };

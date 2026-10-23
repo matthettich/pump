@@ -86,17 +86,16 @@ public:
         laneBtn->tip = "Range of the GAIN lane (click to cycle ±6 / ±12 / ±24 / ±48 dB)";
 
         buildStrip();
-        if (auto* p = static_cast<PluginBand*>(pluginPtr())) plug = p;
-        pre.setup(rate()); post.setup(rate());
-        pre.setRange(kLo, kHi); post.setRange(kLo, kHi);
+        if (auto* p = static_cast<PluginBand*>(pluginPtr())) { plug = p; bindListen(&p->listenHold); }
+        followRate(plug && plug->getSampleRate() > 0.0 ? plug->getSampleRate() : rate());
         rebind();
     }
 
 protected:
     // ---- MultibandUI hooks ----
+    void setupAnalyzers(double sr) override { pre.setup(sr); post.setup(sr); pre.setRange(kLo, kHi); post.setRange(kLo, kHi); }
     int pBands() const override { return kNumBandsP; }
     int pXover(int k) const override { return xoverParam(k); }
-    int pListen() const override { return kListen; }
     int pSolo(int b) const override { return bandParam(b, kSolo); }
     int pMute(int b) const override { return bandParam(b, kMute); }
     int pBandBypass(int b) const override { return bandParam(b, kBandBypass); }
@@ -205,6 +204,7 @@ protected:
     void tick(float dt) override
     {
         if (!plug) return;
+        followRate(plug->getSampleRate());   // (re-sets the analyzers after a rate change)
         for (int c = 0; c < 2; ++c)
         {
             const float pk = pump::gainToDbF(plug->outPeak[c].exchange(0.0f));

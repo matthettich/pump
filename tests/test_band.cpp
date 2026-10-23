@@ -1,6 +1,8 @@
 // pump BAND: crossover reconstruction (analog allpass sum, linear-phase exact null), latency, per-band gain
 // accuracy for compression / expansion / upward compression with sines, detection modes, solo/mute/listen,
-// band-count and crossover changes without clicks, at 44.1, 48 and 96 kHz.
+// band-count and crossover changes without clicks, at 44.1, 48 and 96 kHz. Also: recovery from a NaN / Inf input
+// sample, Detection switches without a gain jump, structural toggles undone before the fade, lookahead across a
+// rate change, listen bands beyond the band count, and linear-phase kernels built only when Linear is in use.
 #include "TestMix.hpp"
 #include "../plugins/band/BandEngine.hpp"
 #include <cstdio>
@@ -331,6 +333,172 @@ int main()
             for (float v : L) if (!std::isfinite(v) || std::fabs(v) > 20.0f) ok = false;
         }
         CHECK(ok, "800 blocks of random settings (modes, band counts, crossovers, lookahead, detection): finite and bounded");
+    }
+    // ---- 11. one NaN / Inf input sample: the engine never passes a non-finite sample on and recovers (its output
+    // later nulls against a clean run); the plugin's path (sanitize, then the engine) is the clean run exactly
+    {
+        const double sr = 48000;
+        const int T = (int)(sr * 3), bad = (int)(sr * 0.5) + 77, from = (int)(sr * 2);
+        for (int mode = 0; mode <= 1; ++mode)
+            for (float badV : { NAN, INFINITY })
+            {
+                auto make = [&](Engine& e) {
+                    e.setBands(4); e.setCrossovers(kX[0], kX[1], kX[2]); e.setXoverMode(mode); e.setLookahead(2.0f); e.setDetection(1);
+                    for (int b = 0; b < 4; ++b) { BandSettings s; s.thresh = -30; s.ratio = 3; s.attack = 10; s.release = 100; s.mode = b == 3 ? kUpward : kCompress; e.setBand(b, s); }
+                    e.prepare(sr, 512);
+                };
+                std::vector<float> L(T), R(T), cL(T), cR(T), sL(T), sR(T);
+                for (int i = 0; i < T; ++i) { L[(size_t)i] = (float)(0.3 * std::sin(kTwoPi * 440.0 * i / sr)); R[(size_t)i] = (float)(0.2 * std::sin(kTwoPi * 3000.0 * i / sr)); }
+                cL = L; cR = R; cL[(size_t)bad] = 0.0f;   // the clean run: what sanitizing turns the bad sample into
+                L[(size_t)bad] = badV; sL = L; sR = R;
+                Engine e, c, p; make(e); make(c); make(p);
+                run(e, L, R, 512); run(c, cL, cR, 512);
+                for (int off = 0; off < T; off += 512) { const int n = std::min(512, T - off); sanitizeBlock(sL.data() + off, n); sanitizeBlock(sR.data() + off, n); p.process(sL.data() + off, sR.data() + off, n); }
+                int nonFinite = 0; for (int i = 0; i < T; ++i) if (!std::isfinite(L[(size_t)i]) || !std::isfinite(R[(size_t)i])) ++nonFinite;
+                double err = 0, ref = 0; for (int i = from; i < T; ++i) { err += std::pow(L[(size_t)i] - cL[(size_t)i], 2) + std::pow(R[(size_t)i] - cR[(size_t)i], 2); ref += cL[(size_t)i] * cL[(size_t)i] + cR[(size_t)i] * cR[(size_t)i]; }
+                bool same = true; for (int i = 0; i < T; ++i) same = same && sL[(size_t)i] == cL[(size_t)i] && sR[(size_t)i] == cR[(size_t)i];
+                const double db = 10 * std::log10(err / ref + 1e-30);
+                CHECK(nonFinite == 0 && db < -80 && same, "%s, one %s input sample: %d non-finite output samples, 1.5 s later the output nulls against a clean run at %.1f dB; sanitized input (the plugin's path) = clean run: %s",
+                      mode ? "linear" : "analog", std::isnan(badV) ? "NaN" : "Inf", nonFinite, db, same ? "yes" : "NO");
+            }
+    }
+    // ---- 12. switching Detection (Peak <-> RMS) while a band compresses keeps its gain: no jump at the switch, and
+    // it settles where an engine started in that mode does
+    for (int mode : { kCompress, kExpand, kUpward })
+    {
+        const double sr = 48000;
+        auto make = [&](Engine& e, int det) {
+            e.setBands(2); e.setCrossovers(200, 2000, 8000); e.setDetection(det);
+            for (int b = 0; b < 4; ++b)
+            {
+                BandSettings s; s.mode = mode; s.ratio = 4.0f; s.knee = 0.0f; s.range = 24.0f; s.attack = 20.0f; s.release = 200.0f;
+                s.thresh = mode == kCompress ? -30.0f : -10.0f;
+                e.setBand(b, s);
+            }
+            e.prepare(sr, 512);
+        };
+        double move21[3] = { 0, 0, 0 }, worstStep = 0, settleErr = 0;
+        for (int dir = 0; dir <= 2; ++dir)   // 0: Peak -> RMS, 1: RMS -> Peak, 2: Peak -> RMS -> Peak 5 ms later
+        {
+            const int endDet = dir == 0 ? 1 : 0;
+            Engine e, ref; make(e, dir == 1 ? 1 : 0); make(ref, endDet);
+            const int T = (int)(sr * 4), sw = 256 * (int)(sr * 1.5 / 256);   // (on a block boundary)
+            std::vector<float> L(T), R(T), rL(T), rR(T);
+            for (int i = 0; i < T; ++i) L[(size_t)i] = R[(size_t)i] = rL[(size_t)i] = rR[(size_t)i] = (float)(0.1 * std::sin(kTwoPi * 100.0 * i / sr));
+            for (int off = 0; off < T; off += 256)
+            {
+                if (off == sw) e.setDetection(dir == 1 ? 0 : 1);
+                if (dir == 2 && off == sw + 256) e.setDetection(0);
+                e.process(L.data() + off, R.data() + off, 256);
+            }
+            run(ref, rL, rR);
+            // output peak per 5 ms (half a period of the 100 Hz tone) around the switch: how far it moves in the
+            // first 21 ms, and the largest step from one 5 ms window to the next (a detector reset steps by the
+            // whole gain reduction at once; keeping the envelope moves it at the attack / release rate)
+            auto pk = [&](int a) { double m = 0; for (int i = a; i < a + 240; ++i) m = std::max(m, (double)std::fabs(L[(size_t)i])); return m; };
+            const double before = pk(sw - 240);
+            for (int a = sw; a < sw + (int)(0.021 * sr); a += 240) move21[dir] = std::max(move21[dir], std::fabs(gainToDb(pk(a) / before)));
+            for (int a = sw - 960; a < sw + 9600; a += 240) worstStep = std::max(worstStep, std::fabs(gainToDb(pk(a + 240) / pk(a))));
+            double a = 0, b = 0; for (int i = T - 24000; i < T; ++i) { a = std::max(a, (double)std::fabs(L[(size_t)i])); b = std::max(b, (double)std::fabs(rL[(size_t)i])); }
+            settleErr = std::max(settleErr, std::fabs(gainToDb(a / b)));
+        }
+        CHECK(move21[0] < 0.5 && move21[2] < 0.5 && worstStep < 1.0 && settleErr < 0.05, "%s band, Detection switched during playback: Peak -> RMS moves the output %.2f dB in the first 21 ms (was a +6.5 dB jump), RMS -> Peak %.2f dB (attack), there and back in 5 ms %.2f dB; largest 5 ms step %.2f dB; settles within %.3f dB of an engine started in that mode",
+              kModeNames[mode], move21[0], move21[1], move21[2], worstStep, settleErr);
+    }
+    // ---- 13. toggling a non-automatable setting (crossover type, lookahead) and back: before the next block it
+    // changes nothing (bit-identical output, gain reduction kept); a block later it dips briefly and returns exactly
+    {
+        const double sr = 48000;
+        auto make = [&](Engine& e) {
+            e.setBands(3); e.setCrossovers(150, 2500, 8000);
+            for (int b = 0; b < 4; ++b) { BandSettings s; s.thresh = -30; s.ratio = 4; s.knee = 0; s.attack = 10; s.release = 200; e.setBand(b, s); }
+            e.prepare(sr, 512);
+        };
+        for (int what = 0; what < 2; ++what)
+        {
+            double dip[2] = { 0, 0 }; bool exact[2] = { false, false };
+            for (int gap = 0; gap <= 1; ++gap)
+            {
+                Engine e, ref; make(e); make(ref);
+                const int T = 48000 * 2, at = 48000;
+                std::vector<float> L(T), R(T), rL(T), rR(T);
+                for (int i = 0; i < T; ++i) L[(size_t)i] = R[(size_t)i] = rL[(size_t)i] = rR[(size_t)i] = (float)(0.25 * std::sin(kTwoPi * 440.0 * i / sr));
+                for (int off = 0; off < T; off += 64)
+                {
+                    auto set = [&](bool on) { if (what == 0) e.setXoverMode(on ? 1 : 0); else e.setLookahead(on ? 5.0f : 0.0f); };
+                    if (off == at) set(true);
+                    if (off == at + 64 * gap) set(false);
+                    e.process(L.data() + off, R.data() + off, 64);
+                    ref.process(rL.data() + off, rR.data() + off, 64);
+                }
+                // deepest dip: output peak per 64 samples against the untouched engine's, over the next 100 ms
+                for (int a = at; a < at + 4800; a += 64)
+                {
+                    double p = 0, q = 0; for (int i = a; i < a + 64; ++i) { p = std::max(p, (double)std::fabs(L[(size_t)i])); q = std::max(q, (double)std::fabs(rL[(size_t)i])); }
+                    dip[gap] = std::min(dip[gap], gainToDb(p / q));
+                }
+                // and identical afterwards (gap 0: everywhere): nothing was reset, the gain reduction carried on
+                bool eq = true; for (int i = gap ? at + 4800 : 0; i < T; ++i) eq = eq && L[(size_t)i] == rL[(size_t)i];
+                exact[gap] = eq;
+            }
+            CHECK(exact[0] && dip[0] == 0.0 && exact[1] && dip[1] > -3.0, "%s toggled and back before the next block: bit-identical output (was a 16 ms dropout); one 64-sample block later: dips %.1f dB, then identical again",
+                  what ? "lookahead" : "crossover type", dip[1]);
+        }
+    }
+    // ---- 14. lookahead is converted at the rate in use: set before a re-prepare at a new rate (as activate()
+    // does), it is exact at the new rate, and setting it again changes nothing
+    {
+        Engine e; e.setLookahead(3.0f); e.prepare(44100, 512);
+        const int a = e.latency();
+        e.setLookahead(3.0f); e.prepare(96000, 512);
+        const int b = e.latency();
+        e.setLookahead(3.0f); e.setOutput(0.5f);
+        CHECK(a == 132 && b == 288 && e.settled(), "3 ms lookahead: %d samples at 44.1 kHz, %d after re-preparing at 96 kHz (288 expected); setting it again starts no fade: %s",
+              a, b, e.settled() ? "yes" : "NO");
+    }
+    // ---- 15. a listen band at or above the band count is off (a stale value must never silence the plugin)
+    if (!mix.empty())
+    {
+        const double sr = 48000;
+        const int T = 48000;
+        std::vector<float> L(T), R(T), rL(T), rR(T);
+        for (int i = 0; i < T; ++i) { L[(size_t)i] = rL[(size_t)i] = mix[(size_t)(2 * i)]; R[(size_t)i] = rR[(size_t)i] = mix[(size_t)(2 * i + 1)]; }
+        Engine e; e.setBands(2); e.setCrossovers(kX[0], kX[1], kX[2]); neutral(e); e.setListen(3); e.prepare(sr, 512);
+        Engine f; f.setBands(2); f.setCrossovers(kX[0], kX[1], kX[2]); neutral(f); f.prepare(sr, 512);
+        run(e, L, R); run(f, rL, rR);
+        double err = 0, ref = 0; for (int i = 0; i < T; ++i) { err += std::pow(L[(size_t)i] - rL[(size_t)i], 2); ref += rL[(size_t)i] * rL[(size_t)i]; }
+        CHECK(err == 0.0 && ref > 0.0, "2 bands, listen band 4: plays all bands (null against no listen %.1f dB)", 10 * std::log10(err / ref + 1e-30));
+    }
+    // ---- 16. linear-phase kernels are only built while Linear is in use: crossovers moved in Analog mode ask for
+    // nothing, and switching to Linear builds kernels for the current crossovers (exact reconstruction, band shapes)
+    {
+        const double sr = 48000;
+        Engine e; e.setBands(4); e.setCrossovers(kX[0], kX[1], kX[2]); neutral(e); e.prepare(sr, 512);
+        std::vector<float> z(512, 0.0f), z2(512, 0.0f);
+        bool idle = true;
+        for (int k = 0; k < 50; ++k) { e.setCrossovers(100.0f + 7.0f * k, 1500, 7000); e.process(z.data(), z2.data(), 512); idle = idle && e.kernelsCurrent(); }
+        e.setXoverMode(1);
+        for (int k = 0; k < 10; ++k) e.process(z.data(), z2.data(), 512);   // the crossover-type fade
+        waitKernels(e, z.data(), z2.data());
+        const bool built = e.kernelsCurrent();
+        const int len = 65536, lat = e.latency();
+        // all bands: exactly the delayed impulse
+        std::vector<float> M((size_t)len, 0.0f), N((size_t)len, 0.0f);
+        M[0] = 1.0f; N[0] = 1.0f;
+        run(e, M, N);
+        double err = 0; for (int i = 0; i < len; ++i) err = std::max(err, std::fabs(M[(size_t)i] - (i == lat ? 1.0 : 0.0)));
+        // band 2 alone: the LR4 shape for the crossovers in use now
+        for (int b = 0; b < kNumBands; ++b) { BandSettings s; s.ratio = 1.0f; s.solo = b == 1; e.setBand(b, s); }
+        for (int k = 0; k < 40; ++k) { std::fill(z.begin(), z.end(), 0.0f); std::fill(z2.begin(), z2.end(), 0.0f); e.process(z.data(), z2.data(), 512); }
+        std::vector<float> L((size_t)len, 0.0f), R((size_t)len, 0.0f);
+        L[0] = 1.0f; R[0] = 1.0f;
+        run(e, L, R);
+        double ex[3]; e.effectiveCrossovers(ex);
+        double worst = 0;
+        for (double f : { 60.0, 120.0, 250.0, 443.0, 1000.0, 1500.0, 3000.0 })
+            worst = std::max(worst, std::fabs(magDb(L, f, sr) - 20 * std::log10(mb::bandMag(4, ex, 1, f, sr))));
+        CHECK(idle && built && worst < 0.05 && err < 1e-5, "crossovers moved in Analog mode request no kernels (%s); after switching to Linear: reconstruction error %.1e, the soloed band 2 matches its new shape within %.4f dB",
+              idle ? "none" : "SOME", err, worst);
     }
     printf(fails ? "\n%d FAILED\n" : "\nall passed\n", fails);
     return fails ? 1 : 0;

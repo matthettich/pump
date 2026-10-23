@@ -1,6 +1,8 @@
 // pump WIDE: width 100 / stereoize 0 is the crossover's allpass path (linear: the delayed input), width 0 gives
 // L == R, stereoize leaves L + R untouched, per-band width accuracy, mono bass (LR4 / LR8) side attenuation and mid
 // integrity, correlation readings (mono, anti-phase, uncorrelated noise), solo / listen, at 44.1, 48 and 96 kHz.
+// Also: recovery from a NaN / Inf input sample, an unused band's stereoize tail never cut off, a crossover-type
+// toggle undone before the fade, and listen bands beyond the band count.
 #include "TestMix.hpp"
 #include "../plugins/wide/WideEngine.hpp"
 #include <cstdio>
@@ -264,6 +266,98 @@ int main()
             for (int i = 0; i < 512; ++i) if (!std::isfinite(a[(size_t)i]) || std::fabs(a[(size_t)i]) > 10.0f || !std::isfinite(b2[(size_t)i])) ok = false;
         }
         CHECK(ok, "800 blocks of random settings: finite and bounded");
+    }
+    // 11. one NaN / Inf input sample (bands with and without stereoize, mono bass on): the engine never passes a
+    // non-finite sample on and recovers (its output later nulls against a clean run); the plugin's path (sanitize,
+    // then the engine) is the clean run exactly
+    {
+        const double sr = 48000;
+        const int T = (int)(sr * 3), bad = (int)(sr * 0.5) + 77, from = (int)(sr * 2);
+        for (int mode = 0; mode <= 1; ++mode)
+            for (float badV : { NAN, INFINITY })
+            {
+                auto make = [&](Engine& e) {
+                    e.setBands(4); e.setCrossovers(120, 1000, 6000); e.setXoverMode(mode); e.setMonoBass(true, 150.0f, 1);
+                    const float w[4] = { 100, 120, 150, 80 }, st[4] = { 0, 40, 0, 80 };
+                    for (int b = 0; b < 4; ++b) { BandSettings s; s.width = w[b]; s.stereoize = st[b]; e.setBand(b, s); }
+                    e.prepare(sr, 512);
+                };
+                std::vector<float> L(T), R(T), cL(T), cR(T), sL(T), sR(T);
+                for (int i = 0; i < T; ++i) { L[(size_t)i] = 0.5f * mix[(size_t)(2 * i)]; R[(size_t)i] = 0.5f * mix[(size_t)(2 * i + 1)]; }
+                cL = L; cR = R; cL[(size_t)bad] = 0.0f;   // the clean run: what sanitizing turns the bad sample into
+                L[(size_t)bad] = badV; sL = L; sR = R;
+                Engine e, c, p; make(e); make(c); make(p);
+                run(e, L, R, 512); run(c, cL, cR, 512);
+                for (int off = 0; off < T; off += 512) { const int n = std::min(512, T - off); sanitizeBlock(sL.data() + off, n); sanitizeBlock(sR.data() + off, n); p.process(sL.data() + off, sR.data() + off, n); }
+                int nonFinite = 0; for (int i = 0; i < T; ++i) if (!std::isfinite(L[(size_t)i]) || !std::isfinite(R[(size_t)i])) ++nonFinite;
+                const double db = std::max(nullDb(L, cL, from), nullDb(R, cR, from));
+                bool same = true; for (int i = 0; i < T; ++i) same = same && sL[(size_t)i] == cL[(size_t)i] && sR[(size_t)i] == cR[(size_t)i];
+                const bool meters = std::isfinite(e.correlationAll()) && std::isfinite(e.levelAll()) && std::isfinite(e.correlation(3));
+                CHECK(nonFinite == 0 && db < -80 && same && meters, "%s, one %s input sample: %d non-finite output samples, 1.5 s later the output nulls against a clean run at %.1f dB, meters %s; sanitized input (the plugin's path) = clean run: %s",
+                      mode ? "linear" : "analog", std::isnan(badV) ? "NaN" : "Inf", nonFinite, db, meters ? "finite" : "NOT FINITE", same ? "yes" : "NO");
+            }
+    }
+    // 12. fewer bands: a band that stops being used keeps running until its stereoize tail has rung out, so it is
+    // never cut off (it used to be reset ~24 ms after the change with its tail at -21 dBFS)
+    {
+        const double sr = 48000;
+        Engine e; e.setBands(4); e.setCrossovers(120, 1000, 6000);
+        for (int b = 0; b < 4; ++b) { BandSettings s; s.stereoize = b == 3 ? 100.0f : 0.0f; e.setBand(b, s); }
+        e.prepare(sr, 512);
+        std::mt19937 rng(1); std::normal_distribution<float> nd(0, 0.1f);
+        std::vector<float> L(64), R(64), side;
+        for (int k = 0; k < 1500 + 6000; ++k)
+        {
+            if (k == 1500) e.setBands(3);
+            for (int i = 0; i < 64; ++i) L[(size_t)i] = R[(size_t)i] = nd(rng);   // mono noise: all side content is band 4's stereoize
+            e.process(L.data(), R.data(), 64);
+            if (k >= 1500) for (int i = 0; i < 64; ++i) side.push_back(0.5f * (L[(size_t)i] - R[(size_t)i]));
+        }
+        long last = -1; for (size_t i = 0; i < side.size(); ++i) if (side[i] != 0.0f) last = (long)i;
+        double cut = 0; for (long i = std::max(0L, last - 47); i <= last; ++i) cut = std::max(cut, (double)std::fabs(side[(size_t)i]));
+        CHECK(last > 0 && cut <= 1.1e-5 && last < (long)(0.25 * sr) + 512, "4 -> 3 bands with band 4 stereoized: its tail rings out to %.1f dBFS and stops %.0f ms after the change (was cut at -21 dBFS after 24 ms)",
+              gainToDb(cut), last * 1000.0 / sr);
+    }
+    // 13. switching the crossover type and back before the next block changes nothing (no 16 ms dropout); a block
+    // later it dips briefly and returns exactly
+    {
+        const double sr = 48000;
+        double dip[2] = { 0, 0 }; bool exact[2] = { false, false };
+        for (int gap = 0; gap <= 1; ++gap)
+        {
+            Engine e, ref;
+            for (Engine* x : { &e, &ref }) { x->setBands(3); x->setCrossovers(150, 2500, 8000); allBands(*x, 120, 30); x->prepare(sr, 512); }
+            const int T = 48000 * 2, at = 48000;
+            std::vector<float> L(T), R(T), rL(T), rR(T);
+            for (int i = 0; i < T; ++i) { L[(size_t)i] = rL[(size_t)i] = (float)(0.25 * std::sin(kTwoPi * 440.0 * i / sr)); R[(size_t)i] = rR[(size_t)i] = (float)(0.25 * std::sin(kTwoPi * 440.0 * i / sr + 0.5)); }
+            for (int off = 0; off < T; off += 64)
+            {
+                if (off == at) e.setXoverMode(1);
+                if (off == at + 64 * gap) e.setXoverMode(0);
+                e.process(L.data() + off, R.data() + off, 64);
+                ref.process(rL.data() + off, rR.data() + off, 64);
+            }
+            for (int a = at; a < at + 4800; a += 64)
+            {
+                double p = 0, q = 0; for (int i = a; i < a + 64; ++i) { p = std::max(p, (double)std::fabs(L[(size_t)i])); q = std::max(q, (double)std::fabs(rL[(size_t)i])); }
+                dip[gap] = std::min(dip[gap], gainToDb(p / q));
+            }
+            bool eq = true; for (int i = gap ? at + 4800 : 0; i < T; ++i) eq = eq && L[(size_t)i] == rL[(size_t)i] && R[(size_t)i] == rR[(size_t)i];
+            exact[gap] = eq;
+        }
+        CHECK(exact[0] && dip[0] == 0.0 && exact[1] && dip[1] > -3.0, "crossover type toggled and back before the next block: bit-identical output (was a 16 ms dropout); one 64-sample block later: dips %.1f dB, then identical again", dip[1]);
+    }
+    // 14. a listen band at or above the band count is off (a stale value must never silence the plugin)
+    {
+        const double sr = 48000;
+        const int T = 48000;
+        std::vector<float> L(T), R(T), rL(T), rR(T);
+        for (int i = 0; i < T; ++i) { L[(size_t)i] = rL[(size_t)i] = mix[(size_t)(2 * i)]; R[(size_t)i] = rR[(size_t)i] = mix[(size_t)(2 * i + 1)]; }
+        Engine e; e.setBands(2); e.setCrossovers(120, 1000, 6000); allBands(e, 100, 0); e.setListen(3); e.prepare(sr, 512);
+        Engine f; f.setBands(2); f.setCrossovers(120, 1000, 6000); allBands(f, 100, 0); f.prepare(sr, 512);
+        run(e, L, R); run(f, rL, rR);
+        bool eq = true; double pk = 0; for (int i = 0; i < T; ++i) { eq = eq && L[(size_t)i] == rL[(size_t)i] && R[(size_t)i] == rR[(size_t)i]; pk = std::max(pk, (double)std::fabs(L[(size_t)i])); }
+        CHECK(eq && pk > 0.1, "2 bands, listen band 4: plays all bands (identical to no listen: %s)", eq ? "yes" : "NO");
     }
     printf(fails ? "\n%d FAILED\n" : "\nall passed\n", fails);
     return fails ? 1 : 0;
