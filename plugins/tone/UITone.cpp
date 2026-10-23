@@ -48,13 +48,26 @@ public:
         rangeBtn->tip = "Display scale of the gain curve";
 
         if (auto* p = static_cast<PluginTone*>(pluginPtr())) plug = p;
-        const double sr = sampleRate() > 0 ? sampleRate() : 48000.0;
-        pre.setup(sr); post.setup(sr);
-        pre.setRange(kLo, kHi); post.setRange(kLo, kHi);
+        for (int b = 0; b < Engine::kBands; ++b) target[b] = -120.0f;   // the engine's "nothing there yet"
+        // the analyzers run at the rate the plugin feeds them at
+        setupAnalyzers(plug && plug->getSampleRate() > 0 ? plug->getSampleRate() : (sampleRate() > 0 ? sampleRate() : 48000.0));
+    }
+    ~UITone() override
+    {
+        // closing the editor mid-hold must not leave the master band-passed
+        if (plug) plug->auditionOn.store(false);
     }
 
 protected:
     static constexpr double kLo = 20.0, kHi = 20000.0;
+
+    void setupAnalyzers(double sr)
+    {
+        anaRate = sr;
+        pre.setup(sr); post.setup(sr);
+        pre.setRange(kLo, kHi); post.setRange(kLo, kHi);
+    }
+    void onSampleRateChanged(double sr) override { if (sr > 0.0 && sr != anaRate) setupAnalyzers(sr); }
 
     // ---------------------------------------------------------------- layout
     void layout() override
@@ -90,20 +103,23 @@ protected:
     float yOfSpec(float db) const { return display.y + (kSpecTop - db) / (kSpecTop - kSpecBottom) * display.h; }
     static constexpr float kSpecTop = 6.0f, kSpecBottom = -90.0f;
     void setRange(float r) { dbRange = r; rangeBtn->label = "±" + std::to_string((int)r); saveUi(); }
-    // A hidden, non-automatable audition parameter: tell the host (edit begin/end) but keep it out of undo.
-    void setHidden(int i, float v)
+    // Alt-hold listen goes straight to the plugin's atomics (never through host parameters: nothing to save or echo)
+    void pushAudition(bool on)
     {
-        if (spec(i).clamp(v) == value(i)) return;
-        editParameter((uint32_t)i, true);
-        setParam(i, v);
-        editParameter((uint32_t)i, false);
+        if (!plug) return;
+        plug->auditionFreq.store(listenF); plug->auditionQ.store(listenQ);
+        plug->auditionOn.store(on);
     }
+    std::string freqText(double f) const { return spec(kAuditionFreq).format((float)f); }
     float curveAt(double f) const { return Engine::interp(gain, erb, f); }
 
     // ---------------------------------------------------------------- drawing
     void tick(float dt) override
     {
         if (!plug) return;
+        // the host may change the rate without telling the UI (or before it opened): follow the plugin's rate
+        const double srNow = plug->getSampleRate();
+        if (srNow > 0.0 && srNow != anaRate) setupAnalyzers(srNow);
         for (int c = 0; c < 2; ++c)
         {
             const float pk = pump::gainToDbF(plug->outPeak[c].exchange(0.0f));
@@ -224,7 +240,7 @@ protected:
             const double f = fOfX(hoverX);
             const float g = curveAt(f);
             line(hoverX, display.y, hoverX, display.b(), withAlpha2(theme.ink, 0.35f), 1.0f);
-            char b[64]; std::snprintf(b, sizeof b, "%s  %+.1f dB", spec(kAuditionFreq).format((float)f).c_str(), g);   // (balance, without auto level)
+            char b[64]; std::snprintf(b, sizeof b, "%s  %+.1f dB", freqText(f).c_str(), g);   // (balance, without auto level)
             const float tw = textWidth(b, kMono, 11.0f) + 14.0f;
             const float yy = std::max(display.y + 30.0f, std::min(display.b() - 30.0f, yOfDb(g) - 26.0f));
             const Rect tb(std::max(display.x + 6, std::min(display.r() - tw - 6, hoverX + 10)), yy, tw, 22);
@@ -243,7 +259,7 @@ protected:
         // Alt-listen
         if (dmode == dmAudition)
         {
-            const double f = value(kAuditionFreq), q = value(kAuditionQ);
+            const double f = listenF, q = listenQ;
             const double half = std::asinh(1.0 / (2.0 * q)) / std::log(2.0);
             const float x0 = xOfF(f * std::pow(2.0, -half)), x1 = xOfF(f * std::pow(2.0, half));
             const Color sh = withAlpha2(theme.bg, 0.62f);
@@ -252,7 +268,7 @@ protected:
             line(x0, display.y, x0, display.b(), theme.second, 1.5f);
             line(x1, display.y, x1, display.b(), theme.second, 1.5f);
             char qb[24]; std::snprintf(qb, sizeof qb, "  Q %.1f", q);
-            const std::string label = "LISTEN  " + spec(kAuditionFreq).format((float)f) + qb;
+            const std::string label = "LISTEN  " + freqText(f) + qb;
             const float tw = textWidth(label, kLabel, 12.0f, 1.0f) + 16.0f;
             const Rect lb(std::max(display.x + 6, std::min(display.r() - tw - 6, xOfF(f) - tw * 0.5f)), display.y + 36, tw, 22);
             fillRect(lb, theme.second);
@@ -289,7 +305,7 @@ protected:
     std::string footerInfo() override
     {
         const int lat = plug ? plug->latencyNow() : 0;
-        const double sr = sampleRate() > 0 ? sampleRate() : 48000.0;
+        const double sr = anaRate > 0 ? anaRate : 48000.0;   // the plugin's rate (the latency is in its samples)
         char buf[96];
         std::snprintf(buf, sizeof buf, "48 ERB BANDS  ·  FFT %d  ·  LATENCY %.0f ms", lat, 1000.0 * lat / sr);
         return buf;
@@ -306,10 +322,9 @@ protected:
         if (mod & kModifierAlt)
         {
             dmode = dmAudition;
-            setHidden(kAuditionQ, listenQ);
-            setHidden(kAuditionFreq, (float)fOfX(x));
-            setHidden(kAudition, 1.0f);
-            setStatus("Listening around " + spec(kAuditionFreq).format(value(kAuditionFreq)) + "  (drag: sweep, wheel: width)");
+            listenF = (float)fOfX(x);
+            pushAudition(true);
+            setStatus("Listening around " + freqText(listenF) + "  (drag: sweep, wheel: width)");
             return true;
         }
         return false;
@@ -319,13 +334,14 @@ protected:
         hoverX = x; hoverY = y;
         if (dmode == dmAudition)
         {
-            setHidden(kAuditionFreq, (float)fOfX(std::max(display.x, std::min(display.r(), x))));
-            setStatus("Listening around " + spec(kAuditionFreq).format(value(kAuditionFreq)) + "  (wheel: width)");
+            listenF = (float)fOfX(std::max(display.x, std::min(display.r(), x)));
+            pushAudition(true);
+            setStatus("Listening around " + freqText(listenF) + "  (wheel: width)");
         }
     }
     void bodyMouseUp(float, float) override
     {
-        if (dmode == dmAudition) { setHidden(kAudition, 0.0f); setStatus(""); }
+        if (dmode == dmAudition) { pushAudition(false); setStatus(""); }
         dmode = dmNone;
     }
     void bodyHover(float x, float y) override
@@ -335,7 +351,7 @@ protected:
         {
             char buf[160];
             std::snprintf(buf, sizeof buf, "%s  %+.1f dB    Alt + hold: listen here · right-click: display options",
-                          spec(kAuditionFreq).format((float)fOfX(x)).c_str(), curveAt(fOfX(x)));
+                          freqText(fOfX(x)).c_str(), curveAt(fOfX(x)));
             setStatus(buf);
         }
         else hoverX = -1;
@@ -344,8 +360,8 @@ protected:
     {
         if (dmode != dmAudition) return false;
         const float dir = dy > 0 ? 1.0f : -1.0f;
-        listenQ = pump::clampv(value(kAuditionQ) * std::pow(2.0f, dir * ((mod & kModifierShift) ? 0.05f : 0.25f)), 0.3f, 12.0f);
-        setHidden(kAuditionQ, listenQ);
+        listenQ = pump::clampv(listenQ * std::pow(2.0f, dir * ((mod & kModifierShift) ? 0.05f : 0.25f)), 0.3f, 12.0f);
+        pushAudition(true);
         char b[64]; std::snprintf(b, sizeof b, "Listen width: Q %.2f  (wheel up: narrower)", listenQ); setStatus(b);
         saveUi();
         return true;
@@ -409,7 +425,9 @@ private:
     float lvl[2] = { -120.0f, -120.0f }, hold[2] = { -120.0f, -120.0f }, holdT[2] = { 0.0f, 0.0f };
     float gain[Engine::kBands] = {}, target[Engine::kBands] = {};
     double erb[Engine::kBands] = {};
-    float makeup = 0.0f, dbRange = 6.0f, listenQ = 2.0f, hoverX = -1, hoverY = -1;
+    float makeup = 0.0f, dbRange = 6.0f, hoverX = -1, hoverY = -1;
+    float listenF = 1000.0f, listenQ = 2.0f;   // Alt-hold listen (sent to the plugin's atomics; the width is remembered)
+    double anaRate = 0.0;                      // sample rate the analyzers are set up for
     bool showTarget = true, altHeld = false;
     ToneDragMode dmode = dmNone;
 

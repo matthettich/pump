@@ -34,7 +34,9 @@ build/tests/pffft.o: common/pump_pffft.c
 	@mkdir -p build/tests
 	$(CC) -O2 -c $< -o $@
 
-build/tests/%: tests/%.cpp build/tests/pffft.o $(wildcard common/dsp/*.hpp)
+# a test also depends on its plugin's headers (tests/test_tone.cpp -> plugins/tone/*.hpp)
+.SECONDEXPANSION:
+build/tests/%: tests/%.cpp build/tests/pffft.o $(wildcard common/*.hpp common/dsp/*.hpp tests/*.hpp) $$(wildcard plugins/$$(word 2,$$(subst _, ,$$*))/*.hpp)
 	@mkdir -p build/tests
 	$(CXX) $(TEST_FLAGS) -Iplugins/$(word 2,$(subst _, ,$*)) $< build/tests/pffft.o -lpthread -o $@
 

@@ -82,21 +82,22 @@ public:
     static constexpr int kMaxChunk = 4096;
     static constexpr double kFLo = 25.0, kFHi = 18000.0;
 
+    // The UI can read the feeds before the first STFT frame (or before prepare): start them at "flat, nothing there".
+    Engine()
+    {
+        for (int b = 0; b < kBands; ++b)
+        {
+            uiG[b].store(0.0f, std::memory_order_relaxed);
+            uiT[b].store(-120.0f, std::memory_order_relaxed);
+            uiL[b].store(-120.0f, std::memory_order_relaxed);
+        }
+        uiMk.store(0.0f, std::memory_order_relaxed);
+    }
+
     void prepare(double sampleRate)
     {
         sr = sampleRate > 0.0 ? sampleRate : 48000.0;
-        for (int q = 0; q < 2; ++q) { sizes[q] = fftSizeFor(q, sr); stft[q].prepare(sizes[q], 2); }
-        const int Kmax = sizes[1] / 2 + 1;
-        binBand.assign((size_t)Kmax, 0); binFrac.assign((size_t)Kmax, 0.0f);
-        binGain.assign((size_t)Kmax, 1.0f); binTiltDb.assign((size_t)Kmax, 0.0f);
-        binPow.assign((size_t)Kmax, 0.0f); binDb.assign((size_t)Kmax, 0.0f); binLt.assign((size_t)Kmax, 0.0f); binKw.assign((size_t)Kmax, 0.0f);
-        for (int c = 0; c < 2; ++c)
-        {
-            dly[c].setMaxDelay(sizes[1] + 8);
-            dryBuf[c].assign(kMaxChunk, 0.0f);
-            wetBuf[c].assign(kMaxChunk, 0.0f);
-        }
-        // band centres on the ERB scale
+        // band centres on the ERB scale (the per-bin tables below need them)
         const double fHi = std::min(kFHi, 0.45 * sr);
         const double e0 = erbNumber(kFLo), e1 = erbNumber(fHi);
         for (int b = 0; b < kBands; ++b)
@@ -106,12 +107,25 @@ public:
             // Recover never lifts the sub-bass rumble region (fades in from 28 to 42 Hz)
             recWeight[b] = clampv(std::log2(bandF[b] / 28.0) / std::log2(42.0 / 28.0), 0.0, 1.0);
         }
+        // everything per bin is built here for both FFT sizes, so a quality switch on the audio thread only flips
+        // an index (evaluating the K-weighting per bin there took about a millisecond in one block)
+        for (int q = 0; q < 2; ++q) { sizes[q] = fftSizeFor(q, sr); stft[q].prepare(sizes[q], 2); buildBinTable(q); }
+        const int Kmax = sizes[1] / 2 + 1;
+        binGain.assign((size_t)Kmax, 1.0f);
+        binPow.assign((size_t)Kmax, 0.0f); binDb.assign((size_t)Kmax, 0.0f); binLt.assign((size_t)Kmax, 0.0f);
+        for (int c = 0; c < 2; ++c)
+        {
+            dly[c].setMaxDelay(sizes[1] + 8);
+            dryBuf[c].assign(kMaxChunk, 0.0f);
+            wetBuf[c].assign(kMaxChunk, 0.0f);
+        }
         mixS.setRamp((int)(0.02 * sr)); mixS.reset(cur.mix * 0.01);
         outS.setRamp((int)(0.02 * sr)); outS.reset(dbToGain(cur.outDb));
         deltaS.setRamp((int)(0.01 * sr)); deltaS.reset(cur.delta ? 1.0 : 0.0);
         swGain.setRamp((int)(0.005 * sr)); swGain.reset(1.0);
-        swState = 0; pending = -1;
-        activate(clampv(cur.quality, 0, 1));
+        swState = 0; muteLeft = 0;
+        want = clampv(cur.quality, 0, 1);
+        activate(want);
     }
 
     void set(const Settings& s)
@@ -119,8 +133,8 @@ public:
         if (s.brighten != cur.brighten || s.body != cur.body) tiltDirty = true;
         const int q = clampv(s.quality, 0, 1);
         cur = s; cur.quality = q;
-        if (q != active && q != pending) { pending = q; if (swState == 0 || swState == 3) { swState = 1; swGain.setTarget(0.0); } }
-        else if (q == active && pending >= 0 && swState == 1) { pending = -1; swState = 0; swGain.setTarget(1.0); }
+        want = q;
+        steerSwitch();
         mixS.setTarget(clampv(cur.mix, 0.0f, 100.0f) * 0.01);
         outS.setTarget(dbToGain(cur.outDb));
         deltaS.setTarget(cur.delta ? 1.0 : 0.0);
@@ -156,46 +170,95 @@ public:
     }
 
 private:
+    // Per-bin tables of one FFT size (built in prepare, never on the audio thread).
+    struct BinTable {
+        std::vector<int> band;               // lower band of the bin's triangle pair
+        std::vector<float> frac;             // weight of band + 1
+        std::vector<float> kw;               // |H|^2 of the K-weighting (auto level)
+        std::vector<float> tiltOct;          // Brighten's shape: 1.5 dB per octave from 1 kHz, clamped (tiltDb)
+        std::vector<float> tiltShelf;        // Body's shape: 5 dB below 150 Hz (tiltDb)
+    };
+
+    void buildBinTable(int q)
+    {
+        BinTable& t = tab[q];
+        const int Nq = sizes[q], Kq = Nq / 2 + 1;
+        t.band.assign((size_t)Kq, 0); t.frac.assign((size_t)Kq, 0.0f); t.kw.assign((size_t)Kq, 0.0f);
+        t.tiltOct.assign((size_t)Kq, 0.0f); t.tiltShelf.assign((size_t)Kq, 0.0f);
+        const double binHz = sr / Nq;
+        for (int k = 0; k < Kq; ++k)
+        {
+            const double f = std::max(1, k) * binHz;
+            // band weights (triangles on the ERB scale = linear interpolation between band centres)
+            const double x = (erbNumber(f) - bandE[0]) / (bandE[kBands - 1] - bandE[0]) * (kBands - 1);
+            if (x <= 0.0) { t.band[(size_t)k] = 0; t.frac[(size_t)k] = 0.0f; }
+            else if (x >= kBands - 1) { t.band[(size_t)k] = kBands - 2; t.frac[(size_t)k] = 1.0f; }
+            else { t.band[(size_t)k] = (int)x; t.frac[(size_t)k] = (float)(x - (int)x); }
+            t.kw[(size_t)k] = (float)kWeightingPower(f, sr);
+            // tiltDb(f, brighten, body) = brighten * tiltOct + body * tiltShelf (both clamped to +-1)
+            t.tiltOct[(size_t)k] = (float)(1.5 * clampv(std::log2(std::max(f, 10.0) / 1000.0), -5.0, 4.0));
+            t.tiltShelf[(size_t)k] = (float)(5.0 / (1.0 + std::pow(std::max(f, 1.0) / 150.0, 2.0)));
+        }
+    }
+
+    // Cheap: the tables are built in prepare(). The dry delay keeps running (it always holds real input, and the
+    // output stays muted for N samples after a switch anyway).
     void activate(int q)
     {
         active = q;
         N = sizes[q]; K = N / 2 + 1; H = N / 4;
         stft[q].reset();
-        for (int c = 0; c < 2; ++c) { dly[c].setDelay(N); dly[c].clear(); }
-        const double binHz = sr / N;
-        // per bin: band weights (triangles on the ERB scale = linear interpolation between band centres)
-        for (int k = 0; k < K; ++k)
-        {
-            const double f = std::max(1, k) * binHz;
-            const double t = (erbNumber(f) - bandE[0]) / (bandE[kBands - 1] - bandE[0]) * (kBands - 1);
-            binKw[(size_t)k] = (float)kWeightingPower(f, sr);
-            binLt[(size_t)k] = 0.0f;
-            if (t <= 0.0) { binBand[(size_t)k] = 0; binFrac[(size_t)k] = 0.0f; }
-            else if (t >= kBands - 1) { binBand[(size_t)k] = kBands - 2; binFrac[(size_t)k] = 1.0f; }
-            else { binBand[(size_t)k] = (int)t; binFrac[(size_t)k] = (float)(t - (int)t); }
-        }
+        for (int c = 0; c < 2; ++c) dly[c].setDelay(N);
+        std::fill(binLt.begin(), binLt.begin() + K, 0.0f);
         frames = 0;
-        for (int b = 0; b < kBands; ++b) { st[b] = lt[b] = -200.0; gS[b] = 0.0; }
+        for (int b = 0; b < kBands; ++b) { st[b] = lt[b] = -200.0; stP[b] = ltP[b] = 0.0; gS[b] = 0.0; }
         makeupDb = 0.0;
         tiltDirty = true;
     }
 
+    // Quality (FFT size) switch: fade out (5 ms), switch at the next chunk, stay muted for the new latency, fade in.
+    // swState: 0 running, 1 fading out, 2 silent (switches at the next chunk), 3 silent after the switch (N samples).
+    // Every state looks at the requested size (`want`), so the engine always ends on the size asked for, also when
+    // the request changes back while a switch is under way (a change during state 3 is taken when the mute ends:
+    // the new STFT has to fill before anything is heard).
+    void steerSwitch()
+    {
+        if (want != active) { if (swState == 0) { swState = 1; swGain.setTarget(0.0); } }
+        else if (swState == 1 || swState == 2) { swState = 0; swGain.setTarget(1.0); }   // back before it switched
+    }
+
     void processChunk(float* L, float* R, int n)
     {
-        if (swState == 2) { activate(pending); pending = -1; swState = 3; muteLeft = N; }
+        if (swState == 2)
+        {
+            if (want != active) { activate(want); swState = 3; muteLeft = N; }
+            else { swState = 0; swGain.setTarget(1.0); }
+        }
         float* io[2] = { wetBuf[0].data(), wetBuf[1].data() };
         for (int i = 0; i < n; ++i)
         {
-            wetBuf[0][(size_t)i] = L[i]; wetBuf[1][(size_t)i] = R[i];
-            dryBuf[0][(size_t)i] = dly[0].process(L[i]);
-            dryBuf[1][(size_t)i] = dly[1].process(R[i]);
+            // one NaN/Inf (or absurd) input sample would stay in the analysis and the overlap-add for good: zero it
+            float l = L[i], r = R[i];
+            if (!(std::fabs(l) < 1e6f)) l = 0.0f;
+            if (!(std::fabs(r) < 1e6f)) r = 0.0f;
+            wetBuf[0][(size_t)i] = l; wetBuf[1][(size_t)i] = r;
+            dryBuf[0][(size_t)i] = dly[0].process(l);
+            dryBuf[1][(size_t)i] = dly[1].process(r);
         }
         stft[active].process(io, n, &Engine::frameCb, this);
         for (int i = 0; i < n; ++i)
         {
             const float m = (float)mixS.next(), d = (float)deltaS.next();
             float g = (float)outS.next();
-            if (swState == 3) { g = 0.0f; if (--muteLeft <= 0) { swState = 0; swGain.setTarget(1.0); } }
+            if (swState == 3)
+            {
+                g = 0.0f;
+                if (--muteLeft <= 0)
+                {
+                    if (want != active) swState = 2;                         // asked for the other size meanwhile
+                    else { swState = 0; swGain.setTarget(1.0); }
+                }
+            }
             else
             {
                 g *= (float)swGain.next();
@@ -256,10 +319,9 @@ private:
         }
     }
 
+    // per band only (48 values); per bin the tilt is two multiply-adds on the tables (Brighten/Body automation is cheap)
     void buildTilt()
     {
-        const double binHz = sr / N;
-        for (int k = 0; k < K; ++k) binTiltDb[(size_t)k] = (float)tiltDb(std::max(1, k) * binHz, cur.brighten * 0.01, cur.body * 0.01);
         for (int b = 0; b < kBands; ++b) bandTilt[b] = tiltDb(bandF[b], cur.brighten * 0.01, cur.body * 0.01);
         tiltDirty = false;
     }
@@ -268,6 +330,10 @@ private:
     {
         if (fftSize != N) return;
         if (tiltDirty) buildTilt();
+        const BinTable& tb = tab[active];
+        const int* binBand = tb.band.data();
+        const float* binFrac = tb.frac.data();
+        const float* binKw = tb.kw.data();
         float* L = spec[0];
         float* R = channels > 1 ? spec[1] : spec[0];
         // analyzer scale: a full-scale sine ~ 0 dB in its bin; per-bin mean power -> "analyzer dB" with the pink tilt
@@ -275,12 +341,18 @@ private:
         // averages +3 dB), so the target curve lines up with the drawn spectrum: noise of variance s^2 reads
         // 16 s^2 / Na per bin there, and has s^2 N / 2 per bin here (sqrt-Hann)
         const double norm = 32.0 / ((double)pump::analyzerSize(sr) * (double)N);
-        for (int k = 0; k < K; ++k) binPow[(size_t)k] = 0.5f * (binPower(L, k, K) + binPower(R, k, K));
+        // (the input is sanitized, so the spectra are finite; the guards here and below keep every recursive state
+        // finite regardless: one NaN in it used to freeze the curve at 0 dB for good)
+        for (int k = 0; k < K; ++k)
+        {
+            const float p = 0.5f * (binPower(L, k, K) + binPower(R, k, K));
+            binPow[(size_t)k] = std::isfinite(p) ? p : 0.0f;
+        }
         double bp[kBands] = {}, bw[kBands] = {};
         for (int k = 1; k < K; ++k)
         {
-            const int b = binBand[(size_t)k];
-            const float fr = binFrac[(size_t)k], p = binPow[(size_t)k];
+            const int b = binBand[k];
+            const float fr = binFrac[k], p = binPow[(size_t)k];
             bp[b] += p * (1.0f - fr); bw[b] += 1.0f - fr;
             bp[b + 1] += p * fr; bw[b + 1] += fr;
         }
@@ -291,7 +363,8 @@ private:
             lvl[b] = bw[b] > 0.3 ? 10.0 * std::log10(bp[b] / bw[b] * norm + 1e-30) + 3.0103 * std::log2(bandF[b] / 1000.0) : -1000.0;
         for (int b = 1; b < kBands; ++b) if (lvl[b] < -900.0) lvl[b] = lvl[b - 1];
         for (int b = kBands - 2; b >= 0; --b) if (lvl[b] < -900.0) lvl[b] = lvl[b + 1];
-        for (int b = 0; b < kBands; ++b) lvl[b] = std::max(lvl[b], -160.0);
+        // (std::max(NaN, -160) is NaN: test for finiteness, not just the floor)
+        for (int b = 0; b < kBands; ++b) lvl[b] = std::isfinite(lvl[b]) ? clampv(lvl[b], -160.0, 200.0) : -160.0;
 
         // time scales
         const double hopSec = (double)H / sr;
@@ -308,7 +381,8 @@ private:
             const double pw = std::pow(10.0, lvl[b] * 0.1);
             stP[b] += (pw - stP[b]) * aS;
             ltP[b] += (pw - ltP[b]) * aL;
-            if (frames == 1) { stP[b] = ltP[b] = pw; }
+            if (frames == 1 || !std::isfinite(stP[b])) stP[b] = pw;
+            if (frames == 1 || !std::isfinite(ltP[b])) ltP[b] = pw;
             st[b] = 10.0 * std::log10(stP[b] + 1e-30);
             lt[b] = 10.0 * std::log10(ltP[b] + 1e-30);
         }
@@ -372,7 +446,7 @@ private:
         for (int b = 0; b < kBands; ++b) if (g[b] > 0.0) g[b] *= gate[b];
         // smooth in time (dB, one pole: Speed)
         const double aG = std::max(1.0 - std::exp(-hopSec / tauG), frames < 8 ? 0.5 : 0.0);
-        for (int b = 0; b < kBands; ++b) gS[b] += (g[b] - gS[b]) * aG;
+        for (int b = 0; b < kBands; ++b) { gS[b] += (g[b] - gS[b]) * aG; if (!std::isfinite(gS[b])) gS[b] = 0.0; }
         // ... and the share of the tilt the adaptive part can't deliver (little Recover / Tame) is applied directly,
         // so Brighten and Body always do what they say
         // (the adaptive part delivers about 70% of a target change at high settings: keep a third directly)
@@ -388,8 +462,8 @@ private:
             for (int b = 0; b < kBands; ++b) gf[b] = (float)gS[b];
             for (int k = 0; k < K; ++k)
             {
-                const int b = binBand[(size_t)k];
-                const float fr = binFrac[(size_t)k];
+                const int b = binBand[k];
+                const float fr = binFrac[k];
                 binDb[(size_t)k] = gf[b] + (gf[b + 1] - gf[b]) * fr;
             }
             // At the low end ERB bands are narrower than a bin: smooth the curve across bins too ([1 2 1] eight
@@ -401,7 +475,12 @@ private:
                 float prev = binDb[0];
                 for (int k = 1; k < K - 1; ++k) { const float c = binDb[(size_t)k]; binDb[(size_t)k] = 0.25f * prev + 0.5f * c + 0.25f * binDb[(size_t)k + 1]; prev = c; }
             }
-            for (int k = 0; k < K; ++k) binDb[(size_t)k] += direct * binTiltDb[(size_t)k];
+            // tiltDb per bin from the tables (Brighten and Body clamped to +-1 as tiltDb does)
+            const float cb = direct * (float)clampv(cur.brighten * 0.01, -1.0, 1.0);
+            const float cy = direct * (float)clampv(cur.body * 0.01, -1.0, 1.0);
+            const float* to = tb.tiltOct.data();
+            const float* ts = tb.tiltShelf.data();
+            for (int k = 0; k < K; ++k) binDb[(size_t)k] += cb * to[k] + cy * ts[k];
         }
         // auto level: the K-weighted (BS.1770) energy of the long-term spectrum before and after the curve, per bin
         {
@@ -416,7 +495,7 @@ private:
                 double eIn = 0.0, eOut = 0.0;
                 for (int k = 1; k < K; ++k)
                 {
-                    const double pw = (double)binLt[(size_t)k] * binKw[(size_t)k];
+                    const double pw = (double)binLt[(size_t)k] * binKw[k];
                     const float gl = dbToGainF(binDb[(size_t)k]);
                     eIn += pw; eOut += pw * gl * gl;
                 }
@@ -424,7 +503,7 @@ private:
             }
             const double aM = std::max(1.0 - std::exp(-hopSec / 0.3), frames < 8 ? 0.5 : 0.0);
             makeupDb += (target - makeupDb) * aM;
-            if (!shaping && std::fabs(makeupDb) < 1e-4) makeupDb = 0.0;
+            if (!std::isfinite(makeupDb) || (!shaping && std::fabs(makeupDb) < 1e-4)) makeupDb = 0.0;
         }
         else makeupDb = 0.0;
         // apply
@@ -456,16 +535,16 @@ private:
     Settings cur;
     STFT stft[2];
     int sizes[2] = { 2048, 4096 };
-    int active = 0, pending = -1;
+    int active = 0, want = 0;               // the running FFT size (quality index) and the requested one
     int N = 2048, K = 1025, H = 512;
     long frames = 0;
     double bandE[kBands] = {}, bandF[kBands] = {}, bandTilt[kBands] = {}, recWeight[kBands] = {};
     double st[kBands] = {}, lt[kBands] = {}, stP[kBands] = {}, ltP[kBands] = {}, gS[kBands] = {};
     double makeupDb = 0.0;
     bool tiltDirty = true;
-    std::vector<int> binBand;
-    std::vector<float> binFrac, binGain, binTiltDb, binPow, binDb, binLt, binKw;
-    std::atomic<float> uiG[kBands], uiT[kBands], uiL[kBands], uiMk { 0.0f };
+    BinTable tab[2];                        // per quality: built in prepare()
+    std::vector<float> binGain, binPow, binDb, binLt;   // working buffers, sized for the larger FFT
+    std::atomic<float> uiG[kBands] {}, uiT[kBands] {}, uiL[kBands] {}, uiMk { 0.0f };   // set in the constructor
     DelayLine dly[2];
     std::vector<float> dryBuf[2], wetBuf[2];
     LinearSmoother mixS, outS, deltaS, swGain;

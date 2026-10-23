@@ -8,7 +8,8 @@ namespace pump { namespace tone {
 
 enum Param : int {
     kRecover = 0, kTame, kBias, kBrighten, kBody, kSpeed, kAutoLevel, kOutGain, kMix, kQuality, kDelta, kBypass,
-    kAudition, kAuditionFreq, kAuditionQ,   // Alt-listen (UI-driven, hidden, not automatable)
+    kAudition, kAuditionFreq, kAuditionQ,   // unused placeholders (kept so parameter indices/ids never shift): Alt-hold
+                                            // listen is driven through PluginTone's atomics instead
     kNumParams
 };
 
@@ -32,9 +33,10 @@ inline const std::vector<ParamSpec>& params()
     v.push_back({ "quality", "Quality (FFT size)", "Quality", 0, 1, 0, PUnit::None, PScale::Linear, kPInteger, kQualityNames, 1 });
     v.push_back({ "delta", "Delta", "Delta", 0, 1, 0, PUnit::None, PScale::Linear, A | kPBoolean | kPNoUndo, nullptr, 1 });
     v.push_back({ "bypass", "Bypass", "Bypass", 0, 1, 0, PUnit::None, PScale::Linear, A | kPBoolean | kPBypass, nullptr, 1 });
-    v.push_back({ "audition", "Audition", "Audition", 0, 1, 0, PUnit::None, PScale::Linear, kPBoolean | kPHidden, nullptr, 1 });
-    v.push_back({ "audition_freq", "Audition Frequency", "Aud Freq", 20, 20000, 1000, PUnit::Hz, PScale::Log, kPHidden, nullptr, 1 });
-    v.push_back({ "audition_q", "Audition Q", "Aud Q", 0.3f, 12, 2, PUnit::None, PScale::Log, kPHidden, nullptr, 1 });
+    // placeholders (see the enum): symbols and order must not change
+    v.push_back({ "audition", "Audition", "Audition", 0, 1, 0, PUnit::None, PScale::Linear, kPBoolean | kPHidden | kPNoUndo, nullptr, 1 });
+    v.push_back({ "audition_freq", "Audition Frequency", "Aud Freq", 20, 20000, 1000, PUnit::Hz, PScale::Log, kPHidden | kPNoUndo, nullptr, 1 });
+    v.push_back({ "audition_q", "Audition Q", "Aud Q", 0.3f, 12, 2, PUnit::None, PScale::Log, kPHidden | kPNoUndo, nullptr, 1 });
     return v;
 }
 
