@@ -21,7 +21,11 @@ jobs:
       - uses: actions/checkout@v5
         with: { submodules: recursive }
       - name: DSP tests
-        run: make tests
+        run: |
+          set -o pipefail
+          make tests 2>&1 | tee tests.log \
+            || { grep -E "^== build|FAIL|not ok|error|Error|Assert|Segmentation|terminate" tests.log | tail -15 | while IFS= read -r l; do echo "::error::$l"; done; \
+                 tail -8 tests.log | while IFS= read -r l; do echo "::error::$l"; done; exit 1; }
 
   windows:
     runs-on: ubuntu-24.04
@@ -30,7 +34,7 @@ jobs:
       - uses: actions/checkout@v5
         with: { submodules: recursive }
       - name: Install MinGW (posix threads)
-        timeout-minutes: 6
+        timeout-minutes: 15
         run: |
           for attempt in 1 2 3; do
             sudo timeout 150 apt-get update -qq -o Acquire::Retries=3 && \
@@ -77,11 +81,6 @@ jobs:
             [ -e "$b" ] || continue
             n=$(basename "$b"); plutil -replace CFBundleIdentifier -string "com.wake.${n%.*}.${n##*.}" "$b/Contents/Info.plist"
           done
-          # our own bundle identifiers (DPF's template uses studio.kx.distrho.*)
-          for b in bin/*.vst3 bin/*.clap; do
-            [ -e "$b" ] || continue
-            n=$(basename "$b"); plutil -replace CFBundleIdentifier -string "com.wake.${n%.*}.${n##*.}" "$b/Contents/Info.plist"
-          done
           for b in bin/*.vst3 bin/*.clap bin/*.component; do [ -e "$b" ] && codesign --force --deep -s - "$b" || true; done
           mkdir -p dist/pump-macos/VST3 dist/pump-macos/CLAP dist/pump-macos/Components
           cp -R bin/*.vst3 dist/pump-macos/VST3/
@@ -122,7 +121,7 @@ jobs:
       - uses: actions/checkout@v5
         with: { submodules: recursive }
       - name: Install dependencies
-        timeout-minutes: 6
+        timeout-minutes: 15
         run: |
           for attempt in 1 2 3; do
             sudo timeout 150 apt-get update -qq -o Acquire::Retries=3 && \
