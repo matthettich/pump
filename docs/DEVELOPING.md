@@ -90,7 +90,7 @@ make tests
 DISPLAY_NUM=:101 tools/shot.sh bin/pump-eq /tmp/eq.png 1 0 4  # preset 1, light, after 4 s of the test mix
 ```
 
-The standalone (`jack`) build runs headless with `PUMP_TEST_AUDIO=/home/claude/testkit/mix.f32` (8 bars of drums,
+The standalone (`jack`) build runs headless with `PUMP_TEST_AUDIO=tests/data/mix.f32` (made by tools/make_mix.py; 8 bars of drums,
 bass, pads and a lead with two deliberate resonances, peaking at -6 dBFS). `PUMP_TEST_PRESET=<n>` loads a factory
 preset at startup and `PUMP_TEST_DARK=1` starts dark — both only matter for screenshots.
 

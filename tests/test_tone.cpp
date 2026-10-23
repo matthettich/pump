@@ -2,6 +2,7 @@
 // -8 dB at 300 Hz); identity null at Recover = Tame = Brighten = Body = 0; auto level keeps the integrated loudness
 // of the test mix within 1 LU; latency per quality (impulse) at 44.1/48/96 kHz; delta; noise is not lifted;
 // parameter changes stay safe.
+#include "TestMix.hpp"
 #include "../plugins/tone/ToneEngine.hpp"
 #include "dsp/Biquad.hpp"
 #include "dsp/Loudness.hpp"
@@ -157,7 +158,7 @@ int main()
 
     // ---- 2. identity ----
     printf("== identity\n");
-    const Stereo mix = loadMix("/home/claude/testkit/mix.f32");
+    const Stereo mix = loadMix(pump_test_mix());
     if (mix.L.empty()) { printf("cannot read the test mix\n"); return 1; }
     for (int q = 0; q < 2; ++q)
         for (bool al : { false, true })

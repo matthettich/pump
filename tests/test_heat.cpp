@@ -2,6 +2,7 @@
 // oversampling factor; drive 0 near-identity; aliasing of a 7 kHz sine at high drive (Clip, Warm) per factor;
 // auto gain keeps the test mix's RMS steady across drive 0..18 dB; latency and wet/dry alignment per factor;
 // solo / listen; random-settings stress. 44.1, 48 and 96 kHz.
+#include "TestMix.hpp"
 #include "../plugins/heat/HeatEngine.hpp"
 #include <cstdio>
 #include <random>
@@ -73,7 +74,7 @@ static double rmsDb(const std::vector<float>& L, const std::vector<float>& R, si
 
 int main()
 {
-    const std::vector<float> mix = loadMix("/home/claude/testkit/mix.f32");
+    const std::vector<float> mix = loadMix(pump_test_mix());
     if (mix.empty()) { printf("no test mix\n"); return 1; }
     for (double sr : { 44100.0, 48000.0, 96000.0 })
     {
