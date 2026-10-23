@@ -415,16 +415,26 @@ protected:
         {
             double f, q;
             std::string label;
+            int side = 0;   // what the engine hears (designDetector): 0 a band around f, -1 everything below f, +1 above
             if (dmode == dmAudition) { f = value(kAuditionFreq); q = value(kAuditionQ); label = "LISTEN  " + spec(kAuditionFreq).format((float)f); }
-            else { f = bandFreq(soloBand); q = std::max(0.3f, bandQ(soloBand)); label = "SOLO BAND " + std::to_string(soloBand + 1); }
+            else
+            {
+                f = bandFreq(soloBand); q = pump::clampv((double)bandQ(soloBand), 0.3, 12.0); label = "SOLO BAND " + std::to_string(soloBand + 1);
+                const pump::Shape sh = bandShape(soloBand);
+                if (sh == pump::Shape::LowShelf || sh == pump::Shape::LowCut) side = -1;
+                else if (sh == pump::Shape::HighShelf || sh == pump::Shape::HighCut || sh == pump::Shape::TiltShelf) side = 1;
+            }
             const double half = std::asinh(1.0 / (2.0 * q)) / std::log(2.0);   // half bandwidth in octaves
-            const float x0 = xOfF(f * std::pow(2.0, -half)), x1 = xOfF(f * std::pow(2.0, half));
+            float x0 = xOfF(f * std::pow(2.0, -half)), x1 = xOfF(f * std::pow(2.0, half));
+            if (side < 0) { x0 = display.x; x1 = xOfF(f); }
+            else if (side > 0) { x0 = xOfF(f); x1 = display.r(); }
             fillRect(Rect(display.x, display.y, std::max(0.0f, x0 - display.x), display.h), withAlpha2(theme.bg, 0.55f));
             fillRect(Rect(x1, display.y, std::max(0.0f, display.r() - x1), display.h), withAlpha2(theme.bg, 0.55f));
             line(x0, display.y, x0, display.b(), theme.second, 1.5f);
             line(x1, display.y, x1, display.b(), theme.second, 1.5f);
             const float tw = textWidth(label, kLabel, 12.0f, 1.0f) + 16.0f;
-            const Rect lb(std::max(display.x + 6, std::min(display.r() - tw - 6, xOfF(f) - tw * 0.5f)), display.y + 10, tw, 22);
+            // keep clear of the ±dB range button in the top-right corner
+            const Rect lb(std::max(display.x + 6, std::min(rangeBtn->r.x - tw - 8, xOfF(f) - tw * 0.5f)), display.y + 10, tw, 22);
             fillRect(lb, theme.second);
             textAt(lb.cx(), lb.cy(), label, kLabel, 12.0f, theme.bg, ALIGN_CENTER | ALIGN_MIDDLE, 1.0f);
         }
@@ -466,8 +476,8 @@ protected:
     //   double-click / Ctrl-click empty: new band (Alt + double-click: a dynamic band); drag the curve: new band
     //   drag a node: frequency + gain of all selected bands; Shift: fine; Alt while dragging: lock to one axis;
     //   Ctrl/Cmd + vertical drag: Q; wheel: Q (cuts: slope), Ctrl/Cmd + wheel: gain, Alt + wheel: dynamic range
-    //   Alt + click-and-hold a node: solo that band while held (drag to move it, still soloed); Alt + hold empty space: listen to the region
-    //   under the mouse (drag to sweep, wheel for width)
+    //   Alt + click-and-hold a node: solo that band while held (drag, still soloed: left/right frequency, up/down Q);
+    //   Alt + hold empty space: listen to the region under the mouse (drag to sweep, up/down or wheel for width)
     //   Ctrl/Cmd + click a node: add to selection; Shift + click: select a range; drag empty space: select
     //   Ctrl/Cmd + Alt + click a node: next shape; Alt + Shift + click: next slope; double-click a node: type values
     enum DragMode { dmNone = 0, dmNodes, dmRect, dmAudition, dmSoloHold, dmPending };
@@ -546,6 +556,7 @@ protected:
         if (alt && !dbl)
         {
             dmode = dmAudition;
+            lastY = y;
             setParam(kAuditionFreq, (float)fOfX(x));
             setParam(kAudition, 1.0f);
             return true;
@@ -568,10 +579,16 @@ protected:
         const float fine = (mod & kModifierShift) ? 0.15f : 1.0f;
         switch (dmode)
         {
-        case dmAudition:
+        case dmAudition: {
+            // left/right: frequency; up: narrower, down: wider (standard); the wheel still sets the width too
             setParam(kAuditionFreq, (float)fOfX(std::max(display.x, std::min(display.r(), x))));
-            setStatus("Listening around " + spec(kAuditionFreq).format(value(kAuditionFreq)) + "  (wheel: width)");
+            const float fine = (mod & kModifierShift) ? 0.15f : 1.0f;
+            setParam(kAuditionQ, value(kAuditionQ) * std::pow(2.0f, -(y - lastY) * fine / 60.0f));
+            lastY = y;
+            char q[24]; std::snprintf(q, sizeof q, "  Q %.2f", value(kAuditionQ));
+            setStatus("Listening around " + spec(kAuditionFreq).format(value(kAuditionFreq)) + q + "  (up/down or wheel: width)");
             return;
+        }
         case dmSoloHold:
             // moved far enough: keep the solo and turn the hold into a node drag
             if (std::fabs(x - pressX) + std::fabs(y - pressY) > 3.0f)
@@ -604,7 +621,8 @@ protected:
             for (int b : dragSet)
             {
                 setParam(bandParam(b, kFreq), (float)(orig[b][0] * std::pow(kHi / kLo, (double)(dx / display.w))));
-                if (cmd || !pump::shapeHasGain(bandShape(b)))
+                // Q: Ctrl/Cmd-drag, shapes without gain, and Alt-solo drags (standard: up = narrower, down = wider)
+                if (cmd || soloHeld || !pump::shapeHasGain(bandShape(b)))
                     setParam(bandParam(b, kQ), orig[b][2] * std::pow(2.0f, -dy / 60.0f));
                 else
                     setParam(bandParam(b, kGain), orig[b][1] - dy / (display.h * 0.5f - 14.0f) * dbRange / (float)scale);
@@ -656,7 +674,7 @@ protected:
     void bodyHover(float x, float y) override
     {
         hover = display.contains(x, y) ? nodeAt(x, y) : -1;
-        if (hover >= 0) setStatus(bandReadout(hover) + "    drag · Alt-hold: solo (drag to move) · wheel: Q · double-click: type · right-click: menu");
+        if (hover >= 0) setStatus(bandReadout(hover) + "    drag · Alt: solo · wheel: Q · right-click: menu");
         else if (display.contains(x, y))
         {
             char buf[160];
@@ -793,8 +811,8 @@ protected:
             { "Drag a node", "frequency and gain (all selected bands); Alt while dragging: one axis" },
             { "Ctrl/Cmd + drag up/down", "Q (width); mouse wheel on a node: Q, on cuts: slope" },
             { "Ctrl/Cmd + wheel  ·  Alt + wheel", "gain  ·  dynamic range" },
-            { "Alt + hold a node", "solo: hear only that band while held; drag to move it while soloed" },
-            { "Alt + hold / drag empty space", "listen to the region under the mouse (wheel: width)" },
+            { "Alt + hold a node", "solo it while held; drag: left/right frequency, up = narrower, down = wider" },
+            { "Alt + hold / drag empty space", "listen to the region under the mouse; up/down (or wheel): width" },
             { "Ctrl/Cmd+click · Shift+click · drag", "add to selection · select a range · box-select" },
             { "Ctrl/Cmd+Alt+click · Alt+Shift+click", "next shape · next slope" },
             { "Double-click a node", "type frequency, Tab to gain and Q (1k, A4, C#3+13)" },

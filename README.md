@@ -28,8 +28,8 @@ Every plugin follows the usual conventions. Press **?** in a plugin for its full
 - drag a control (Shift = fine), mouse wheel steps it, Ctrl/Cmd-click resets it
 - double-click or right-click to type a value: `1k`, `A4`, `C#3+13`, `2x` (= +6 dB), `50%` (halfway); Tab = next field
 - Ctrl/Cmd+Z undo, Shift+Ctrl/Cmd+Z or Ctrl+Y redo; A/B compare with COPY; factory presets with ◀ ▶
-- hold **Alt** on a band to solo it while held (EQ nodes, multiband regions) and drag to move it while soloed; on empty spectrum space, Alt-hold listens
-  to the range under the mouse (wheel = width)
+- hold **Alt** on a band to solo it while held (EQ nodes, multiband regions); drag while soloed to move it (up = narrower,
+  down = wider). On empty spectrum space, Alt-hold listens to the range under the mouse (drag to sweep; up/down or wheel = width)
 - DARK switches the look and is remembered for new instances
 
 ## Building

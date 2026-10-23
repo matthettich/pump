@@ -922,8 +922,13 @@ protected:
         const Rect f(0, H - kFooterH, W, kFooterH);
         fillRect(f, theme.panel2);
         line(0, f.y + 0.75f, W, f.y + 0.75f, theme.ink, 1.5f);
-        textAt(12.0f, f.cy(), fStatus, kLabel, 12.0f, theme.ink, ALIGN_LEFT | ALIGN_MIDDLE, 0.6f);
         const std::string info = footerInfo();
+        // the status line never runs into the info on the right
+        const float infoW = info.empty() ? 0.0f : textWidth(info, kLabel, 11.5f, 0.6f) + 18.0f;
+        save();
+        scissor(0.0f, f.y, std::max(0.0f, W - 30.0f - infoW), f.h);
+        textAt(12.0f, f.cy(), fStatus, kLabel, 12.0f, theme.ink, ALIGN_LEFT | ALIGN_MIDDLE, 0.6f);
+        restore();
         textAt(W - 30.0f, f.cy(), info, kLabel, 11.5f, theme.ink2, ALIGN_RIGHT | ALIGN_MIDDLE, 0.6f);
     }
     Rect gripRect() const { return Rect(W - 18.0f, H - 18.0f, 18.0f, 18.0f); }
