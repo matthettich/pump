@@ -31,7 +31,7 @@ public:
 
 protected:
     const char* getLabel() const override { return "pump_heat"; }
-    const char* getDescription() const override { return "Multiband saturation and exciter: warm, tape, tube, triode, retro and clip curves, oversampled, with auto gain."; }
+    const char* getDescription() const override { return PUMP_PLUGIN_ABOUT; }
 
     void activate() override
     {

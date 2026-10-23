@@ -15,8 +15,18 @@
 #include "../dsp/FFT.hpp"
 #include "FontData.hpp"
 #include "Theme.hpp"
+#include <cctype>
 #include <chrono>
 #include <cstdlib>
+
+// What the plugin is ("Compressor") and a one-line description, from the plugin's DistrhoPluginInfo.h: shown next to
+// the tag in the header and when hovering it.
+#ifndef PUMP_PLUGIN_KIND
+#define PUMP_PLUGIN_KIND ""
+#endif
+#ifndef PUMP_PLUGIN_ABOUT
+#define PUMP_PLUGIN_ABOUT ""
+#endif
 #include <functional>
 #include <memory>
 #include <string>
@@ -811,6 +821,8 @@ protected:
                 break;
             }
         }
+        // hovering the brand / tag / kind: what this plugin does
+        if (st.empty() && y < kHeaderH && x < brandRight()) st = PUMP_PLUGIN_ABOUT;
         fStatus = st;
         if (y > kHeaderH && y < H - kFooterH) bodyHover(x, y);
         repaint();
@@ -956,7 +968,27 @@ protected:
         rx -= 30.0f + 12.0f;
         headerExtra = Rect(x, y, std::max(0.0f, rx - x), h);
     }
-    float brandRight() { return 14.0f + textWidth("…pump", kBold, 21.0f) + 10.0f + textWidth(fTag, kBold, 15.0f) + 16.0f; }
+    // the kind label ("RESONANCE / SUPPRESSOR"): one word per line, at most two lines
+    std::vector<std::string> kindLines() const
+    {
+        std::string k = PUMP_PLUGIN_KIND;
+        for (char& ch : k) ch = (char)std::toupper((unsigned char)ch);
+        std::vector<std::string> out;
+        if (k.empty()) return out;
+        const size_t sp = k.find(' ');
+        if (sp == std::string::npos) out.push_back(k);
+        else { out.push_back(k.substr(0, sp)); out.push_back(k.substr(sp + 1)); }
+        return out;
+    }
+    static constexpr float kKindSize = 10.0f, kKindSpacing = 1.2f;
+    float kindWidth()
+    {
+        float w = 0.0f;
+        for (const auto& l : kindLines()) w = std::max(w, textWidth(l, kLabel, kKindSize, kKindSpacing));
+        return w;
+    }
+    float tagRight() { return 14.0f + textWidth("…pump", kBold, 21.0f) + 10.0f + textWidth(fTag, kBold, 15.0f) + 16.0f; }
+    float brandRight() { const float kw = kindWidth(); return tagRight() + (kw > 0.0f ? 9.0f + kw : 0.0f); }
     void drawHeader()
     {
         fillRect(Rect(0, 0, W, kHeaderH), theme.panel2);
@@ -971,6 +1003,15 @@ protected:
         Color n = theme.neon;
         keyBox(tag, false, false, &n, 3.0f);
         textAt(tag.cx(), tag.cy() + 0.5f, fTag, kBold, 15.0f, theme.neonInk, ALIGN_CENTER | ALIGN_MIDDLE);
+        // what it is, in small caps beside the tag
+        const auto kl = kindLines();
+        const float kx = tag.r() + 9.0f;
+        if (kl.size() == 1) textAt(kx, tag.cy() + 0.5f, kl[0], kLabel, kKindSize, theme.ink2, ALIGN_LEFT | ALIGN_MIDDLE, kKindSpacing);
+        else if (kl.size() == 2)
+        {
+            textAt(kx, tag.cy() - 5.5f, kl[0], kLabel, kKindSize, theme.ink2, ALIGN_LEFT | ALIGN_MIDDLE, kKindSpacing);
+            textAt(kx, tag.cy() + 6.0f, kl[1], kLabel, kKindSize, theme.ink2, ALIGN_LEFT | ALIGN_MIDDLE, kKindSpacing);
+        }
     }
     void drawFooter()
     {

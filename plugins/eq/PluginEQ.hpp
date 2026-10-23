@@ -34,7 +34,7 @@ public:
 
 protected:
     const char* getLabel() const override { return "pump_eq"; }
-    const char* getDescription() const override { return "24-band mastering EQ: analog-matched curves, dynamic bands, mid/side, linear phase."; }
+    const char* getDescription() const override { return PUMP_PLUGIN_ABOUT; }
 
     void activate() override
     {

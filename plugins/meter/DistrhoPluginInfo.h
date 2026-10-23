@@ -2,7 +2,9 @@
 #define DISTRHO_PLUGIN_INFO_H_INCLUDED
 
 #define DISTRHO_PLUGIN_BRAND           "wake"
-#define DISTRHO_PLUGIN_NAME            "pump METER"
+#define DISTRHO_PLUGIN_NAME            "pump METER Loudness Meter"   // hosts identify plugins by the ids below, not the name
+#define PUMP_PLUGIN_KIND               "Loudness Meter"   // shown next to the tag in the window
+#define PUMP_PLUGIN_ABOUT              "Loudness meter: LUFS (EBU R128), LRA, true peak, PLR/PSR, correlation."
 #define DISTRHO_PLUGIN_URI             "https://github.com/matthettich/pump#meter"
 #define DISTRHO_PLUGIN_CLAP_ID         "com.wake.pump.meter"
 #define DISTRHO_PLUGIN_BRAND_ID        Wake

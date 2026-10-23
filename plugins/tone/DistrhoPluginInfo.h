@@ -2,7 +2,9 @@
 #define DISTRHO_PLUGIN_INFO_H_INCLUDED
 
 #define DISTRHO_PLUGIN_BRAND           "wake"
-#define DISTRHO_PLUGIN_NAME            "pump TONE"
+#define DISTRHO_PLUGIN_NAME            "pump TONE Tonal Balance"   // hosts identify plugins by the ids below, not the name
+#define PUMP_PLUGIN_KIND               "Tonal Balance"   // shown next to the tag in the window
+#define PUMP_PLUGIN_ABOUT              "Auto tonal balance: recovers masked frequencies, tames dominant ones."
 #define DISTRHO_PLUGIN_URI             "https://github.com/matthettich/pump#tone"
 #define DISTRHO_PLUGIN_CLAP_ID         "com.wake.pump.tone"
 #define DISTRHO_PLUGIN_BRAND_ID        Wake

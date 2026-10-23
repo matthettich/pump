@@ -2,7 +2,9 @@
 #define DISTRHO_PLUGIN_INFO_H_INCLUDED
 
 #define DISTRHO_PLUGIN_BRAND           "wake"
-#define DISTRHO_PLUGIN_NAME            "pump EQ"
+#define DISTRHO_PLUGIN_NAME            "pump EQ Equalizer"   // hosts identify plugins by the ids below, not the name
+#define PUMP_PLUGIN_KIND               "Equalizer"   // shown next to the tag in the window
+#define PUMP_PLUGIN_ABOUT              "24-band mastering EQ: analog-matched curves, dynamic bands, mid/side, linear phase."
 #define DISTRHO_PLUGIN_URI             "https://github.com/matthettich/pump#eq"
 #define DISTRHO_PLUGIN_CLAP_ID         "com.wake.pump.eq"
 #define DISTRHO_PLUGIN_BRAND_ID        Wake

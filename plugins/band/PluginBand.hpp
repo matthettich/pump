@@ -31,7 +31,7 @@ public:
 
 protected:
     const char* getLabel() const override { return "pump_band"; }
-    const char* getDescription() const override { return "Multiband dynamics: compress, expand or lift up to 4 bands; analog or linear-phase crossovers."; }
+    const char* getDescription() const override { return PUMP_PLUGIN_ABOUT; }
 
     void activate() override
     {

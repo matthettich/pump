@@ -31,7 +31,7 @@ public:
 
 protected:
     const char* getLabel() const override { return "pump_tone"; }
-    const char* getDescription() const override { return "Intelligent auto-balance EQ: recovers masked frequencies and tames dominating ones, continuously."; }
+    const char* getDescription() const override { return PUMP_PLUGIN_ABOUT; }
 
     void prepareAll()
     {

@@ -2,7 +2,9 @@
 #define DISTRHO_PLUGIN_INFO_H_INCLUDED
 
 #define DISTRHO_PLUGIN_BRAND           "wake"
-#define DISTRHO_PLUGIN_NAME            "pump COMP"
+#define DISTRHO_PLUGIN_NAME            "pump COMP Compressor"   // hosts identify plugins by the ids below, not the name
+#define PUMP_PLUGIN_KIND               "Compressor"   // shown next to the tag in the window
+#define PUMP_PLUGIN_ABOUT              "Mastering compressor: six styles, lookahead, mid/side, external sidechain."
 #define DISTRHO_PLUGIN_URI             "https://github.com/matthettich/pump#comp"
 #define DISTRHO_PLUGIN_CLAP_ID         "com.wake.pump.comp"
 #define DISTRHO_PLUGIN_BRAND_ID        Wake
