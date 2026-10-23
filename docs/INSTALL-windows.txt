@@ -1,7 +1,7 @@
 …pump mastering plugins — Windows install
 =========================================
 
-1. Copy every "pump ….vst3" folder into:
+1. Copy every pump-….vst3 folder (pump-eq.vst3, pump-comp.vst3, …) into:
        C:\Program Files\Common Files\VST3\
    (Windows asks for permission once; that folder is where Ableton Live and other hosts look.)
 

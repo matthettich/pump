@@ -27,6 +27,15 @@ inline double gainToDb(double g) { return 20.0 * std::log10(std::max(g, 1e-30));
 inline float dbToGainF(float db) { return std::exp(db * 0.115129254649702f); }
 inline float gainToDbF(float g) { return 8.68588963806504f * std::log(std::max(g, 1e-30f)); }
 
+// FFT size of the UI spectrum analyzer (pump::SpectrumView): 8192 at 44.1/48 kHz, doubled per octave of sample rate
+// up to 32768, so bins stay ~5.4-5.9 Hz wide and a given mix reads at the same level at every rate.
+inline int analyzerSize(double sampleRate)
+{
+    int n = 8192;
+    while (n < 32768 && sampleRate / (n / 8192) > 66000.0) n *= 2;
+    return n;
+}
+
 template <typename T> inline T clampv(T v, T lo, T hi) { return v < lo ? lo : (v > hi ? hi : v); }
 
 // One-pole coefficient for a time constant in seconds (reaches 1 - 1/e after `seconds`).
@@ -122,7 +131,7 @@ public:
         mask = size - 1;
         w = 0;
     }
-    void clear() { std::fill(buf.begin(), buf.end(), 0.0f); }
+    void clear(float v = 0.0f) { std::fill(buf.begin(), buf.end(), v); }
     void setDelay(int samples) { d = clampv(samples, 0, mask - 1); }
     int getDelay() const { return d; }
     inline float process(float x)

@@ -5,11 +5,11 @@
 
 namespace pump {
 
-// Fast tanh (Pade 7/6 with clamp), accurate to ~1e-4 in [-4.97, 4.97] and saturating beyond.
+// Fast tanh (Pade 7/6), accurate to ~1e-4 in [-4.97, 4.97]; the input is clamped there so the output holds its
+// edge value beyond (continuous: no step to +-1).
 inline float fastTanh(float x)
 {
-    if (x > 4.97f) return 1.0f;
-    if (x < -4.97f) return -1.0f;
+    x = clampv(x, -4.97f, 4.97f);
     const float x2 = x * x;
     return x * (135135.0f + x2 * (17325.0f + x2 * (378.0f + x2))) / (135135.0f + x2 * (62370.0f + x2 * (3150.0f + x2 * 28.0f)));
 }
@@ -37,25 +37,29 @@ inline float satCurve(SatMode m, float x)
     {
     case SatMode::Warm:   // gentle symmetric, rounded (odd harmonics, falling fast)
         return fastTanh(x);
-    case SatMode::Tape: { // softer knee than tanh, asymmetric hint
-        const float y = x / std::sqrt(1.0f + x * x * 0.75f);
-        return 1.1547f * (y + 0.04f * y * y) / (1.0f + 0.04f);
+    case SatMode::Tape: { // algebraic soft knee (softer than tanh), unity small-signal gain, a hint of asymmetry
+        const float u = x / std::sqrt(1.0f + x * x);
+        return u + 0.05f * u * u;
     }
     case SatMode::Tube: { // asymmetric: even harmonics; positive side compresses earlier
         const float y = x >= 0.0f ? fastTanh(x * 1.15f) / 1.15f : fastTanh(x * 0.85f) / 0.85f;
-        return y - 0.08f * y * y + 0.08f * 0.25f;   // remove the DC the square term adds at small levels (approx.)
+        return y - 0.08f * y * y;   // the square term adds signal-dependent DC: callers DC-block (silence stays 0)
     }
-    case SatMode::Triode: { // Koren-like grid conduction: hard-ish on positive swings, soft on negative
-        if (x > 0.0f) return x / (1.0f + 0.6f * x + 0.35f * x * x);
-        const float y = fastTanh(x * 0.9f) / 0.9f;
-        return y;
+    case SatMode::Triode: { // grid conduction: a firm knee on positive swings, soft on negative (monotonic)
+        if (x >= 0.0f) { const float r = x / 0.65f; return x / std::cbrt(1.0f + r * r * r); }
+        return 1.35f * fastTanh(x / 1.35f);
     }
     case SatMode::Retro: {  // transformer-ish: cubic soft clip with a little crossover hardness
         const float c = clampv(x, -1.5f, 1.5f);
         return c - (4.0f / 27.0f) * c * c * c;
     }
-    case SatMode::Clip:     // hard clip at 0 dBFS-ish
-        return clampv(x, -1.0f, 1.0f);
+    case SatMode::Clip: {   // clipper at 0 dBFS with a small rounded knee (+-0.4 around the corner)
+        const float a = std::fabs(x), sgn = x < 0.0f ? -1.0f : 1.0f, k = 0.4f;
+        if (a < 1.0f - k) return x;
+        if (a > 1.0f + k) return sgn;
+        const float d = a - (1.0f - k);
+        return sgn * (a - d * d / (4.0f * k));
+    }
     default:
         return x;
     }

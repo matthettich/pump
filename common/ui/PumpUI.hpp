@@ -116,6 +116,7 @@ struct Button : Control {
     bool holdMomentary = false;              // click toggles; click-and-hold (>300 ms) acts only while held
     std::function<void()> onExclusive;       // Ctrl/Cmd-click (Pro-MB: solo/mute this one exclusively)
     double pressTime = 0.0;
+    bool exclusivePress = false;
     bool isOn(PumpUI& ui) const;
     void draw(PumpUI& ui) override;
     bool mouseDown(PumpUI& ui, float x, float y, int button, uint mod) override;
@@ -160,9 +161,12 @@ struct MenuButton : Control {
 class SpectrumView {
 public:
     static constexpr int kPoints = 320;
-    void setup(double sampleRate, int fftSize = 8192)
+    // fftSize 0 = 8192 at 44.1/48 kHz, scaled up with the sample rate (to 32768 at 176.4/192 kHz) so resolution in
+    // Hz and the noise floor read the same at every rate. Rings must hold at least N samples (plugins use 1 << 15).
+    void setup(double sampleRate, int fftSize = 0)
     {
         sr = sampleRate;
+        if (fftSize <= 0) fftSize = pump::analyzerSize(sampleRate);
         N = fftSize;
         fft.setup(N);
         in.resize((size_t)N); out.resize((size_t)N);
@@ -255,8 +259,8 @@ public:
     PumpUI(const ParamSpec* specs, uint32_t numParams, const std::vector<Preset>* presets, const Accent& accent,
            const char* tag, float logicalW, float logicalH, int bypassParam = -1)
         : UI((uint)logicalW, (uint)logicalH),
-          fSpecs(specs), fNum(numParams), fPresets(presets), fAccent(accent), fTag(tag),
-          W(logicalW), H(logicalH), fBypass(bypassParam)
+          W(logicalW), H(logicalH),
+          fSpecs(specs), fNum(numParams), fPresets(presets), fAccent(accent), fTag(tag), fBypass(bypassParam)
     {
         fValues.resize(numParams);
         fLocalSet.assign(numParams, -1.0);
@@ -1054,7 +1058,8 @@ protected:
         char buf[96];
         for (uint32_t i = 0; i < fNum; ++i)
         {
-            if (fSpecs[i].flags & (pump::kPOutput | pump::kPBypass | pump::kPNoUndo)) continue;
+            // momentary parameters (Alt-listen, band listen, meter reset) are never part of undo or A/B
+            if (fSpecs[i].flags & (pump::kPOutput | pump::kPBypass | pump::kPNoUndo | pump::kPHidden)) continue;
             std::snprintf(buf, sizeof buf, "%s=%.9g;", fSpecs[i].symbol, fValues[i]);
             s += buf;
         }
@@ -1074,7 +1079,7 @@ protected:
             const float v = (float)pump::parseNumber(num.c_str(), &end);   // '.' or ',' whatever the locale
             if (end != num.c_str())
                 for (uint32_t i = 0; i < fNum; ++i)
-                    if (key == fSpecs[i].symbol) { if (!(fSpecs[i].flags & pump::kPNoUndo)) setParamGesture((int)i, v); break; }
+                    if (key == fSpecs[i].symbol) { if (!(fSpecs[i].flags & (pump::kPNoUndo | pump::kPHidden | pump::kPOutput))) setParamGesture((int)i, v); break; }
             p = sc + 1;
         }
         endGroup();
@@ -1086,7 +1091,7 @@ protected:
         beginGroup();
         for (uint32_t i = 0; i < fNum; ++i)
         {
-            if (fSpecs[i].flags & (pump::kPOutput | pump::kPBypass | pump::kPNoUndo)) continue;
+            if (fSpecs[i].flags & (pump::kPOutput | pump::kPBypass | pump::kPNoUndo | pump::kPHidden)) continue;
             float v = fSpecs[i].def;
             for (const auto& pv : pr.values) if (std::strcmp(pv.symbol, fSpecs[i].symbol) == 0) { v = pv.value; break; }
             setParamGesture((int)i, v);
@@ -1363,7 +1368,8 @@ inline bool Button::mouseDown(PumpUI& ui, float, float, int button, uint mod)
     if (button != kMouseButtonLeft) return false;
     pressed = true;
     pressTime = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
-    if (onExclusive && cmdKey(mod)) { onExclusive(); return true; }
+    exclusivePress = false;
+    if (onExclusive && cmdKey(mod)) { exclusivePress = true; onExclusive(); return true; }
     if (param >= 0) ui.setParamGesture(param, ui.value(param) >= 0.5f ? ui.spec(param).min : ui.spec(param).max);
     else if (onClick) onClick();
     return true;
@@ -1371,7 +1377,7 @@ inline bool Button::mouseDown(PumpUI& ui, float, float, int button, uint mod)
 inline void Button::mouseUp(PumpUI& ui, float, float)
 {
     pressed = false;
-    if (!holdMomentary) return;
+    if (!holdMomentary || exclusivePress) return;   // a Ctrl/Cmd-click never toggles, however long it is held
     const double held = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count() - pressTime;
     if (held < 0.3) return;
     // released after a hold: undo the toggle (momentary)

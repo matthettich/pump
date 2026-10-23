@@ -205,6 +205,10 @@ public:
             for (int j = 0; j < L; ++j) acc += c[j] * h[j];
             m = std::max(m, (float)std::fabs(acc));
         }
+        // The 192-tap filter is even length, so all four phases fall between input samples (+-1/8, +-3/8 of a
+        // sample) and could read a hair under the sample peak itself (up to 0.3 dB at 16 kHz). True peak is never
+        // below sample peak: include the two input samples that bracket the phases.
+        m = std::max(m, std::max(std::fabs(h[L / 2 - 1]), std::fabs(h[L / 2])));
         pos = (pos - 1 + L) % L;
         return m;
     }

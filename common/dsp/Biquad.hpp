@@ -200,8 +200,10 @@ inline void butterworthQs(int order, double* qs, int& nSecond, bool& hasFirst)
         const double alpha = hasFirst ? kPi * (k + 1) / order : kPi * (2.0 * k + 1.0) / (2.0 * order);
         qs[k] = 1.0 / (2.0 * std::cos(alpha));
     }
-    // order lowest Q first, highest Q last
-    std::sort(qs, qs + nSecond);
+    // order lowest Q first, highest Q last (insertion sort: at most 8 entries, and std::sort trips a false
+    // -Warray-bounds on the fixed-size caller array)
+    for (int i = 1; i < nSecond; ++i)
+        for (int j = i; j > 0 && qs[j - 1] > qs[j]; --j) std::swap(qs[j - 1], qs[j]);
 }
 
 // Builds the analog prototype for a band at sample rate sr. Frequencies in rad/sample.
