@@ -12,5 +12,6 @@ submodule itself stays on upstream DPF. If a DPF update makes one fail to apply,
 | 0003-vst3-apply-parameter-flushes | VST3: parameter changes sent in zero-length process calls (host flushing while the plugin is idle) were dropped. |
 | 0004-au-bypass-notification-index | AU: the bypass-changed notification compared the element instead of the parameter index. |
 | 0005-vst3-tolerate-unused-queues-and-null-outputs | VST3: a parameter queue with an invalid id (kNoParamId, which Steinberg's validator sends) made DPF drop every later queue in that block; and a host that passes no output parameter list got a DPF assertion printed to stderr from the audio thread on every block. |
+| 0006-au-report-latency-changes | AU: latency changes were only answered when the host asked (DPF: "TODO report latency changes"), so Logic/Live never re-aligned after switching to linear phase, oversampling or lookahead. The wrapper now announces kAudioUnitProperty_Latency to property listeners and as an AU property-change event after the render that changed it (the same way it already announces output parameter changes). |
 
 Worth sending upstream: https://github.com/DISTRHO/DPF

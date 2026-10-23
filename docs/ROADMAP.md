@@ -78,8 +78,8 @@ more design or DPF work; listed roughly by impact.
   linear phase to the plugin input; identical unless other bands overlap the detector region.
 
 ### Host integration (mostly DPF)
-- **AU latency changes aren't reported** (DPF AU: "TODO report latency changes"): Logic won't re-align when switching
-  to linear phase until the plugin is re-inserted. Needs a main-thread notification of `kAudioUnitProperty_Latency`.
+- **AU latency changes** are now announced by patch 0006 (from the render thread, like DPF's output parameter
+  notifications); a main-thread notification would be cleaner. Untested in Logic.
 - **AU host automation reaches the UI on the render thread** (DPF notifies the UI synchronously from
   `auSetParameter`); ramped AU parameter events are dropped.
 - **CLAP: UI edits aren't delivered while the host isn't processing** (DPF only drains its UI queue in `process()`;
