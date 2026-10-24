@@ -479,6 +479,9 @@ public:
         haas.setMax((int)(0.012 * sr) + 8);
         lips.set(12000.0, sr);
         rateNorm = std::sqrt(48000.0 / sr);
+        smC = 1.0 - std::exp(-1.0 / (0.010 * sr));
+        wsRise = 1.0 - std::exp(-1.0 / (0.030 * sr));
+        carRel = std::exp(-1.0 / (0.020 * sr));
         lipsR = lips;
         reset();
     }
@@ -494,6 +497,7 @@ public:
             tube[c].clear(); tubeLp[c] = 0.0;
         }
         lips.reset(); lipsR.reset();
+        driveCur = p.driveDb; tubeCur = clampv(p.tube, 0.0, 1.0); wsCur = 1.0; onsetRamp = 1.0; lastCarRms = 0.0; carEnv = 0.0;
         haas.clear();
         std::fill(std::begin(k), std::end(k), 0.0); std::fill(std::begin(kStep), std::end(kStep), 0.0); std::fill(std::begin(kTgt), std::end(kTgt), 0.0);
         std::fill(std::begin(kc), std::end(kc), 0.0); std::fill(std::begin(kcStep), std::end(kcStep), 0.0);
@@ -511,9 +515,11 @@ public:
     {
         // driver and tube on the carrier
         // the driver: a soft clipper that keeps a -6 dBFS signal at -6 dBFS (quieter parts come up, peaks round off)
-        const double dg = dbToGain(p.driveDb), dgN = 0.5 / std::tanh(0.5 * dg);
+        driveCur += (p.driveDb - driveCur) * smC;
+        tubeCur += (clampv(p.tube, 0.0, 1.0) - tubeCur) * smC;
+        const double dg = dbToGain(driveCur), dgN = 0.5 / std::tanh(0.5 * dg);
         double x[2] = { cl, cr };
-        const double fb = 0.62 * clampv(p.tube, 0.0, 1.0);
+        const double fb = 0.62 * tubeCur;
         for (int c = 0; c < 2; ++c)
         {
             double y = dg > 1.0001 ? std::tanh(x[c] * dg) * dgN : x[c];
@@ -522,7 +528,13 @@ public:
             tubeLp[c] += 0.45 * (d - tubeLp[c]);
             const double t = y + fb * tubeLp[c];
             tube[c].push((float)t);
-            x[c] = y + (t - y) * clampv(p.tube, 0.0, 1.0) * 0.8;
+            x[c] = y + (t - y) * tubeCur * 0.8;
+        }
+        // while the carrier is silent, hold the onset fade at zero: it starts with the carrier's first sample
+        {
+            const double ax = 0.5 * (std::fabs(x[0]) + std::fabs(x[1]));
+            carEnv = std::max(ax, carEnv * carRel);
+            if (carEnv < 1e-4) onsetRamp = 0.0;
         }
         ringV[(size_t)wpos] = v;
         ringC[(size_t)wpos] = (float)(0.5 * (x[0] + x[1]));
@@ -532,7 +544,12 @@ public:
         for (int i = 0; i < kCarOrder; ++i) kc[i] += kcStep[i];
         g += gStep; cRms += cRmsStep; cSig += cSigStep;
         const double fl = clampv(p.flatten, 0.0, 1.0);
-        const double wScale = cRms / std::max(cSig, 1e-7);
+        // equal floors (silence reads 1, not 10) and at most +12 dB, so a carrier starting from silence can't spike
+        // and it rises over ~30 ms (the analysis frame lags an onset), falls at once
+        const double wT = std::min(4.0, std::max(cRms, 1e-6) / std::max(cSig, 1e-6));
+        wsCur += (wT - wsCur) * (wT > wsCur ? wsRise : 0.05);
+        const double wScale = wsCur;
+        onsetRamp = std::min(1.0, onsetRamp + 1.0 / Na);
         for (int c = 0; c < 2; ++c)
         {
             // throat: whitening by the carrier's own prediction filter (FIR lattice), scaled back to its RMS
@@ -551,7 +568,8 @@ public:
                     f = fn;
                 }
             }
-            const double e = (1.0 - fl) * x[c] + fl * f * wScale;
+            // a carrier starting from silence fades in over one analysis frame while its whitening filter is found
+            const double e = ((1.0 - fl) * x[c] + fl * f * wScale) * (1.0 - fl * (1.0 - onsetRamp));
             // mouth: all-pole lattice
             double s = e;
             for (int i = order - 1; i >= 0; --i)
@@ -664,8 +682,10 @@ private:
             const double E = levinson(rc, kCarOrder, kk, nullptr);
             const double sig = std::sqrt(std::max(0.0, E) / sumw2);
             for (int i = 0; i < kCarOrder; ++i) kcStep[i] = (kk[i] - kc[i]) / hop;
+            if (rms >= 1e-4 && lastCarRms < 1e-4) onsetRamp = 0.0;
+            lastCarRms = rms;
             cRmsStep = (std::max(rms, 1e-6) - cRms) / hop;
-            cSigStep = (std::max(sig, 1e-7) - cSig) / hop;
+            cSigStep = (std::max(sig, 1e-6) - cSig) / hop;
         }
         if (p.freeze)
         {
@@ -709,6 +729,7 @@ private:
     double k[kMaxOrder] = {}, kStep[kMaxOrder] = {}, kTgt[kMaxOrder] = {};
     double kc[kCarOrder] = {}, kcStep[kCarOrder] = {};
     double bs[2][kMaxOrder + 1] = {}, cb[2][kCarOrder + 1] = {};
+    double smC = 0.002, driveCur = 6.0, tubeCur = 0.35, wsCur = 1.0, wsRise = 0.001, onsetRamp = 1.0, lastCarRms = 0.0, carEnv = 0.0, carRel = 0.999;
     double rateNorm = 1.0, g = 0.0, gStep = 0.0, gEnv = 0.0, cRms = 1e-4, cSig = 1e-4, cRmsStep = 0.0, cSigStep = 0.0;
     double aDisp[kMaxOrder + 1] = {}, dispG = 0.0;
     fx::FracDelay tube[2], haas;
@@ -747,7 +768,7 @@ public:
     void midi(uint8_t st, uint8_t d1, uint8_t d2)
     {
         const int type = st & 0xF0;
-        if (type == 0x90 && d2 > 0) noteOn(d1 & 127, d2);
+        if (type == 0x90 && d2 > 0) { if (p.source != kSourceFollow) noteOn(d1 & 127, d2); }
         else if (type == 0x80 || (type == 0x90 && d2 == 0)) noteOff(d1 & 127);
         else if (type == 0xE0) bend = ((((int)d2 << 7) | d1) - 8192) / 8192.0 * 2.0;
         else if (type == 0xB0)
@@ -817,6 +838,7 @@ public:
         double l = 0.0, r = 0.0;
         int active = 0;
         const double glideC = tauCoef(p.glideMs * 0.001, sr);
+        if (p.source == kSourceFollow) for (auto& v : voices) v.gate = false;   // Follow: MIDI notes still sounding let go
         for (auto& v : voices) if (v.on) { renderVoice(v, l, r, bend + vibSt + 12.0 * p.octave, 0.0); ++active; }
         for (auto& v : follow) if (v.on) { renderVoice(v, l, r, 12.0 * p.octave, glideC); ++active; }
         // chords and stacks: hold the level near one voice's (1 / sqrt of the voices sounding, gliding)
@@ -849,6 +871,7 @@ private:
             v = &voices[0];
             for (auto& x : voices) if ((!x.gate && v->gate) || (x.gate == v->gate && x.age < v->age)) v = &x;
         }
+        v->noise = 0x12345u + 7919u * (uint32_t)n + 104729u * (uint32_t)ageCounter;
         if (!v->on) for (int u = 0; u < kMaxUnison; ++u) v->phase[u] = (u * 0.137 + n * 0.01) - std::floor(u * 0.137 + n * 0.01);
         v->on = true; v->gate = true; v->note = n; v->midi = v->target = n;
         v->vel = 0.6 + 0.4 * vel / 127.0;
@@ -892,7 +915,7 @@ private:
                 if (s < count)
                 {
                     const double t = notes[s] + (p.scale <= 0 ? frac : 0.0);
-                    if (!v.on) { v = Voice(); v.on = true; v.midi = t; for (int u = 0; u < kMaxUnison; ++u) v.phase[u] = u * 0.173 - std::floor(u * 0.173); }
+                    if (!v.on) { v = Voice(); v.noise = 0xACE1u + 7919u * (uint32_t)(s + 1); v.on = true; v.midi = t; for (int u = 0; u < kMaxUnison; ++u) v.phase[u] = u * 0.173 - std::floor(u * 0.173); }
                     v.gate = true; v.target = t; v.note = notes[s];
                 }
                 else v.gate = false;
@@ -953,7 +976,7 @@ private:
             {
                 // narrow pulse (12.5 %): two band-limited saws a duty apart
                 double t2 = ph + 0.875; t2 -= std::floor(t2);
-                // (the difference is -1.75 for an eighth of the cycle and +0.25 otherwise: no DC)
+                // (s2 - s1 is +1.75 for an eighth of the cycle and -0.25 otherwise: no DC)
                 const double s1 = 2.0 * ph - 1.0 - blep(ph, dt);
                 const double s2 = 2.0 * t2 - 1.0 - blep(t2, dt);
                 y = (s2 - s1) * 0.75;
@@ -1041,6 +1064,8 @@ public:
         hfHp.set(3500.0, 0.707, sr);
         noise.seed(0xC0FFEEu); noise2.seed(0xBADCAFEu);
         gateAtk = tauCoef(0.001, sr); gateRel = tauCoef(0.080, sr);
+        smC = 1.0 - tauCoef(0.010, sr);
+        smFresh = true;
         gOpen = tauCoef(0.002, sr); gClose = tauCoef(0.060, sr);
         envC = tauCoef(0.005, sr);
         uAtk = tauCoef(0.003, sr); uRel = tauCoef(0.030, sr);
@@ -1062,13 +1087,14 @@ public:
     void setSettings(const Settings& s)
     {
         pending = s;
-        if (s.mode != active.mode || s.route != active.route || s.fftIndex != active.fftIndex)
+        const bool fftUsed = s.mode == kSpectral || s.mode == kConvolve;
+        if (s.mode != active.mode || s.route != active.route || (fftUsed && s.fftIndex != active.fftIndex))
         {
             if (fadeDir == 0 || fadeDir == 1) fadeDir = -1;   // fade out, switch, fade in
         }
         dirty = true;
     }
-    int latency() const { return curLatency; }
+    int latency() const { return curLatencyPub.load(std::memory_order_relaxed); }
     int maxLatencySamples() const { return (512 << (kNumFft - 1)) * rateMul; }
     int fftSizeNow() const { return spec.size(); }
     void setSolo(double loHz, double hiHz) { soloLo.store((float)loHz); soloHi.store((float)hiHz); }
@@ -1109,6 +1135,7 @@ private:
         // what a mode / route / FFT size change rebuilds (called while silent)
         spec.configure((512 << clampv(active.fftIndex, 0, kNumFft - 1)) * rateMul);
         curLatency = (active.mode == kSpectral || active.mode == kConvolve) ? spec.latency() : 0;
+        curLatencyPub.store(curLatency, std::memory_order_relaxed);
         for (auto* d : { &dlyVoice, &dlyCarL, &dlyCarR, &dlySib }) { d->setDelay(curLatency); d->clear(); }
         classic.reset(); talk.reset(); spec.reset(); ens.reset();
     }
@@ -1149,14 +1176,16 @@ private:
         synth.p.key = clampv(active.key, 0, 11); synth.p.scale = clampv(active.scale, 0, kNumScaleChoices - 1);
         synth.p.glideMs = clampv(active.glideMs, 0.0, 2000.0); synth.p.detune = clampv(active.detune * 0.01, 0.0, 1.0);
         emph.set(2000.0, 0.6, sr);
-        emphGain = dbToGain(12.0 * clampv(active.emphasis * 0.01, 0.0, 1.0));
+        tgt[kSmEmph] = dbToGain(12.0 * clampv(active.emphasis * 0.01, 0.0, 1.0));
         gateThr = active.gateDb <= kGateOff + 0.05 ? -1.0 : dbToGain(active.gateDb);
-        sibAmt = clampv(active.sibilance * 0.01, 0.0, 1.0);
+        tgt[kSmSib] = clampv(active.sibilance * 0.01, 0.0, 1.0);
         noiseAmt = clampv(active.noise * 0.01, 0.0, 1.0);
-        ensAmt = clampv(active.ensemble * 0.01, 0.0, 1.0);
-        voiceDry = clampv(active.voiceDry * 0.01, 0.0, 1.0);
-        carDry = clampv(active.carrierDry * 0.01, 0.0, 1.0);
-        outGain = dbToGain(clampv(active.outDb, -60.0, 24.0));
+        tgt[kSmEns] = clampv(active.ensemble * 0.01, 0.0, 1.0);
+        tgt[kSmVoice] = clampv(active.voiceDry * 0.01, 0.0, 1.0);
+        tgt[kSmCar] = clampv(active.carrierDry * 0.01, 0.0, 1.0);
+        tgt[kSmOut] = dbToGain(clampv(active.outDb, -60.0, 24.0));
+        // automation glides (~10 ms) instead of stepping at block edges; a fresh start takes the values at once
+        if (smFresh) { for (int i = 0; i < kNumSm; ++i) sm[i] = tgt[i]; smFresh = false; }
     }
 
     inline void processSample(float inL, float inR, float scL, float scR, float& outL, float& outR)
@@ -1216,6 +1245,8 @@ private:
             uTarget = u;
             unvoiced = uTarget + (uTarget > unvoiced ? uAtk : uRel) * (unvoiced - uTarget);
         }
+        for (int i = 0; i < kNumSm; ++i) sm[i] += (tgt[i] - sm[i]) * smC;
+        const double emphGain = sm[kSmEmph], sibAmt = sm[kSmSib], ensAmt = sm[kSmEns], voiceDry = sm[kSmVoice], carDry = sm[kSmCar], outGain = sm[kSmOut];
         const double va = emphGain > 1.0001 ? emph.highShelf(vg, emphGain) : vg;
         // ---- the carrier: dry copy, levels, unvoiced noise ----
         const float dryCl = cl, dryCr = cr;
@@ -1237,7 +1268,7 @@ private:
         default: classic.process((float)va, cl, cr, active.freeze, active.route != kRouteSplit, wl, wr); break;
         }
         // ---- after: ensemble, sibilance, dry paths ----
-        if (ensAmt > 0.0) ens.process(wl, wr, ensAmt);
+        if (ensAmt > 1e-4) ens.process(wl, wr, ensAmt);
         float sib = bqRun(sibCoef, sibHp[0], (float)vg);
         sib = bqRun(sibCoef, sibHp[1], sib) * (float)sibAmt;
         sib = dlySib.process(sib);
@@ -1305,6 +1336,7 @@ private:
 
     double sr = 48000.0;
     int rateMul = 1, curLatency = 0, dispCounter = 0;
+    std::atomic<int> curLatencyPub { 0 };
     Settings pending, active;
     bool dirty = true;
     double fade = 1.0; int fadeDir = 0;
@@ -1318,7 +1350,10 @@ private:
     fx::Svf emph, hfHp;
     Bq sibCoef; BqState sibHp[2];
     fx::Rng noise, noise2;
-    double emphGain = 1.0, gateThr = -1.0, sibAmt = 0.3, noiseAmt = 0.3, ensAmt = 0.0, voiceDry = 0.0, carDry = 0.0, outGain = 1.0;
+    double gateThr = -1.0, noiseAmt = 0.3;
+    enum { kSmEmph = 0, kSmSib, kSmEns, kSmVoice, kSmCar, kSmOut, kNumSm };
+    double tgt[kNumSm] = { 1, 0.3, 0, 0, 0, 1 }, sm[kNumSm] = { 1, 0.3, 0, 0, 0, 1 }, smC = 0.002;
+    bool smFresh = true;
     double gateEnv = 0.0, gateGain = 1.0, gateAtk = 0.0, gateRel = 0.0, gOpen = 0.0, gClose = 0.0;
     double hfEnv = 0.0, fullEnv = 0.0, envC = 0.0, unvoiced = 0.0, uTarget = 0.0, uAtk = 0.0, uRel = 0.0;
     double carrierEnv = 0.0, noCarrierFor = 0.0;

@@ -100,7 +100,20 @@ public:
         for (auto& h : histF) h = -1.0f;
     }
 
+    // never leave the plugin soloed behind a closed window
+    ~UIVox() override { if (plug) plug->engine.setSolo(0.0, 0.0); }
+
 protected:
+    // the window lost focus: a held Alt's release never arrives, so let go of the solo now
+    void uiFocus(bool focus, DGL_NAMESPACE::CrossingMode mode) override
+    {
+        PumpUI::uiFocus(focus, mode);
+        if (!focus) { altKey = altMouse = false; stopSolo(); }
+    }
+    // the FFT size and prediction order actually used at this sample rate
+    int rateMul() const { int m = 1; while (sampleRate() / m > 66000.0 && m < 4) m *= 2; return m; }
+    int talkOrder(float detail) const { return pump::clampv((int)std::lround((12 + (int)std::lround(pump::clampv(detail, 0.0f, 100.0f) * 0.44f)) * std::max(1.0, sampleRate() / 48000.0)), 8, 112); }
+
     std::string formatParam(int i, float v) const override
     {
         char b[32];
@@ -114,8 +127,7 @@ protected:
         case kDetail:
             if ((int)value(kMode) == kTalkbox)
             {
-                const int order = 12 + (int)std::lround(pump::clampv(v, 0.0f, 100.0f) * 0.44f);
-                std::snprintf(b, sizeof b, "%.0f%% (%d)", v, order); return b;
+                std::snprintf(b, sizeof b, "%.0f%% (%d)", v, talkOrder(v)); return b;
             }
             break;
         default: break;
@@ -211,7 +223,7 @@ protected:
         const float k = std::min(1.0f, dt * 18.0f), kd = std::min(1.0f, dt * 7.0f);
         for (int b = 0; b < n; ++b)
         {
-            dispHzS[b] = e.dispHz[b].load(std::memory_order_relaxed);
+            dispHzS[b] = std::max(20.0f, e.dispHz[b].load(std::memory_order_relaxed));
             const float v = e.dispVoice[b].load(std::memory_order_relaxed), c = e.dispCarrier[b].load(std::memory_order_relaxed);
             showV[b] += (v - showV[b]) * (v > showV[b] ? k : kd);
             showC[b] += (c - showC[b]) * (c > showC[b] ? k : kd);
@@ -279,8 +291,8 @@ protected:
             const int nb = kBandCounts[pump::clampv((int)value(kBands), 0, kNumBandChoices - 1)];
             std::snprintf(info, sizeof info, "%d BANDS   %s - %s", nb, formatParam(kLow, value(kLow)).c_str(), formatParam(kHigh, value(kHigh)).c_str());
         }
-        else if (m == kTalkbox) std::snprintf(info, sizeof info, "ORDER %d   TUBE %.0f%%", 12 + (int)std::lround(value(kDetail) * 0.44f), value(kTube));
-        else std::snprintf(info, sizeof info, "FFT %s   LATENCY %.1f ms", kFftNames[pump::clampv((int)value(kFftSize), 0, kNumFft - 1)],
+        else if (m == kTalkbox) std::snprintf(info, sizeof info, "ORDER %d   TUBE %.0f%%", talkOrder(value(kDetail)), value(kTube));
+        else std::snprintf(info, sizeof info, "FFT %d   LATENCY %.1f ms", (512 << pump::clampv((int)value(kFftSize), 0, kNumFft - 1)) * rateMul(),
                            plug ? 1000.0 * plug->latencyNow() / std::max(1.0, sampleRate()) : 0.0);
         textAt(r.r() - 10, r.y + 14, info, kMono, 10.0f, theme.ink2, ALIGN_RIGHT | ALIGN_MIDDLE);
         const Rect p = plotRect();
@@ -372,7 +384,8 @@ protected:
         }
         if (missing)
         {
-            const char* msg = (int)value(kRoute) == kRouteSidechainVoice ? "NO CARRIER ON THE TRACK" : "NO CARRIER: ROUTE A SYNTH TO VOX'S SIDECHAIN";
+            const int rt = (int)value(kRoute);
+            const char* msg = rt == kRouteSidechainVoice ? "NO CARRIER ON THE TRACK" : (rt == kRouteSplit ? "NO CARRIER ON THE LEFT CHANNEL" : "NO CARRIER: ROUTE A SYNTH TO VOX'S SIDECHAIN");
             const float tw = textWidth(msg, kLabel, 12.0f, 1.0f) + 24.0f;
             const Rect box(p.cx() - tw * 0.5f, p.y + 26, tw, 26);
             fillRect(Rect(box.x + 3, box.y + 3, box.w, box.h), theme.dim);
@@ -497,6 +510,7 @@ protected:
         const Rect p = plotRect();
         if (m == kClassic)
         {
+            if (dispN != kBandCounts[pump::clampv((int)value(kBands), 0, kNumBandChoices - 1)]) return;   // still the old mode's points
             soloBand = bandAt(x);
             if (soloBand < 0) return;
             const double f = dispHzS[soloBand];

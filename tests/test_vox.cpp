@@ -390,6 +390,35 @@ static void testFollowAndMidi(double sr)
     }
 }
 
+// Follow ignores MIDI; a talkbox with FLATTEN doesn't spike when its carrier starts from silence
+static void testReviewCases(double sr)
+{
+    printf("Follow vs MIDI, talkbox onsets (%.0f Hz)\n", sr);
+    const size_t n = (size_t)(sr * 1.0);
+    {
+        Settings f; f.route = kRouteSynth; f.source = kSourceFollow; f.carrierDry = 100; f.sibilance = 0;
+        const MidiMsg ev[1] = { { 0, 0x90, 60, 100 } };
+        Engine e; e.setSettings(f); e.prepare(sr, 256);
+        std::vector<float> silent(n, 0.0f), l(n), r(n);
+        e.process(silent.data(), silent.data(), nullptr, nullptr, l.data(), r.data(), (int)n, ev, 1);
+        CHECK(rmsDb(l, 0, n) < -100.0, "Follow with a MIDI note held and no voice: %.1f dB", rmsDb(l, 0, n));
+    }
+    const size_t m = (size_t)(sr * 2);
+    auto car = sawChord(sr, m);
+    for (size_t i = 0; i < m / 2; ++i) car[i] = 0.0f;   // the carrier starts at 1 s
+    const auto mod = speech(sr, m, 120.0, 0, false);
+    for (double fl : { 40.0, 100.0 })
+    {
+        Settings s = modeSettings(kTalkbox); s.flatten = fl;
+        Engine e; e.setSettings(s); e.prepare(sr, 256);
+        std::vector<float> L, R; runSplit(e, car, mod, L, R);
+        double on = 0, steady = 0;
+        for (size_t i = m / 2; i < m / 2 + (size_t)(0.05 * sr); ++i) on = std::max(on, (double)std::fabs(L[i]));
+        for (size_t i = m / 2 + (size_t)(0.3 * sr); i < m; ++i) steady = std::max(steady, (double)std::fabs(L[i]));
+        CHECK(20 * std::log10(on / steady) < 6.0, "flatten %.0f: onset peak %+.1f dB against the steady peak", fl, 20 * std::log10(on / steady));
+    }
+}
+
 static void testFreezeAndRoutes(double sr)
 {
     printf("Freeze, routes, noise (%.0f Hz)\n", sr);
@@ -566,6 +595,7 @@ int main()
         testTalkboxFormants(sr);
         testPitchTracker(sr);
         testFollowAndMidi(sr);
+        testReviewCases(sr);
         testFreezeAndRoutes(sr);
         testSwitching(sr);
         testFuzz(sr);
