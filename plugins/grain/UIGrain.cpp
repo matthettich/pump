@@ -11,6 +11,8 @@
 START_NAMESPACE_DISTRHO
 
 using namespace pump::grain;
+using pump::kNoteNames;
+using pump::kNumNotes;
 
 class UIGrain : public PumpUI {
 public:
