@@ -22,6 +22,24 @@ The newest builds are always on the [latest release](https://github.com/matthett
 `pump-macos.pkg` (installer, Apple Silicon + Intel), `pump-macos.zip`, `pump-windows.zip`. Each zip has an
 `INSTALL.txt`.
 
+## System EQ (Mac)
+
+**System EQ** puts pump EQ on everything your Mac plays (macOS 14.2 or later). It's a menu-bar app with the full EQ
+window; `pump-macos.pkg` installs it in Applications, and `system-eq-macos.zip` has the app on its own.
+
+- It follows the Mac's own output and sample rate: pick speakers or headphones as usual and it moves with you.
+- **Separate EQ for each output** (menu, on by default): every output keeps its own settings; a new one starts from
+  the latest settings. Turn it off to use one EQ everywhere.
+- Only audio going to the current output is processed: an app playing to another device (a DAW on an audio
+  interface) is left alone.
+- During silence it skips the EQ, and with nothing playing it stops the audio device; it starts again the moment an
+  app plays.
+- **EQ On** in the menu turns it off and gives the Mac its untouched output back. *Open at Login* starts it with the Mac.
+- The first start asks for permission to record system audio (that's how it hears other apps). If you hear nothing,
+  *Audio Recording Permission…* in the menu opens the right page in System Settings. Unsigned builds may ask again
+  after an update.
+- Linear phase adds latency to everything, video included: zero latency suits everyday listening.
+
 ## Using them
 
 Every plugin shares the same mouse and key conventions. Press **?** in a plugin for its full list.

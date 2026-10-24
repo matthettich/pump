@@ -24,3 +24,8 @@ The plugins appear under Plug-Ins > wake.
 
 In every plugin: drag to change a control (Shift = fine), double-click or right-click to type a value,
 Cmd-click to reset it, Cmd+Z to undo, ? for all shortcuts. A/B compares two settings; DARK switches the look.
+
+System EQ (pump EQ on everything the Mac plays, macOS 14.2+)
+  The installer puts "System EQ" in Applications (or drag it there from this folder). Open it, allow
+  "record system audio" when asked, and it appears in the menu bar. If macOS says it can't verify the app:
+  System Settings > Privacy & Security > Open Anyway. Use "Show EQ…" in its menu for the EQ window.
