@@ -37,6 +37,20 @@ Every plugin follows FabFilter's and iZotope's conventions. Press **?** in a plu
   curve makes a dynamic band directly
 - COMP has a stereo sidechain input: set SC to External and route a track to the plugin's sidechain in your host
 
+## Presets
+
+Every plugin's preset menu has three groups of factory presets, plus your own:
+
+- **Factory**: general starting points.
+- **Sources**: for single tracks and buses (Vocals, Drums, Kick, Snare, Bass, Guitars, Keys, Synths, Pads, Bus). They
+  are set for sources peaking around -6 dBFS; move THRESH or GAIN by the same amount for quieter or hotter tracks.
+- **Chains**: seven matching mastering chains (Pop, EDM, Hip-hop, Rock, Acoustic & jazz, Lo-fi, Streaming -14). Load
+  the same name in each plugin, in this order: EQ, CALM, COMP, BAND, HEAT, TONE, WIDE, LIMIT, METER. On dense mixes,
+  lower LIMIT's GAIN by 1-3 dB to land on the target loudness.
+- **Your presets**: *Save preset…* at the end of the menu. They're stored as small text files (one folder per plugin)
+  in `Documents/wake/pump/Presets/` on macOS and Windows, `~/.local/share/wake/pump/Presets/` on Linux, and show up in
+  every session and every copy of the plugin.
+
 ## Building
 
 ```

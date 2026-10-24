@@ -44,7 +44,7 @@ public:
     {
         styleMenu = addMenu(kStyle, "");
         styleMenu->arrows = true;
-        styleMenu->tip = "Limiting style (◀ ▶ or the arrow keys step through them)";
+        styleMenu->tip = "Limiting style (side arrows or the arrow keys step through them)";
 
         gainDial = addDial(kGain, "GAIN", Dial::Large);
         gainDial->tip = "Gain: drive into the limiter (drag in the display too)";

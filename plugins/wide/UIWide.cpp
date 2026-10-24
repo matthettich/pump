@@ -23,7 +23,7 @@ public:
         bandSel->getFn = [this]() { return sel; };
         bandSel->setFn = [this](int i) { select(i); };
         bandSel->textFn = [this]() { return "BAND " + std::to_string(sel + 1) + "  " + bandName(sel, numBands()); };
-        bandSel->tip = "Selected band (◀ ▶, keys 1-4 or click a band in the display)";
+        bandSel->tip = "Selected band (side arrows, keys 1-4 or click a band in the display)";
         widthDial = addDial(-1, "WIDTH", Dial::Large);
         widthDial->tip = "Width: 0% = mono, 100% = unchanged, 200% = twice the side (or drag the band's bar in the display)";
         stDial = addDial(-1, "STEREOIZE", Dial::Large);

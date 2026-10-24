@@ -22,7 +22,7 @@ public:
         bandSel->getFn = [this]() { int k = 0; for (int b = 0; b < kNumBands; ++b) { if (!bandUsed(b)) continue; if (b == sel) return k; ++k; } return -1; };
         bandSel->setFn = [this](int i) { int k = 0; for (int b = 0; b < kNumBands; ++b) { if (!bandUsed(b)) continue; if (k == i) { select(b); return; } ++k; } };
         bandSel->textFn = [this]() { return sel >= 0 ? "BAND " + std::to_string(sel + 1) : std::string("NO BAND"); };
-        bandSel->tip = "Selected band (◀ ▶ step through bands)";
+        bandSel->tip = "Selected band (side arrows step through bands)";
 
         shapeSeg = addSegmented(-1, { "BELL", "LO SH", "HI SH", "LO CUT", "HI CUT", "NOTCH", "B PASS", "TILT" });
         freqDial = addDial(-1, "FREQ", Dial::Medium);
@@ -872,7 +872,7 @@ protected:
            #else
             { "Right-click", "band menu (shape, placement, dynamic, copy, delete) or display menu (paste)" },
            #endif
-            { "Delete · B · Esc · ◀ ▶", "delete · bypass · deselect · previous/next band" },
+            { "Delete · B · Esc · Left/Right", "delete · bypass · deselect · previous/next band" },
             { "Ctrl/Cmd + A / C / V / D", "select all / copy / paste / duplicate bands" },
         };
     }

@@ -749,7 +749,7 @@ protected:
             { "Double-click a node", "type frequency, Tab to sensitivity and Q (1k, A4, C#3+13)" },
             { "Right-click a node / display", "node menu (reset node, width) · display menu (reset curve, scale)" },
             { "Drag a focus edge", "set the processing range (soft-edged); double-click: type it" },
-            { "◀ ▶  ·  ▲ ▼  ·  Delete", "select node · its sensitivity ±0.5 dB (Shift ±0.1) · reset it" },
+            { "Left/Right · Up/Down · Delete", "select node · its sensitivity ±0.5 dB (Shift ±0.1) · reset it" },
             { "D  ·  H", "delta on/off (hear what is removed) · Soft/Hard mode" },
             { "DELTA key", "click = latch, click-and-hold = only while held" },
         };

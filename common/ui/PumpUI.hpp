@@ -17,6 +17,9 @@
 #include "Theme.hpp"
 #include <cctype>
 #include <chrono>
+#include <filesystem>
+#include <fstream>
+#include <sstream>
 #include <cstdlib>
 
 // What the plugin is ("Compressor") and a one-line description, from the plugin's DistrhoPluginInfo.h: shown next to
@@ -162,6 +165,7 @@ struct MenuButton : Control {
     std::vector<std::string> items(PumpUI& ui) const;
     int current(PumpUI& ui) const;
     void choose(PumpUI& ui, int i);
+    static int stepRow(const std::vector<std::string>& it, int from, int dir, bool wrap);
 };
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -594,6 +598,7 @@ public:
     void openTextEntry(int param, const Rect& r, const std::vector<std::pair<int, Rect>>& ring = {})
     {
         fEdit.ring = ring;
+        fEdit.onText = nullptr;
         fEdit.active = true; fEdit.param = param; fEdit.r = r;
         fEdit.text = fSpecs[param].format(fValues[(size_t)param]);
         // strip units for editing convenience
@@ -605,6 +610,17 @@ public:
         }
         fEdit.original = fEdit.text;
         fEdit.selectAll = true;
+        repaint();
+    }
+
+    // Typed text that isn't a parameter value (a preset name): Enter calls onText, Esc or a click elsewhere cancels.
+    void openNameEntry(const Rect& r, const std::string& initial, std::function<void(const std::string&)> onText)
+    {
+        fEdit.ring.clear();
+        fEdit.active = true; fEdit.param = -1; fEdit.r = r;
+        fEdit.text = initial; fEdit.original = "\x01";
+        fEdit.selectAll = true;
+        fEdit.onText = std::move(onText);
         repaint();
     }
 
@@ -645,7 +661,7 @@ protected:
    #if DISTRHO_PLUGIN_WANT_PROGRAMS
     void programLoaded(uint32_t index) override
     {
-        if (fPresets && index < fPresets->size()) fPresetName = (*fPresets)[index].name;
+        if (fPresets && index < fPresets->size()) { fPresetName = (*fPresets)[index].name; fPresetIsUser = false; }
         repaint();
     }
    #endif
@@ -659,7 +675,12 @@ protected:
         else if (std::strcmp(key, "abA") == 0) fAB[0] = value ? value : "";
         else if (std::strcmp(key, "abB") == 0) fAB[1] = value ? value : "";
         else if (std::strcmp(key, "abSel") == 0) fABSel = (value && value[0] == 'B') ? 1 : 0;
-        else if (std::strcmp(key, "preset") == 0) fPresetName = value ? value : "";
+        else if (std::strcmp(key, "preset") == 0)
+        {
+            const std::string v = value ? value : "";
+            fPresetIsUser = v.rfind("user:", 0) == 0;
+            fPresetName = fPresetIsUser ? v.substr(5) : v;
+        }
         else if (std::strcmp(key, "ui") == 0) { fUiState = value ? value : ""; loadUiState(fUiState); }
         repaint();
     }
@@ -727,7 +748,7 @@ protected:
                 if (fMenu.r.contains(x, y))
                 {
                     const int i = menuIndexAt(y);
-                    if (i >= 0 && i < (int)fMenu.items.size() && fMenu.items[(size_t)i] != "-")
+                    if (i >= 0 && i < (int)fMenu.items.size() && menuRowPickable(fMenu.items[(size_t)i]))
                     {
                         auto fn = fMenu.onPick;
                         fMenu.open = false;
@@ -742,7 +763,8 @@ protected:
             if (fEdit.active)
             {
                 if (fEdit.r.contains(x, y)) return true;
-                commitTextEntry();
+                if (fEdit.param < 0) { fEdit.active = false; fEdit.onText = nullptr; setStatus("Not saved"); }   // name entry: cancel
+                else commitTextEntry();
             }
             // resize grip
             if (gripRect().contains(x, y)) { fResizing = true; fResizeStartX = (float)ev.pos.getX(); fResizeStartW = (float)getWidth(); return true; }
@@ -807,7 +829,13 @@ protected:
             setSize((uint)nw, (uint)(nw * H / W));
             return true;
         }
-        if (fMenu.open) { fMenu.hover = fMenu.r.contains(x, y) ? menuIndexAt(y) : -1; repaint(); return true; }
+        if (fMenu.open)
+        {
+            const int i = fMenu.r.contains(x, y) ? menuIndexAt(y) : -1;
+            fMenu.hover = (i >= 0 && i < (int)fMenu.items.size() && menuRowPickable(fMenu.items[(size_t)i])) ? i : -1;
+            repaint();
+            return true;
+        }
         if (fActive) { fActive->mouseDrag(*this, x, y, ev.mod); if (fActive->param >= 0) fStatus = paramStatus(fActive->param); repaint(); return true; }
         if (fBodyActive) { bodyMouseDrag(x, y, ev.mod); repaint(); return true; }
         // hover status
@@ -873,9 +901,9 @@ protected:
             return keyPress(ev.key, ev.mod);
         }
         if (!ev.press) return false;
-        if (ev.key == kKeyTab) { tabTextEntry((ev.mod & kModifierShift) != 0); return true; }
+        if (ev.key == kKeyTab) { if (fEdit.param >= 0) tabTextEntry((ev.mod & kModifierShift) != 0); return true; }
         if (ev.key == kKeyEnter) { commitTextEntry(); return true; }
-        if (ev.key == kKeyEscape) { fEdit.active = false; repaint(); return true; }
+        if (ev.key == kKeyEscape) { if (fEdit.param < 0) setStatus("Not saved"); fEdit.active = false; fEdit.onText = nullptr; repaint(); return true; }
         if (ev.key == kKeyBackspace)
         {
             if (fEdit.selectAll) fEdit.text.clear();
@@ -893,7 +921,7 @@ protected:
         if (c >= 32 && c < 127)
         {
             if (fEdit.selectAll) { fEdit.text.clear(); fEdit.selectAll = false; }
-            if (fEdit.text.size() < 16) fEdit.text.push_back((char)c);
+            if (fEdit.text.size() < (fEdit.param < 0 ? 40u : 16u)) fEdit.text.push_back((char)c);
             repaint();
         }
         return true;
@@ -904,18 +932,19 @@ protected:
     {
         fPresetMenu = add(new MenuButton());
         fPresetMenu->arrows = true;
-        fPresetMenu->tip = "Factory presets (◀ ▶ step through them)";
-        fPresetMenu->itemsFn = [this]() {
-            std::vector<std::string> v;
-            if (fPresets) for (const auto& p : *fPresets) v.push_back(p.name);
-            return v;
-        };
+        fPresetMenu->tip = "Presets (the side arrows step through them; Save preset… at the end of the menu keeps your own)";
+        fPresetMenu->itemsFn = [this]() { return buildPresetMenu(true); };
         fPresetMenu->getFn = [this]() {
-            if (!fPresets) return -1;
-            for (size_t i = 0; i < fPresets->size(); ++i) if (fPresetName == (*fPresets)[i].name) return (int)i;
+            for (size_t i = 0; i < fPresetRows.size(); ++i)
+            {
+                const PresetRow& r = fPresetRows[i];
+                if (r.kind == PresetRow::Factory && !fPresetIsUser && fPresets && fPresetName == (*fPresets)[(size_t)r.index].name) return (int)i;
+                if (r.kind == PresetRow::User && fPresetIsUser && fPresetName == fUserPresets[(size_t)r.index]) return (int)i;
+            }
             return -1;
         };
-        fPresetMenu->setFn = [this](int i) { applyPreset(i); };
+        fPresetMenu->setFn = [this](int i) { pickPresetRow(i); };
+        buildPresetMenu(true);
         fPresetMenu->textFn = [this]() { return fPresetName.empty() ? std::string("Default") : fPresetName; };
 
         fABButton = add(new Segmented());
@@ -1037,6 +1066,11 @@ protected:
 
     // ---- menus and text entry -------------------------------------------------------------------------------------
     int menuIndexAt(float y) const { return (int)std::floor((y - fMenu.r.y - 4.0f + fMenu.scroll) / fMenu.itemH); }
+public:
+    // Menu rows: "-" separator, "#TITLE" heading (not pickable), ">Action" (pickable, but ◀ ▶ and the wheel skip it)
+    static bool menuRowPickable(const std::string& s) { return !s.empty() && s != "-" && s[0] != '#'; }
+    static bool menuRowSteppable(const std::string& s) { return menuRowPickable(s) && s[0] != '>'; }
+protected:
     void drawMenu()
     {
         const Rect& r = fMenu.r;
@@ -1056,6 +1090,8 @@ protected:
             else if (cur) fillRect(Rect(r.x + 3, iy, r.w - 6, fMenu.itemH), theme.panel2);
             if (s.size() > 1 && s[0] == '#')   // group heading
                 textAt(r.x + 12, iy + fMenu.itemH * 0.5f, s.substr(1), kLabel, 10.5f, hov ? theme.on : theme.ink2, ALIGN_LEFT | ALIGN_MIDDLE, 1.2f);
+            else if (s.size() > 1 && s[0] == '>')   // action (Save preset…): pickable, skipped by ◀ ▶
+                textAt(r.x + 14, iy + fMenu.itemH * 0.5f, s.substr(1), kLabel, 12.5f, hov ? theme.on : theme.ink2, ALIGN_LEFT | ALIGN_MIDDLE, 0.6f);
             else
                 textAt(r.x + 14, iy + fMenu.itemH * 0.5f, s, kLabel, 12.5f, hov ? theme.on : theme.ink, ALIGN_LEFT | ALIGN_MIDDLE, 0.6f);
         }
@@ -1082,6 +1118,14 @@ protected:
     {
         if (!fEdit.active) return;
         fEdit.active = false;
+        if (fEdit.param < 0)
+        {
+            auto fn = std::move(fEdit.onText);
+            fEdit.onText = nullptr;
+            if (fn) fn(fEdit.text);
+            repaint();
+            return;
+        }
         float v;
         if (fEdit.text != fEdit.original && fSpecs[fEdit.param].parse(fEdit.text.c_str(), v)) setParamGesture(fEdit.param, v);
         repaint();
@@ -1145,11 +1189,220 @@ protected:
         }
         endGroup();
         fPresetName = pr.name;
+        fPresetIsUser = false;
         setState("preset", fPresetName.c_str());
         onPresetApplied();
         repaint();
     }
     virtual void onPresetApplied() {}
+
+    // ---- the preset menu: factory presets (grouped by section), your own presets, Save / Delete ----------------------
+    struct PresetRow { enum Kind { Other, Factory, User, Save, Delete } kind = Other; int index = -1; };
+    std::vector<std::string> buildPresetMenu(bool rescan)
+    {
+        if (rescan) scanUserPresets();
+        std::vector<std::string> items;
+        fPresetRows.clear();
+        auto add = [&](const std::string& s, PresetRow::Kind k, int idx) { items.push_back(s); fPresetRows.push_back({ k, idx }); };
+        if (fPresets)
+        {
+            std::string last = "\x01";
+            for (size_t i = 0; i < fPresets->size(); ++i)
+            {
+                const Preset& p = (*fPresets)[i];
+                const std::string sec = p.section ? p.section : "FACTORY";
+                if (sec != last) { add("#" + sec, PresetRow::Other, -1); last = sec; }
+                add(p.name, PresetRow::Factory, (int)i);
+            }
+        }
+        if (!fUserPresets.empty())
+        {
+            add("#YOUR PRESETS", PresetRow::Other, -1);
+            for (size_t i = 0; i < fUserPresets.size(); ++i) add(fUserPresets[i], PresetRow::User, (int)i);
+        }
+        add("-", PresetRow::Other, -1);
+        add(">Save preset…", PresetRow::Save, -1);
+        if (fPresetIsUser && !fPresetName.empty()) add(">Delete \"" + fPresetName + "\"", PresetRow::Delete, -1);
+        return items;
+    }
+    void pickPresetRow(int i)
+    {
+        if (i < 0 || i >= (int)fPresetRows.size()) return;
+        const PresetRow r = fPresetRows[(size_t)i];
+        switch (r.kind)
+        {
+        case PresetRow::Factory: applyPreset(r.index); break;
+        case PresetRow::User: if (r.index < (int)fUserPresets.size()) applyUserPreset(fUserPresets[(size_t)r.index]); break;
+        case PresetRow::Save:
+            openNameEntry(fPresetMenu->r, fPresetIsUser ? fPresetName : std::string("My preset"),
+                          [this](const std::string& name) { saveUserPreset(name); });
+            setStatus("Name the preset, then Enter to save (Esc cancels)");
+            break;
+        case PresetRow::Delete: deleteUserPreset(fPresetName); break;
+        default: break;
+        }
+        repaint();
+    }
+
+    // Your presets live as small text files, one folder per plugin:
+    //   macOS   ~/Documents/wake/pump/Presets/<TAG>/      Windows  Documents\wake\pump\Presets\<TAG>
+    //   Linux   ~/.local/share/wake/pump/Presets/<TAG>/
+    // Each file holds "symbol=value" lines (parameter symbols never change, so presets survive updates).
+    std::filesystem::path userPresetDir() const
+    {
+        namespace fs = std::filesystem;
+       #if defined(_WIN32)
+        const char* home = std::getenv("USERPROFILE");
+        if (!home) return {};
+        return fs::u8path(home) / "Documents" / "wake" / "pump" / "Presets" / fs::u8path(fTag);
+       #elif defined(__APPLE__)
+        const char* home = std::getenv("HOME");
+        if (!home) return {};
+        return fs::u8path(home) / "Documents" / "wake" / "pump" / "Presets" / fs::u8path(fTag);
+       #else
+        const char* xdg = std::getenv("XDG_DATA_HOME");
+        const char* home = std::getenv("HOME");
+        if (xdg && *xdg) return fs::u8path(xdg) / "wake" / "pump" / "Presets" / fs::u8path(fTag);
+        if (!home) return {};
+        return fs::u8path(home) / ".local" / "share" / "wake" / "pump" / "Presets" / fs::u8path(fTag);
+       #endif
+    }
+    static std::string presetFileName(const std::string& name)
+    {
+        std::string f;
+        for (char ch : name) f += (std::strchr("/\\:*?\"<>|", ch) || (unsigned char)ch < 32) ? '-' : ch;
+        while (!f.empty() && (f.back() == ' ' || f.back() == '.')) f.pop_back();
+        return f.empty() ? std::string("preset") : f;
+    }
+    // Reads a preset file: its name (the "name=" line, else the file name) and its values.
+    static bool readPresetFile(const std::filesystem::path& p, std::string& name, std::vector<std::pair<std::string, float>>& values)
+    {
+        std::ifstream in(p);
+        if (!in) return false;
+        name = p.stem().u8string();
+        values.clear();
+        std::string line;
+        while (std::getline(in, line))
+        {
+            if (!line.empty() && line.back() == '\r') line.pop_back();
+            if (line.empty() || line[0] == '#') continue;
+            const size_t eq = line.find('=');
+            if (eq == std::string::npos) continue;
+            const std::string k = line.substr(0, eq), v = line.substr(eq + 1);
+            if (k == "name") { if (!v.empty()) name = v; continue; }
+            if (k == "plugin") continue;
+            const char* end = nullptr;
+            const float f = (float)pump::parseNumber(v.c_str(), &end);   // '.' or ',' whatever the locale
+            if (end != v.c_str()) values.push_back({ k, f });
+        }
+        return true;
+    }
+    void scanUserPresets()
+    {
+        namespace fs = std::filesystem;
+        fUserPresets.clear(); fUserPresetFiles.clear();
+        const fs::path dir = userPresetDir();
+        std::error_code ec;
+        if (dir.empty() || !fs::is_directory(dir, ec)) return;
+        std::vector<std::pair<std::string, fs::path>> found;
+        for (fs::directory_iterator it(dir, ec), end; !ec && it != end; it.increment(ec))
+        {
+            if (!it->is_regular_file(ec) || it->path().extension() != ".pumppreset") continue;
+            std::string name; std::vector<std::pair<std::string, float>> vals;
+            if (readPresetFile(it->path(), name, vals)) found.push_back({ name, it->path() });
+        }
+        std::sort(found.begin(), found.end(), [](const auto& a, const auto& b) {
+            std::string x = a.first, y = b.first;
+            for (char& c : x) c = (char)std::tolower((unsigned char)c);
+            for (char& c : y) c = (char)std::tolower((unsigned char)c);
+            return x < y;
+        });
+        for (const auto& f : found) { fUserPresets.push_back(f.first); fUserPresetFiles.push_back(f.second); }
+    }
+    void applyUserPreset(const std::string& name)
+    {
+        scanUserPresets();
+        for (size_t k = 0; k < fUserPresets.size(); ++k)
+        {
+            if (fUserPresets[k] != name) continue;
+            std::string nm; std::vector<std::pair<std::string, float>> vals;
+            if (!readPresetFile(fUserPresetFiles[k], nm, vals)) break;
+            beginGroup();
+            for (uint32_t i = 0; i < fNum; ++i)
+            {
+                if (fSpecs[i].flags & (pump::kPOutput | pump::kPBypass | pump::kPNoUndo | pump::kPHidden)) continue;
+                float v = fSpecs[i].def;   // anything the file doesn't mention (a newer parameter) starts at its default
+                for (const auto& pv : vals) if (pv.first == fSpecs[i].symbol) { v = pv.second; break; }
+                setParamGesture((int)i, fSpecs[i].clamp(v));
+            }
+            endGroup();
+            fPresetName = name;
+            fPresetIsUser = true;
+            setState("preset", ("user:" + name).c_str());
+            onPresetApplied();
+            setStatus("Loaded your preset \"" + name + "\"");
+            repaint();
+            return;
+        }
+        setStatus("Preset \"" + name + "\" not found (moved or deleted?)");
+    }
+    void saveUserPreset(std::string name)
+    {
+        namespace fs = std::filesystem;
+        while (!name.empty() && name.front() == ' ') name.erase(name.begin());
+        while (!name.empty() && name.back() == ' ') name.pop_back();
+        if (name.empty()) { setStatus("Not saved: the name is empty"); return; }
+        const fs::path dir = userPresetDir();
+        std::error_code ec;
+        if (dir.empty() || (!fs::create_directories(dir, ec) && ec)) { setStatus("Could not create the presets folder"); return; }
+        // the same name (case-insensitively) overwrites; otherwise a new file
+        scanUserPresets();
+        fs::path file = dir / fs::u8path(presetFileName(name) + ".pumppreset");
+        for (size_t k = 0; k < fUserPresets.size(); ++k)
+        {
+            std::string a = fUserPresets[k], b = name;
+            for (char& c : a) c = (char)std::tolower((unsigned char)c);
+            for (char& c : b) c = (char)std::tolower((unsigned char)c);
+            if (a == b) { file = fUserPresetFiles[k]; break; }
+        }
+        std::ofstream out(file, std::ios::binary | std::ios::trunc);
+        if (!out) { setStatus("Could not write the preset file"); return; }
+        out << "# pump preset\nplugin=" << fTag << "\nname=" << name << "\n";
+        char buf[64];
+        for (uint32_t i = 0; i < fNum; ++i)
+        {
+            if (fSpecs[i].flags & (pump::kPOutput | pump::kPBypass | pump::kPNoUndo | pump::kPHidden)) continue;
+            std::snprintf(buf, sizeof buf, "%.9g", fValues[i]);
+            for (char* c = buf; *c; ++c) if (*c == ',') *c = '.';   // locale-proof
+            out << fSpecs[i].symbol << "=" << buf << "\n";
+        }
+        out.close();
+        if (!out) { setStatus("Could not write the preset file"); return; }
+        fPresetName = name;
+        fPresetIsUser = true;
+        setState("preset", ("user:" + name).c_str());
+        scanUserPresets();
+        setStatus("Saved \"" + name + "\" (" + dir.u8string() + ")");
+        repaint();
+    }
+    void deleteUserPreset(const std::string& name)
+    {
+        namespace fs = std::filesystem;
+        scanUserPresets();
+        for (size_t k = 0; k < fUserPresets.size(); ++k)
+            if (fUserPresets[k] == name)
+            {
+                std::error_code ec;
+                fs::remove(fUserPresetFiles[k], ec);
+                if (ec) { setStatus("Could not delete \"" + name + "\""); return; }
+                fPresetIsUser = false;
+                setState("preset", name.c_str());
+                scanUserPresets();
+                setStatus("Deleted your preset \"" + name + "\" (the current settings stay)");
+                repaint();
+                return;
+            }
+    }
     void selectAB(int i)
     {
         if (i == fABSel) return;
@@ -1278,12 +1531,17 @@ protected:
     float fResizeStartX = 0, fResizeStartW = 0;
     double fLastTick = 0.0;
     MenuButton* fPresetMenu = nullptr;
+    std::vector<PresetRow> fPresetRows;              // what each row of the preset menu is
+    std::vector<std::string> fUserPresets;           // your presets (names, sorted), and their files
+    std::vector<std::filesystem::path> fUserPresetFiles;
+    bool fPresetIsUser = false;                       // fPresetName is one of yours (state "preset" = "user:<name>")
     Segmented* fABButton = nullptr;
     Button* fCopyAB = nullptr;
     Button* fThemeBtn = nullptr;
     Button* fBypassBtn = nullptr;
     struct { bool open = false; Rect r; std::vector<std::string> items; int current = -1, hover = -1; float itemH = 22, scroll = 0; std::function<void(int)> onPick; } fMenu;
-    struct { bool active = false; int param = -1; Rect r; std::string text, original; bool selectAll = true; std::vector<std::pair<int, Rect>> ring; } fEdit;
+    struct { bool active = false; int param = -1; Rect r; std::string text, original; bool selectAll = true; std::vector<std::pair<int, Rect>> ring;
+             std::function<void(const std::string&)> onText; } fEdit;
     std::vector<std::string> fUndo[2], fRedo[2];   // per A/B slot
     std::string fGestureBefore;
     int fGestureDepth = 0;
@@ -1489,6 +1747,25 @@ inline int MenuButton::current(PumpUI& ui) const
     if (getFn) return getFn();
     return param >= 0 ? (int)std::lround(ui.value(param) - ui.spec(param).min) : -1;
 }
+// The next row from `from` in direction `dir` that ◀ ▶ / the wheel may land on (skips headings, separators and
+// actions); wraps around when `wrap`. Returns -1 if there is none, `from` if it can't move without wrapping.
+inline int MenuButton::stepRow(const std::vector<std::string>& it, int from, int dir, bool wrap)
+{
+    const int n = (int)it.size();
+    if (n == 0) return -1;
+    int i = from < 0 ? (dir > 0 ? -1 : n) : from;
+    for (int k = 0; k < n; ++k)
+    {
+        i += dir;
+        if (i < 0 || i >= n)
+        {
+            if (!wrap) return from;
+            i = i < 0 ? n - 1 : 0;
+        }
+        if (PumpUI::menuRowSteppable(it[(size_t)i])) return i;
+    }
+    return -1;
+}
 inline void MenuButton::choose(PumpUI& ui, int i)
 {
     if (setFn) setFn(i);
@@ -1521,17 +1798,17 @@ inline bool MenuButton::mouseDown(PumpUI& ui, float x, float, int button, uint)
     if (button != kMouseButtonLeft && button != kMouseButtonRight) return false;
     const std::vector<std::string> it = items(ui);
     if (it.empty()) return true;
-    if (arrows && x < r.x + 20.0f) { const int c = current(ui); choose(ui, c <= 0 ? (int)it.size() - 1 : c - 1); return true; }
-    if (arrows && x > r.r() - 20.0f) { const int c = current(ui); choose(ui, c < 0 || c >= (int)it.size() - 1 ? 0 : c + 1); return true; }
+    if (arrows && x < r.x + 20.0f) { const int t = stepRow(it, current(ui), -1, true); if (t >= 0) choose(ui, t); return true; }
+    if (arrows && x > r.r() - 20.0f) { const int t = stepRow(it, current(ui), +1, true); if (t >= 0) choose(ui, t); return true; }
     ui.openMenu(r, it, current(ui), [this, &ui](int i) { choose(ui, i); });
     return true;
 }
 inline bool MenuButton::scroll(PumpUI& ui, float dy, uint)
 {
-    const int n = (int)items(ui).size();
-    if (n <= 0) return true;
-    const int c = current(ui);
-    choose(ui, std::min(n - 1, std::max(0, c + (dy > 0 ? -1 : 1))));
+    const std::vector<std::string> it = items(ui);
+    if (it.empty()) return true;
+    const int c = current(ui), t = stepRow(it, c, dy > 0 ? -1 : 1, false);
+    if (t >= 0 && t != c) choose(ui, t);
     return true;
 }
 

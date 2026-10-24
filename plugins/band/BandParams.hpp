@@ -88,6 +88,9 @@ inline void addBand(Preset& p, const BP& b)
     p.values.push_back({ sym("makeup"), b.makeup });
 }
 
+#include "BandPresetsSources.hpp"
+#include "BandPresetsChains.hpp"
+
 inline const std::vector<Preset>& presets()
 {
     static std::vector<Preset> v;
@@ -125,6 +128,8 @@ inline const std::vector<Preset>& presets()
       { { 2, 0, -33, 2.5f, 12, 140, 8, 9, 1.0f }, { 3, 0, -44, 3.0f, 4, 90, 6, 8, 0.0f } });
     P("Drum bus: snap", { { "bands", 3 }, { "xover1", 100 }, { "xover2", 2500 }, { "stereo_link", 50 } },
       { { 1, 1, -30, 1.5f, 1, 90, 6, 6, 0.0f }, { 2, 0, -30, 3.0f, 20, 90, 4, 10, 2.0f }, { 3, 2, -44, 1.8f, 5, 120, 8, 6, 0.0f } });
+    addSourcePresets(v);   // BandPresetsSources.hpp: vocals, drums, bass, ... (SOURCES)
+    addChainPresets(v);    // BandPresetsChains.hpp: matching mastering chains (CHAINS)
     return v;
 }
 
