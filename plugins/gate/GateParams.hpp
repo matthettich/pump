@@ -34,6 +34,13 @@ static const char* const kStepNames[kMaxSteps] = {
     "Step 25", "Step 26", "Step 27", "Step 28", "Step 29", "Step 30", "Step 31", "Step 32"
 };
 
+// The default pattern (16 steps, repeated over all 32): a classic offbeat gate.
+inline float defaultLevel(int k)
+{
+    static const char kDef[] = "x.xxx.x.xx.xx.xx";
+    return kDef[k & 15] == 'x' ? 100.0f : 0.0f;
+}
+
 inline const std::vector<ParamSpec>& params()
 {
     static std::vector<ParamSpec> v;
@@ -42,7 +49,7 @@ inline const std::vector<ParamSpec>& params()
     v.push_back({ "steps", "Steps", "Steps", 1, kMaxSteps, 16, PUnit::None, PScale::Linear, A | kPInteger, nullptr, 1 });
     v.push_back({ "rate", "Rate", "Rate", 0, kNumNotes - 1, kNote16, PUnit::None, PScale::Linear, A | kPInteger, kNoteNames, 1 });
     v.push_back({ "swing", "Swing", "Swing", 0, 75, 0, PUnit::Percent, PScale::Linear, A, nullptr, 1 });
-    v.push_back({ "length", "Gate Length", "Length", 5, 100, 50, PUnit::Percent, PScale::Linear, A, nullptr, 1 });
+    v.push_back({ "length", "Gate Length", "Length", 5, 100, 75, PUnit::Percent, PScale::Linear, A, nullptr, 1 });
     v.push_back({ "attack", "Attack", "Attack", 0, 50, 1, PUnit::ms, PScale::Power, A, nullptr, 3 });
     v.push_back({ "release", "Release", "Release", 0, 500, 20, PUnit::ms, PScale::Power, A, nullptr, 3 });
     v.push_back({ "smooth", "Smooth", "Smooth", 0, 100, 0, PUnit::Percent, PScale::Linear, A, nullptr, 1 });
@@ -56,7 +63,7 @@ inline const std::vector<ParamSpec>& params()
     v.push_back({ "out_gain", "Output Gain", "Output", -24, 24, 0, PUnit::dB, PScale::Linear, A, nullptr, 1 });
     v.push_back({ "bypass", "Bypass", "Bypass", 0, 1, 0, PUnit::None, PScale::Linear, A | kPBoolean | kPBypass, nullptr, 1 });
     for (int k = 0; k < kMaxSteps; ++k)
-        v.push_back({ kStepSymbols[k], kStepNames[k], kStepNames[k], 0, 100, 100, PUnit::Percent, PScale::Linear, A, nullptr, 1 });
+        v.push_back({ kStepSymbols[k], kStepNames[k], kStepNames[k], 0, 100, defaultLevel(k), PUnit::Percent, PScale::Linear, A, nullptr, 1 });
     return v;
 }
 

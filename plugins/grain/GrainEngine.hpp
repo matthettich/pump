@@ -2,9 +2,9 @@
 //
 // Capture: the input is written continuously into a stereo ring (10.9-11.9 s at the usual rates, allocated in
 // prepare()), with two band-limited copies beside it (6th-order low pass at 0.2 x the rate, kept at 1/2 and 1/4 of
-// the rate). A grain pitched up reads the copy that keeps it from aliasing at its ratio: up to +7 semitones the
-// full-band ring, up to +17 the half-rate copy, above that the quarter-rate copy (what a copy loses on top lands above
-// ~13 kHz once shifted up). FREEZE fades the writing out over 5 ms and stops the head once a few ms of silence follow
+// the rate). A grain pitched up reads the copy that suits its ratio: up to +7 semitones the full-band ring (only
+// source content above ~16 kHz can fold back), up to +17 the half-rate copy, above that the quarter-rate copy (what a
+// copy loses on top would have landed above ~14 kHz at 48 kHz; nothing audible is lost at 96 kHz). FREEZE fades the writing out over 5 ms and stops the head once a few ms of silence follow
 // the fade, so grains that run into the newest audio fade out with it instead of reaching a step; releasing it starts
 // the head at once and fades the writing back in.
 //
@@ -30,16 +30,19 @@
 // them all to 0 at the steady edge (the centre leaves the controls as they are). MOTION: three slow, smooth random
 // curves (RATE, DEPTH) move position, size and pitch.
 //
-// Feedback: the grain sum (DC-blocked, gently low-passed, soft-limited to +-1) is added to what is written into the
-// ring, for evolving, self-similar clouds; with a pitch shift each pass climbs another step (shimmer). Bounded at
-// 100 %. FX after the grains: a resonant TPT state-variable FILTER (off / low / band / high pass; modes crossfade,
-// cutoff glides, low/high pass peaks are gain-compensated), then SPACE: input diffusion (three allpasses per side)
+// Feedback: the grain sum (DC-blocked, gently low-passed) is added to what is written into the ring, for evolving,
+// self-similar clouds; with a pitch shift each pass climbs another step (shimmer). A level-keyed duck holds what is
+// written near -6 dBFS (the feedback steps back while the buffer is louder, never the input), and a soft limit to +-1
+// catches the rest, so even 100 % sustains at a steady level instead of building up.
+// FX after the grains: a resonant TPT state-variable FILTER (off / low / band / high pass; modes crossfade, cutoff
+// glides, low/high pass peaks are gain-compensated), then SPACE: input diffusion (three allpasses per side)
 // into an 8-line modulated feedback delay network (Hadamard mixing, damped lines); 0..100 % sets the send and the
 // decay (0.6..5 s). MIX (equal power) with the untouched input (latency 0: grains only read the past), OUTPUT.
 //
 // Feeds for the UI: a ring of peaks of what is written (one per ~1.33 ms) and a lock-free snapshot of the live grains
-// (a fixed array under a sequence counter, written once per block). Engine stats (grains spawned, a log of the last
-// 1024 spawns) are for tests and the UI's rate readout.
+// and of the last 32 that ended (short grains often live and die between two UI frames), a fixed array under a
+// sequence counter, written once per block. Engine stats (grains started and not started, a log of the last 1024
+// starts) are for the tests.
 #pragma once
 
 #include "dsp/Fx.hpp"
@@ -51,6 +54,7 @@
 namespace pump { namespace grain {
 
 constexpr int kMaxGrains = 64;
+constexpr int kMaxRecent = 32;
 
 struct Settings {
     double positionMs = 250.0, sizeMs = 120.0, density = 12.0, spray = 10.0;
@@ -169,18 +173,22 @@ inline EnvSpec envSpec(int shape, int len, double sr)
 // Written by the audio thread once per block, read by the UI: a sequence counter around a fixed set of atomics (odd =
 // being written). The reader retries if the counter moved; nothing ever waits.
 struct GrainView {
-    struct G { float from, to, head, env, pitch, pan, reverse; };   // delays behind the write head (seconds)
+    struct G { float from, to, head, env, pitch, reverse; };   // delays behind the write head (seconds)
+    // a grain that ended: where it read (seconds behind the head when it ended), and the head then (samples written)
+    struct E { float from, to, pitch, reverse; uint32_t head; };
     int count = 0;
+    uint32_t ended = 0;         // grains ended so far; the last kMaxRecent are in e[], index = number % kMaxRecent
+    uint32_t head = 0;          // samples written so far (stands still while frozen)
     G g[kMaxGrains] = {};
-    uint32_t ringPos = 0;       // peaks pushed so far (the newest peak ends `hopPhase` seconds before the write head)
-    uint32_t spawned = 0;       // grains started so far
-    float hopPhase = 0.0f, position = 0.0f, spray = 0.0f, size = 0.0f, rate = 0.0f;
+    E e[kMaxRecent] = {};
+    float hopPhase = 0.0f;      // the newest buffer peak ends this many seconds before the write head
+    float position = 0.0f, spray = 0.0f, rate = 0.0f;   // where grains start (s), the spray (s), grains per second
     float motion[3] = {};       // the motion curves (position, size, pitch), -1..1 x depth
     float frozen = 0.0f;
 };
 class GrainSnapshot {
 public:
-    static constexpr int kHdr = 8, kGF = 7;
+    static constexpr int kHdr = 8, kGF = 6, kEF = 4, kEOff = kHdr + kMaxGrains * kGF;
     GrainSnapshot() { for (auto& d : data) d.store(0.0f, std::memory_order_relaxed); }
     void publish(const GrainView& v)
     {
@@ -188,15 +196,20 @@ public:
         seq.store(s + 1, std::memory_order_relaxed);
         std::atomic_thread_fence(std::memory_order_release);
         ints[0].store((uint32_t)v.count, std::memory_order_relaxed);
-        ints[1].store(v.ringPos, std::memory_order_relaxed);
-        ints[2].store(v.spawned, std::memory_order_relaxed);
-        const float hdr[kHdr] = { v.hopPhase, v.position, v.spray, v.size, v.rate, v.motion[0], v.motion[1], v.motion[2] };
+        ints[1].store(v.ended, std::memory_order_relaxed);
+        ints[2].store(v.head, std::memory_order_relaxed);
+        const float hdr[kHdr] = { v.hopPhase, v.position, v.spray, v.rate, v.motion[0], v.motion[1], v.motion[2], v.frozen };
         for (int i = 0; i < kHdr; ++i) data[i].store(hdr[i], std::memory_order_relaxed);
-        frozen.store(v.frozen, std::memory_order_relaxed);
         for (int k = 0; k < v.count; ++k)
         {
-            const float f[kGF] = { v.g[k].from, v.g[k].to, v.g[k].head, v.g[k].env, v.g[k].pitch, v.g[k].pan, v.g[k].reverse };
+            const float f[kGF] = { v.g[k].from, v.g[k].to, v.g[k].head, v.g[k].env, v.g[k].pitch, v.g[k].reverse };
             for (int i = 0; i < kGF; ++i) data[kHdr + k * kGF + i].store(f[i], std::memory_order_relaxed);
+        }
+        for (int k = 0; k < kMaxRecent; ++k)
+        {
+            const float f[kEF] = { v.e[k].from, v.e[k].to, v.e[k].pitch, v.e[k].reverse };
+            for (int i = 0; i < kEF; ++i) data[kEOff + k * kEF + i].store(f[i], std::memory_order_relaxed);
+            endHead[k].store(v.e[k].head, std::memory_order_relaxed);
         }
         seq.store(s + 2, std::memory_order_release);
     }
@@ -207,18 +220,23 @@ public:
             const uint32_t s0 = seq.load(std::memory_order_acquire);
             if (s0 & 1u) continue;
             v.count = clampv((int)ints[0].load(std::memory_order_relaxed), 0, kMaxGrains);
-            v.ringPos = ints[1].load(std::memory_order_relaxed);
-            v.spawned = ints[2].load(std::memory_order_relaxed);
+            v.ended = ints[1].load(std::memory_order_relaxed);
+            v.head = ints[2].load(std::memory_order_relaxed);
             float hdr[kHdr];
             for (int i = 0; i < kHdr; ++i) hdr[i] = data[i].load(std::memory_order_relaxed);
-            v.hopPhase = hdr[0]; v.position = hdr[1]; v.spray = hdr[2]; v.size = hdr[3]; v.rate = hdr[4];
-            v.motion[0] = hdr[5]; v.motion[1] = hdr[6]; v.motion[2] = hdr[7];
-            v.frozen = frozen.load(std::memory_order_relaxed);
+            v.hopPhase = hdr[0]; v.position = hdr[1]; v.spray = hdr[2]; v.rate = hdr[3];
+            v.motion[0] = hdr[4]; v.motion[1] = hdr[5]; v.motion[2] = hdr[6]; v.frozen = hdr[7];
             for (int k = 0; k < v.count; ++k)
             {
                 float f[kGF];
                 for (int i = 0; i < kGF; ++i) f[i] = data[kHdr + k * kGF + i].load(std::memory_order_relaxed);
-                v.g[k] = { f[0], f[1], f[2], f[3], f[4], f[5], f[6] };
+                v.g[k] = { f[0], f[1], f[2], f[3], f[4], f[5] };
+            }
+            for (int k = 0; k < kMaxRecent; ++k)
+            {
+                float f[kEF];
+                for (int i = 0; i < kEF; ++i) f[i] = data[kEOff + k * kEF + i].load(std::memory_order_relaxed);
+                v.e[k] = { f[0], f[1], f[2], f[3], endHead[k].load(std::memory_order_relaxed) };
             }
             std::atomic_thread_fence(std::memory_order_acquire);
             if (seq.load(std::memory_order_relaxed) == s0) return true;
@@ -228,8 +246,8 @@ public:
 private:
     std::atomic<uint32_t> seq { 0 };
     std::atomic<uint32_t> ints[3] = {};
-    std::atomic<float> frozen { 0.0f };
-    std::atomic<float> data[kHdr + kMaxGrains * kGF];
+    std::atomic<uint32_t> endHead[kMaxRecent] = {};
+    std::atomic<float> data[kEOff + kMaxRecent * kEF];
 };
 
 // ---- SPACE: a compact modulated FDN ----------------------------------------------------------------------------------
@@ -340,6 +358,9 @@ public:
         groupDelay[0] = 0.0; groupDelay[1] = gdSec; groupDelay[2] = gdSec + 2.0 * gdSec;
         hop = std::max(16, (int)std::lround(sr / 750.0));
         for (int ch = 0; ch < 2; ++ch) { fbDc[ch].set(15.0, sr); fbLp[ch].set(std::min(16000.0, 0.4 * sr), sr); }
+        duckAtt = 1.0 - std::exp(-1.0 / (0.002 * sr));
+        duckRel = 1.0 - std::exp(-1.0 / (0.400 * sr));
+        duckGlide = 1.0 - std::exp(-1.0 / (0.010 * sr));
         space.prepare(sr);
         const int ramp = std::max(1, (int)(0.020 * sr));
         mixS.setRamp(ramp); outS.setRamp(ramp); fbS.setRamp(ramp); spaceS.setRamp(ramp); cutS.setRamp(std::max(1, (int)(0.030 * sr)));
@@ -364,7 +385,6 @@ public:
     uint64_t droppedCount() const { return dropped; }
     int activeGrains() const { return numActive; }
     const SpawnInfo& spawnLog(uint64_t i) const { return history[i % kLogN]; }
-    int64_t clockSamples() const { return clock; }
 
     void process(float* L, float* R, int n)
     {
@@ -380,7 +400,7 @@ private:
         float invAtk = 1, invRel = 1, invLen = 1;
         float kg = 1.0f, kd = 0.0f;            // an early fade-out (gain, decrement per sample) when one is needed
         float gmL = 1, gmR = 1, gs = 1;        // pan gains (mono part per side, side part) incl. the level scaling
-        float pitch = 0, pan = 0;
+        float pitch = 0;
     };
 
     void reset()
@@ -408,6 +428,7 @@ private:
         for (int m = 0; m < kNumFilterModes; ++m) fw[m].reset(m == clampv(set.filter, 0, kNumFilterModes - 1) ? 1.0 : 0.0);
         mixDry = std::cos(0.5 * kPi * set.mix * 0.01); mixWet = std::sin(0.5 * kPi * set.mix * 0.01);
         peak = 0.0f; hopN = 0;
+        envW = 0.0; duck = 1.0;
         spawned = dropped = 0;
     }
 
@@ -529,7 +550,7 @@ private:
         g.gmL = (float)(kSqrt2 * std::cos(th) * gain);
         g.gmR = (float)(kSqrt2 * std::sin(th) * gain);
         g.gs = (float)((1.0 - std::fabs(pan)) * gain);
-        g.pitch = (float)st; g.pan = (float)pan;
+        g.pitch = (float)st;
         SpawnInfo& si = history[spawned % kLogN];
         si.time = clock + at; si.ratio = (float)r; si.delay = (float)d0; si.size = (float)len; si.reverse = rev;
         ++spawned;
@@ -621,9 +642,9 @@ private:
                     kg -= g.kd;
                 }
                 const double p = (pos + off) * sc;
-                const double fl = std::floor(p);
-                const int64_t ii = (int64_t)fl;
-                const float t = (float)(p - fl);
+                int64_t ii = (int64_t)p;                 // floor (positions are negative before the ring has filled)
+                if (p < (double)ii) --ii;
+                const float t = (float)(p - (double)ii);
                 const float* a0 = b + 2 * ((ii - 1) & m);
                 const float* a1 = b + 2 * (ii & m);
                 const float* a2 = b + 2 * ((ii + 1) & m);
@@ -637,7 +658,15 @@ private:
                 if (++k >= g.len) { done = true; break; }
             }
             g.pos = pos; g.k = k; g.kg = kg; g.skip = 0;
-            if (done) { freeList[numFree++] = active[j]; active[j] = active[--numActive]; }
+            if (done)
+            {
+                // where it read, for the UI's trail (the head moves on within this sub-block: close enough)
+                const double D = (double)W - g.pos;
+                GrainView::E& en = view.e[view.ended++ % kMaxRecent];
+                en.from = (float)((D + g.step * k) / sr); en.to = (float)(D / sr); en.pitch = g.pitch;
+                en.reverse = g.step < 0.0 ? 1.0f : 0.0f; en.head = (uint32_t)W;
+                freeList[numFree++] = active[j]; active[j] = active[--numActive];
+            }
         }
 
         // ---- per-sample: write (input + feedback), filter, space, mix
@@ -664,9 +693,20 @@ private:
             const double wgn = writeG.next();
             if (moving)
             {
-                const float fl = fb > 0.0 ? softLimit((float)fbLp[0].lp(fbDc[0].process(gL * fb))) : 0.0f;
-                const float fr = fb > 0.0 ? softLimit((float)fbLp[1].lp(fbDc[1].process(gR * fb))) : 0.0f;
-                write((float)((clampv(inL, -8.0f, 8.0f) + fl) * wgn), (float)((clampv(inR, -8.0f, 8.0f) + fr) * wgn));
+                const float xl = clampv(inL, -8.0f, 8.0f), xr = clampv(inR, -8.0f, 8.0f);
+                float wl = xl, wr = xr;
+                if (fb > 0.0)
+                {
+                    const float k = (float)(fb * duck);
+                    wl += softLimit((float)fbLp[0].lp(fbDc[0].process(gL * k)));
+                    wr += softLimit((float)fbLp[1].lp(fbDc[1].process(gR * k)));
+                    // the duck follows the level written (fast down, slow back up)
+                    const double a = std::max(std::fabs(wl), std::fabs(wr));
+                    envW += (a - envW) * (a > envW ? duckAtt : duckRel);
+                    duck += ((envW > kDuckAt ? kDuckAt / envW : 1.0) - duck) * duckGlide;
+                }
+                else { envW = 0.0; duck = 1.0; }
+                write((float)(wl * wgn), (float)(wr * wgn));
                 zeroRun = wgn > 0.0 ? 0 : zeroRun + 1;
             }
             double yl = gL, yr = gR;
@@ -708,7 +748,7 @@ private:
 
     void endBlock(float* L, float* R, int n)
     {
-        double chk = svf[0].ic1 + svf[0].ic2 + svf[1].ic1 + svf[1].ic2 + fbDc[0].y1 + fbDc[1].y1 + fbLp[0].s + fbLp[1].s + space.state();
+        double chk = svf[0].ic1 + svf[0].ic2 + svf[1].ic1 + svf[1].ic2 + fbDc[0].y1 + fbDc[1].y1 + fbLp[0].s + fbLp[1].s + space.state() + envW + duck;
         for (int i = 0; i < n; ++i) chk += (double)L[i] + R[i];
         if (!std::isfinite(chk))
         {
@@ -732,15 +772,13 @@ private:
             o.from = (float)((D + g.step * g.k) * toS);
             o.to = (float)((D - g.step * (g.len - g.k)) * toS);
             o.env = envelope(g, std::min(g.k, g.len - 1)) * (g.kd > 0.0f ? std::max(0.0f, g.kg) : 1.0f);
-            o.pitch = g.pitch; o.pan = g.pan; o.reverse = g.step < 0.0 ? 1.0f : 0.0f;
+            o.pitch = g.pitch; o.reverse = g.step < 0.0 ? 1.0f : 0.0f;
         }
-        v.ringPos = wave.position();
-        v.spawned = (uint32_t)spawned;
+        v.head = (uint32_t)W;
         v.hopPhase = (float)(hopN * toS);
         const double md = sh.motionDepth;
         v.position = (float)(std::max(0.0, set.positionMs + md * mot[0] * (0.5 * set.positionMs + 150.0)) * 0.001);
         v.spray = (float)sh.spray;
-        v.size = (float)(clampv(sh.sizeMs * std::exp2(md * mot[1]), 5.0, 1000.0) * 0.001);
         v.rate = (float)grainRate();
         for (int m = 0; m < 3; ++m) v.motion[m] = (float)(md * mot[m]);
         v.frozen = moving ? 0.0f : 1.0f;
@@ -775,6 +813,8 @@ private:
     double spDry = 1.0, spWet = 0.0, mixDry = 1.0, mixWet = 0.0;
     LinearSmoother mixS, outS, fbS, spaceS, cutS, resS, writeG, fw[kNumFilterModes];
     int hop = 64, hopN = 0, zeroRun = 0;
+    static constexpr double kDuckAt = 0.5;        // the feedback ducks when what is written goes above -6 dBFS
+    double envW = 0.0, duck = 1.0, duckAtt = 0.01, duckRel = 1e-4, duckGlide = 0.002;
     float peak = 0.0f;
     uint64_t spawned = 0, dropped = 0;
     SpawnInfo history[kLogN] = {};

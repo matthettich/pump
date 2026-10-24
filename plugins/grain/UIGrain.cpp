@@ -96,17 +96,15 @@ protected:
         return PumpUI::formatParam(i, v);
     }
 
-    // DENSITY becomes the note division while synced; the filter's dials only matter with a filter on
+    // DENSITY becomes the note division while synced
     void bindControls()
     {
         const bool synced = value(kSync) >= 0.5f;
         rateDial->param = synced ? kDivision : kDensity;
         rateDial->label = synced ? "DIVISION" : "DENSITY";
         rateDial->tip = synced ? "Division: one grain per note value at the host's tempo" : "Density: grains per second (1..100)";
-        const bool filt = (int)value(kFilter) != kFilterOff;
-        cutDial->enabled = resDial->enabled = filt;
     }
-    void onParamChanged(int i, float) override { if (i == kSync || i == kFilter) bindControls(); }
+    void onParamChanged(int i, float) override { if (i == kSync) bindControls(); }
     void onPresetApplied() override { bindControls(); }
 
     void layout() override
@@ -164,20 +162,16 @@ protected:
         GrainView v;
         if (plug->engine.snapshot.read(v))
         {
-            // the grains of the last frame fade out as a short trail (grains shorter than a frame still show)
-            const bool frozenNow = v.frozen > 0.5f;
-            for (auto& g : ghosts)
+            // the grains that ended since the last frame leave a short trail where they read
+            for (auto& g : ghosts) if (g.life > 0.0f) g.life -= dt * 4.0f;
+            const uint32_t first = v.ended - std::min<uint32_t>(v.ended - endedSeen, (uint32_t)kMaxRecent);
+            for (uint32_t k = first; k != v.ended; ++k)
             {
-                if (g.life <= 0.0f) continue;
-                g.life -= dt * 5.0f;
-                if (!frozenNow) { g.from += dt; g.to += dt; }
-            }
-            for (int k = 0; k < view.count; ++k)
-            {
+                const GrainView::E& en = v.e[k % kMaxRecent];
                 Ghost& g = ghosts[ghostW++ % kGhosts];
-                g.from = view.g[k].from; g.to = view.g[k].to; g.pitch = view.g[k].pitch; g.rev = view.g[k].reverse > 0.5f;
-                g.life = std::max(0.2f, view.g[k].env);
+                g.from = en.from; g.to = en.to; g.pitch = en.pitch; g.rev = en.reverse > 0.5f; g.head = en.head; g.life = 1.0f;
             }
+            endedSeen = v.ended;
             view = v;
         }
         hopSec = (float)plug->engine.hopSeconds();
@@ -270,8 +264,9 @@ protected:
         const bool frozen = view.frozen > 0.5f;
         {
             char t[64];
-            if (value(kSync) >= 0.5f) std::snprintf(t, sizeof t, "%d GRAINS   %s", view.count, kNoteNames[pump::clampv((int)value(kDivision), 0, kNumNotes - 1)]);
-            else std::snprintf(t, sizeof t, "%d GRAINS   %.1f /S", view.count, view.rate);
+            const char* gw = view.count == 1 ? "GRAIN " : "GRAINS";
+            if (value(kSync) >= 0.5f) std::snprintf(t, sizeof t, "%2d %s   %s", view.count, gw, kNoteNames[pump::clampv((int)value(kDivision), 0, kNumNotes - 1)]);
+            else std::snprintf(t, sizeof t, "%2d %s   %.1f /S", view.count, gw, view.rate);
             textAt(r.r() - 10, r.y + 14, t, kMono, 10.0f, theme.ink2, ALIGN_RIGHT | ALIGN_MIDDLE);
             std::snprintf(t, sizeof t, spanSel == 0 ? "AUTO %.1f s" : "%.0f s", span);
             textAt(r.x + 80, r.y + 14, t, kMono, 10.0f, theme.ink2, ALIGN_LEFT | ALIGN_MIDDLE);
@@ -290,15 +285,10 @@ protected:
         {
             const float x = xOfDelay(p, d);
             line(x, p.y, x, p.b(), theme.grid, 1.0f);
-            char b[16]; std::snprintf(b, sizeof b, step < 1.0f ? "-%.2g s" : "-%.0f s", d);
+            char b[16]; std::snprintf(b, sizeof b, step < 1.0f ? "-%.3g s" : "-%.0f s", d);
             textAt(x, r.b() - 11, b, kMono, 9.5f, theme.ink2, ALIGN_CENTER | ALIGN_MIDDLE);
         }
         textAt(p.r(), r.b() - 11, frozen ? "FROZEN" : "NOW", kLabel, 9.5f, frozen ? theme.second : theme.ink, ALIGN_RIGHT | ALIGN_MIDDLE, 1.0f);
-        for (int st : { 24, 12, -12, -24 })
-        {
-            char b[8]; std::snprintf(b, sizeof b, "%+d", st);
-            textAt(p.x + 2, yOfPitch(p, (float)st) - 6, b, kMono, 8.5f, theme.ink2, ALIGN_LEFT | ALIGN_MIDDLE);
-        }
 
         save();
         scissor(p.x, p.y, p.w, p.h);
@@ -310,6 +300,14 @@ protected:
         drawWave(p);
         drawGrains(p);
         restore();
+        // pitch lanes (semitones), over the waveform
+        for (int st : { 24, 12, -12, -24 })
+        {
+            char b[8]; std::snprintf(b, sizeof b, "%+d", st);
+            const float y = yOfPitch(p, (float)st);
+            fillRect(Rect(p.x, y - 6.0f, 20.0f, 12.0f), withAlpha2(theme.screen, 0.85f));
+            textAt(p.x + 2, y, b, kMono, 8.5f, theme.ink2, ALIGN_LEFT | ALIGN_MIDDLE);
+        }
         // the write head
         line(p.r(), p.y - 4, p.r(), p.b() + 4, frozen ? theme.second : theme.ink, 2.0f);
         textAt(xa + 4, p.y + 7, "POS", kLabel, 9.0f, theme.ink, ALIGN_LEFT | ALIGN_MIDDLE, 1.0f);
@@ -355,36 +353,75 @@ protected:
         stroke();
     }
 
-    void grainBox(const Rect& p, float from, float to, float pitch, bool rev, float alpha, bool outline, float head = -1.0f)
+    // A grain drawn as its envelope over the span it reads (left = older audio): a bell, a decay, a swell... at the
+    // height of its pitch, filled by how loud it is now. Reverse grains are in the second colour; the live ones show
+    // their read head and the way it moves.
+    void grainShape(const Rect& p, float from, float to, float pitch, bool rev, float alpha, bool live, float head = -1.0f)
     {
-        const float d0 = std::max(from, to), d1 = std::max(0.0f, std::min(from, to));
-        float x0 = xOfDelay(p, d0), x1 = xOfDelay(p, d1);
-        if (x1 - x0 < 3.0f) { const float c = 0.5f * (x0 + x1); x0 = c - 1.5f; x1 = c + 1.5f; }
-        const float y = yOfPitch(p, pitch), h = 10.0f;
-        const Color c = rev ? theme.second : (theme.dark ? theme.neon : pump::mixColor(theme.neon, theme.ink, 0.15f));
-        fillRect(Rect(x0, y - h * 0.5f, x1 - x0, h), withAlpha2(c, alpha));
-        if (!outline) return;
-        strokeRect(Rect(x0, y - h * 0.5f, x1 - x0, h), withAlpha2(theme.ink, 0.25f + 0.6f * alpha), 1.0f);
+        const float xa = xOfDelay(p, from), xb = xOfDelay(p, to);
+        const float y = yOfPitch(p, pitch), hh = 13.0f;
+        const Color c = rev ? theme.second : (theme.dark ? theme.neon : pump::mixColor(theme.neon, theme.ink, 0.12f));
+        if (std::fabs(xb - xa) < 3.0f)
+        {
+            const float cx = 0.5f * (xa + xb);
+            fillRect(Rect(cx - 1.5f, y - hh, 3.0f, hh), withAlpha2(c, alpha));
+            if (live) line(cx, y - hh, cx, y, withAlpha2(theme.ink, 0.6f), 1.0f);
+            return;
+        }
+        // the grain's length in samples (the span read / its speed) gives the envelope's edges
+        const float ratio = std::exp2(pitch / 12.0f);
+        const float srShown = (float)std::max(8000.0, sampleRate());
+        const int len = std::max(16, (int)(std::fabs(to - from) * srShown / std::max(0.01f, ratio)));
+        const EnvSpec es = envSpec(pump::clampv((int)value(kEnvelope), 0, kNumEnvelopes - 1), len, srShown);
+        const float* tab = edgeTable();
+        constexpr int M = 24;
+        float ys[M + 1];
+        for (int i = 0; i <= M; ++i)
+        {
+            const int k = std::min(len - 1, i * len / M);
+            float e = 1.0f;
+            if (k < es.atk) e = edge(tab, (float)k / es.atk);
+            if (len - k < es.rel) e *= edge(tab, (float)(len - k) / es.rel);
+            if (es.body == kBodyDecay) { const float u = 1.0f - (float)k / len; e *= u * u; }
+            else if (es.body == kBodyRise) { const float u = (float)k / len; e *= u * u; }
+            ys[i] = i == M ? 0.0f : e;
+        }
+        beginPath();
+        moveTo(xa, y);
+        for (int i = 0; i <= M; ++i) lineTo(xa + (xb - xa) * i / M, y - ys[i] * hh);
+        lineTo(xb, y);
+        closePath();
+        fillColor(withAlpha2(c, alpha));
+        fill();
+        if (!live) return;
+        strokeColor(withAlpha2(theme.ink, 0.35f + 0.5f * alpha)); strokeWidth(1.0f); lineJoin(ROUND); stroke();
+        line(std::min(xa, xb), y, std::max(xa, xb), y, withAlpha2(theme.ink, 0.5f), 1.0f);
         if (head >= 0.0f)
         {
             const float hx = xOfDelay(p, head);
-            line(hx, y - h * 0.5f - 3.0f, hx, y + h * 0.5f + 3.0f, theme.ink, 1.5f);
+            line(hx, y - hh - 2.0f, hx, y + 3.0f, theme.ink, 1.5f);
             // the direction it reads in (reverse grains move into the past: left)
             beginPath();
             const float dx = rev ? -5.0f : 5.0f;
-            moveTo(hx, y - h * 0.5f - 7.0f); lineTo(hx + dx, y - h * 0.5f - 4.5f); lineTo(hx, y - h * 0.5f - 2.0f); closePath();
+            moveTo(hx, y + 2.0f); lineTo(hx + dx, y + 4.5f); lineTo(hx, y + 7.0f); closePath();
             fillColor(theme.ink); fill();
         }
     }
 
     void drawGrains(const Rect& p)
     {
+        // ended grains: their delays have grown by what was written since they ended
+        const float sr = (float)std::max(1.0, sampleRate());
         for (const auto& g : ghosts)
-            if (g.life > 0.0f) grainBox(p, g.from, g.to, g.pitch, g.rev, 0.22f * g.life, false);
+            if (g.life > 0.0f)
+            {
+                const float moved = (float)(uint32_t)(view.head - g.head) / sr;
+                grainShape(p, g.from + moved, g.to + moved, g.pitch, g.rev, (theme.dark ? 0.30f : 0.40f) * g.life, false);
+            }
         for (int k = 0; k < view.count; ++k)
         {
             const auto& g = view.g[k];
-            grainBox(p, g.from, g.to, g.pitch, g.reverse > 0.5f, 0.15f + 0.75f * pump::clampv(g.env, 0.0f, 1.0f), true, g.head);
+            grainShape(p, g.from, g.to, g.pitch, g.reverse > 0.5f, 0.25f + 0.65f * pump::clampv(g.env, 0.0f, 1.0f), true, g.head);
         }
     }
 
@@ -484,8 +521,9 @@ protected:
     {
         const int shape = pump::clampv((int)value(kEnvelope), 0, kNumEnvelopes - 1);
         // at the current grain size (the 1.5 ms shortest edge shows on short grains)
-        const int len = std::max(16, (int)(value(kSize) * 48.0f));
-        const EnvSpec es = envSpec(shape, len, 48000.0);
+        const double srShown = std::max(8000.0, sampleRate());
+        const int len = std::max(16, (int)(value(kSize) * 0.001 * srShown));
+        const EnvSpec es = envSpec(shape, len, srShown);
         const float* tab = edgeTable();
         beginPath();
         for (int i = 0; i <= 60; ++i)
@@ -543,6 +581,7 @@ protected:
             if (i == 0) moveTo(x, y); else lineTo(x, y);
         }
         strokeColor(mode == kFilterOff ? theme.dim : theme.ink); strokeWidth(1.6f); lineJoin(ROUND); stroke();
+        if (mode == kFilterOff) textAt(b.cx(), b.b() - 9, "BYPASSED", kLabel, 8.5f, theme.ink2, ALIGN_CENTER | ALIGN_MIDDLE, 0.8f);
         strokeRect(b, theme.ink, 1.0f);
     }
 
@@ -555,8 +594,9 @@ protected:
         {
             if (dbl || cmdKey(mod)) { beginGroup(); setParamGesture(kPosition, spec(kPosition).def); setParamGesture(kPitch, spec(kPitch).def); endGroup(); return false; }
             drag = kDragBuffer; dragX = x; dragY = y; dragA = value(kPosition); dragB = value(kPitch);
+            dragFine = (mod & kModifierShift) != 0;
             beginEdit(kPosition); beginEdit(kPitch);
-            if (!(mod & kModifierShift)) bufferAt(x, y);
+            if (!(mod & kModifierShift)) bufferAt(x, y, mod);
             return true;
         }
         if (pad.contains(x, y))
@@ -569,12 +609,21 @@ protected:
         }
         return false;
     }
-    void bufferAt(float x, float y)
+    // x places the grains (absolute: where you click); dragging up/down moves the pitch from where it was, so a
+    // click alone never changes it
+    void bufferAt(float x, float y, uint mod)
     {
         const Rect bp = bufPlot();
-        const float d = (bp.r() - pump::clampv(x, bp.x, bp.r())) / bp.w * span;
-        setParam(kPosition, d * 1000.0f);
-        setParam(kPitch, std::round((bp.cy() - y) / (bp.h * 0.42f) * 24.0f));
+        const bool fine = (mod & kModifierShift) != 0;
+        if (fine != dragFine)
+        {
+            // Shift pressed or released mid-drag: carry on from here (the pitch keeps its unrounded drag amount)
+            dragB += (dragY - y) / (bp.h * 0.42f) * 24.0f * (dragFine ? 0.25f : 1.0f);
+            dragA = value(kPosition); dragX = x; dragY = y; dragFine = fine;
+        }
+        if (fine) setParam(kPosition, dragA - (x - dragX) / bp.w * span * 1000.0f * 0.15f);
+        else setParam(kPosition, (bp.r() - pump::clampv(x, bp.x, bp.r())) / bp.w * span * 1000.0f);
+        setParam(kPitch, std::round(dragB + (dragY - y) / (bp.h * 0.42f) * 24.0f * (fine ? 0.25f : 1.0f)));
         setStatus(paramStatus(kPosition) + "    " + paramStatus(kPitch));
     }
     void padAt(float x, float y)
@@ -586,14 +635,7 @@ protected:
     void bodyMouseDrag(float x, float y, uint mod) override
     {
         const bool fine = (mod & kModifierShift) != 0;
-        if (drag == kDragBuffer)
-        {
-            if (!fine) { bufferAt(x, y); return; }
-            const Rect bp = bufPlot();
-            setParam(kPosition, dragA - (x - dragX) / bp.w * span * 1000.0f * 0.15f);
-            setParam(kPitch, std::round(dragB + (dragY - y) / (bp.h * 0.42f) * 24.0f * 0.25f));
-            setStatus(paramStatus(kPosition) + "    " + paramStatus(kPitch));
-        }
+        if (drag == kDragBuffer) bufferAt(x, y, mod);
         else if (drag == kDragPad)
         {
             if (!fine) { padAt(x, y); return; }
@@ -611,7 +653,7 @@ protected:
     }
     void bodyHover(float x, float y) override
     {
-        if (bufPlot().contains(x, y)) setStatus("Drag in the buffer: left/right = position, up/down = pitch (Shift = fine, double-click = reset, wheel = zoom)");
+        if (bufPlot().contains(x, y)) setStatus("Click or drag in the buffer: where the grains read (position); drag up/down = pitch (Shift = fine, double-click = reset, wheel = zoom)");
         else if (pad.contains(x, y)) setStatus("Drag the dot: X = smooth .. glitchy (size, density, scatter), Y = steady .. wild (spray, pitch spread, reverse, width, motion)");
     }
     bool bodyScroll(float x, float y, float dy, uint) override
@@ -631,7 +673,7 @@ protected:
     std::vector<std::pair<std::string, std::string>> helpLines() override
     {
         return {
-            { "Drag in the buffer", "left/right = position, up/down = pitch (double-click resets both)" },
+            { "Click / drag in the buffer", "position = where you point; drag up/down = pitch (double-click resets both)" },
             { "Wheel on the buffer", "zoom: auto, 1, 2, 4, 8 s" },
             { "Drag the morph pad", "X = smooth .. glitchy, Y = steady .. wild (double-click centres)" },
             { "F", "freeze" },
@@ -640,18 +682,16 @@ protected:
     }
     std::string footerInfo() override
     {
-        char buf[160];
-        const int sc = pump::clampv((int)value(kQuantize), 0, kNumScales - 1);
-        char mode[48];
+        char mode[48], buf[160];
+        const float dens = value(kDensity);
         if (value(kSync) >= 0.5f)
             std::snprintf(mode, sizeof mode, "SYNC %s AT %.0f BPM", kNoteNames[pump::clampv((int)value(kDivision), 0, kNumNotes - 1)], bpm);
-        else std::snprintf(mode, sizeof mode, "%s GRAINS/S", formatParam(kDensity, value(kDensity)).c_str());
-        std::snprintf(buf, sizeof buf, "%s   %s%s%s   LATENCY 0", mode, kEnvelopeNames[pump::clampv((int)value(kEnvelope), 0, kNumEnvelopes - 1)],
-                      sc != kScaleOff ? "   " : "", sc != kScaleOff ? kScaleNames[sc] : "");
+        else std::snprintf(mode, sizeof mode, dens < 9.95f ? "%.1f GRAINS/S" : "%.0f GRAINS/S", dens);
+        const int sc = pump::clampv((int)value(kQuantize), 0, kNumScales - 1);
+        std::snprintf(buf, sizeof buf, "%s   %s%s%s%s   LATENCY 0", mode, kEnvelopeNames[pump::clampv((int)value(kEnvelope), 0, kNumEnvelopes - 1)],
+                      sc != kScaleOff ? "   " : "", sc != kScaleOff ? kScaleNames[sc] : "", value(kFreeze) >= 0.5f ? "   FROZEN" : "");
         std::string s = buf;
         for (char& ch : s) ch = (char)std::toupper((unsigned char)ch);
-        size_t p;
-        while ((p = s.find(" /S")) != std::string::npos) s.erase(p, 3);
         return s;
     }
     void saveUi() { char buf[32]; std::snprintf(buf, sizeof buf, "span=%d;", spanSel); saveUiState(buf); }
@@ -661,13 +701,13 @@ private:
     static constexpr int kWaveN = 1 << 13, kGhosts = 512, kNumSpans = 5;
     static constexpr float kSpans[kNumSpans] = { 0.0f, 1.0f, 2.0f, 4.0f, 8.0f };
     enum Drag { kDragNone, kDragBuffer, kDragPad };
-    struct Ghost { float from = 0, to = 0, pitch = 0, life = 0; bool rev = false; };
+    struct Ghost { float from = 0, to = 0, pitch = 0, life = 0; uint32_t head = 0; bool rev = false; };
 
     PluginGrain* plug = nullptr;
     Rect bufR, padScreen, pad, grainPanel, pitchPanel, fxPanel, outPanel, scaleStrip, filterR, meterL, meterR;
     GrainView view;
     Ghost ghosts[kGhosts];
-    uint32_t ghostW = 0;
+    uint32_t ghostW = 0, endedSeen = 0;
     float wave[kWaveN] = {};
     int waveCount = 0, spanSel = 0;
     float hopSec = 0.00133f, span = 2.0f, waveScale = 0.1f, bpm = 120.0f;
@@ -675,6 +715,7 @@ private:
     float lvl[2] = { -120.0f, -120.0f }, hold[2] = { -120.0f, -120.0f }, holdT[2] = { 0.0f, 0.0f };
     Drag drag = kDragNone;
     float dragX = 0, dragY = 0, dragA = 0, dragB = 0;
+    bool dragFine = false;
 
     Dial *posDial, *sizeDial, *rateDial, *sprayDial, *revDial, *stereoDial, *pitchDial, *spreadDial;
     Dial *cutDial, *resDial, *fbDial, *spaceDial, *mixDial, *outDial;

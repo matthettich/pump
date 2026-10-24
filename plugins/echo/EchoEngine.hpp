@@ -1,15 +1,16 @@
 // pump ECHO engine: a multi-mode stereo delay. Framework-free.
 //
 // Two delay lines, up to 8 s each (free times go to 4 s; a synced 2/1 at 60 BPM needs 8). Per line:
-//   write  the routed input + FEEDBACK x the loop signal -> LOW CUT -> HIGH CUT -> DIFFUSE (four allpasses, 4-14 ms;
-//          the read heads move earlier by their delay so the echo stays on time) -> the mode's record stage
-//          (saturation, wear) -> DC blocker -> line
+//   write  the routed input + FEEDBACK x the loop signal -> LOW CUT -> HIGH CUT -> DIFFUSE (four allpasses, 4-14 ms,
+//          always in line: at 0 % they are plain delays, and the read heads move earlier by their length so the echo
+//          stays on time; below 80 ms the chain shortens with the time) -> the mode's record stage (saturation,
+//          wear) -> DC blocker -> line
 //   read   the mode's read head(s) -> the mode's playback stage -> the echo, and the loop signal
 //   out    echoes -> DUCK -> WIDTH (M/S) -> mixed with the dry input (the dry stays at unity up to MIX 50 %, the echo
 //          reaches unity at 50 %) -> OUTPUT. No latency: the dry signal is the input itself.
 // Routing (crossfaded, 40 ms): Stereo (L into L, R into R, each line feeds itself), Ping-Pong (the mono sum into L;
-// the lines feed each other, so repeats alternate sides), Wide (the mono sum into both; each line feeds back 70 % into
-// itself and 30 % into the other, so repeats at TIME L, TIME R and their sums bloom across the field).
+// the lines feed each other, so repeats alternate sides), Wide (the mono sum into both, the right one 15 ms later, a
+// Haas offset outside the loop: even linked times spread, and every repeat stays on the grid).
 // FEEDBACK 0..120 % is the loop gain for small signals. Every record stage has unity small-signal gain and a ceiling
 // (DRIVE lowers it), so above 100 % the loop self-oscillates into a saturated but bounded state.
 //
@@ -30,15 +31,16 @@
 //            sample-and-hold aliasing at the clock rate (above 50 %) and clock whine (above 60 %).
 //   Pitch    a two-head pitch shifter (50 ms sin^2 windows, anti-aliased) on the read: Once = every repeat shifted by
 //            PITCH + FINE; Climb = the shifted echo is what feeds back, so each repeat steps further (+12 = shimmer
-//            stairs, -12 = falling octaves). The heads read earlier by the shifter's delay. Times crossfade as in
-//            Digital, and AGE is the same converter grit.
-//   Reverse  the loop is a forward delay; the echo is read backwards in windows as long as the delay time by two
-//            readers half a window apart, each faded by sin^2 (the two always sum to 1): every repeat plays
+//            stairs, -12 = falling octaves). The shifter reads earlier by its own delay (25 ms), so the repeats stay
+//            on time above that. Times crossfade as in Digital, and AGE is the same converter grit.
+//   Reverse  the loop is a forward delay; the echo is read backwards in windows as long as the delay time (centred on
+//            it), by two readers that take turns and crossfade (up to 15 ms) at the window edges: every repeat plays
 //            backwards, without clicks. Times crossfade, AGE as in Digital.
-// MOD: a sine (a triangle in BBD) on the read heads, up to 4 ms deep and never more than +-3.5 % in pitch; the right
-// side runs 90 degrees later. DUCK: the echoes dip by up to 30 dB while the input plays (the gain reduction recovers
-// with a 250 ms time constant). FREEZE: the input fades out of the loop and the loop becomes a plain copy of what it
-// reads (no filters, saturation or pitch), so it holds forever.
+// MOD: a sine (a triangle in BBD) on the read heads, up to 4 ms deep (less on very short times) and never more than
+// +-3.5 % in pitch; the right side runs 90 degrees later. DUCK: the echoes dip by up to 30 dB while the input plays (the gain reduction recovers
+// with a 250 ms time constant). FREEZE: the input fades out of the loop (30 ms) and the loop becomes an exact copy of
+// what the heads read (whole samples, through the routing: no filters, saturation or pitch), so it holds forever;
+// the playback side (wow, pitch, reverse, filters) keeps working on the held loop.
 #pragma once
 
 #include "dsp/Fx.hpp"
@@ -73,16 +75,18 @@ inline void delaySeconds(const Settings& s, double bpm, double out[2])
     out[0] = delaySeconds(s.sync, s.noteL, s.timeL, bpm);
     out[1] = s.link ? out[0] : delaySeconds(s.sync, s.noteR, s.timeR, bpm);
 }
+// Wide: the right side's input trails the left's by this much (outside the loop, so its repeats stay on the grid)
+constexpr double kWideOffsetSeconds = 0.015;
 
-// The routing matrices: in[c] = sum G[c][k] x[k]; loop[c] = sum M[c][k] echo[k].
-struct Routing { double G[2][2], M[2][2]; };
+// The routing: in[c] = sum G[c][k] x[k] (+ H x the mono sum 15 ms ago, on the right); loop[c] = sum M[c][k] echo[k].
+struct Routing { double G[2][2], M[2][2], H; };
 inline Routing routing(int route)
 {
     switch (route)
     {
-    case kRoutePingPong: return { { { 0.5, 0.5 }, { 0.0, 0.0 } }, { { 0.0, 1.0 }, { 1.0, 0.0 } } };
-    case kRouteWide: return { { { 0.5, 0.5 }, { 0.5, 0.5 } }, { { 0.7, 0.3 }, { 0.3, 0.7 } } };
-    default: return { { { 1.0, 0.0 }, { 0.0, 1.0 } }, { { 1.0, 0.0 }, { 0.0, 1.0 } } };
+    case kRoutePingPong: return { { { 0.5, 0.5 }, { 0.0, 0.0 } }, { { 0.0, 1.0 }, { 1.0, 0.0 } }, 0.0 };
+    case kRouteWide: return { { { 0.5, 0.5 }, { 0.0, 0.0 } }, { { 1.0, 0.0 }, { 0.0, 1.0 } }, 0.5 };
+    default: return { { { 1.0, 0.0 }, { 0.0, 1.0 } }, { { 1.0, 0.0 }, { 0.0, 1.0 } }, 0.0 };
     }
 }
 
@@ -99,6 +103,8 @@ inline float clipBucket(float x) { return 0.7f * fastTanh(x * (1.0f / 0.7f)); }
 constexpr double kHeadXfSeconds = 0.050;     // Digital / Pitch / Reverse: read-head crossfade on a time change
 constexpr double kModeXfSeconds = 0.040;
 constexpr double kShiftWindow = 0.050;       // pitch shifter window
+constexpr double kLineSeconds = 10.5;        // the delay lines (8 s of delay + the reverse readers' reach)
+constexpr double kRevFadeSeconds = 0.015;    // reverse: the crossfade between windows (at most)
 constexpr int kAp = 4;
 constexpr double kApMs[2][kAp] = { { 4.1, 6.3, 9.7, 14.3 }, { 4.6, 6.9, 10.4, 13.1 } };
 constexpr double kBbdRef = 0.25;             // compander reference level
@@ -116,17 +122,19 @@ public:
     void prepare(double sampleRate, int /*maxBlock*/)
     {
         sr = sampleRate;
-        maxD = (int)std::ceil(kMaxSeconds * sr) + 64;
+        // 8 s, plus room for the reverse readers (their windows reach past the delay time)
+        maxD = (int)std::ceil(kLineSeconds * sr) + 64;
+        haas.setMaxDelay((int)(kWideOffsetSeconds * sr) + 4);
+        haas.setDelay((int)std::lround(kWideOffsetSeconds * sr));
+        haas.clear();
         for (int c = 0; c < 2; ++c)
         {
             Chan& ch = chans[c];
             ch.line.setMax(maxD + 8);
-            apTotal[c] = 0;
             for (int k = 0; k < kAp; ++k)
             {
-                ch.apLen[k] = std::max(2, (int)std::lround(kApMs[c][k] * 0.001 * sr));
-                ch.ap[k].setMax(ch.apLen[k] + 4);
-                apTotal[c] += ch.apLen[k];
+                ch.apLen[k] = (double)std::lround(kApMs[c][k] * 0.001 * sr);
+                ch.ap[k].setMax((int)ch.apLen[k] + 8);
             }
             ch.shifter.prepare(sr, kShiftWindow);
             ch.rng.seed(0x2545F491u + 0x9E3779B9u * (uint32_t)c);
@@ -148,7 +156,7 @@ public:
         const int ramp = std::max(1, (int)(0.020 * sr));
         for (LinearSmoother* s : { &fbS, &mixS, &outS, &widthS, &driveS, &depthS })
             s->setRamp(ramp);
-        for (LinearSmoother* s : { &freezeS, &climbS, &diffS, &lcOn, &hcOn })
+        for (LinearSmoother* s : { &freezeS, &climbS, &lcOn, &hcOn })
             s->setRamp(std::max(1, (int)(0.030 * sr)));
 
         // start settled at the current settings
@@ -160,7 +168,6 @@ public:
         widthS.reset(clampv(set.width, 0.0, 100.0) * 0.01); driveS.reset(driveGain());
         depthS.reset(depthTarget());
         freezeS.reset(set.freeze ? 1.0 : 0.0); climbS.reset(set.pitchMode == kShiftClimb ? 1.0 : 0.0);
-        diffS.reset(diffOn() ? 1.0 : 0.0);
         lcOn.reset(lowCutActive(set.lowCut) ? 1.0 : 0.0); hcOn.reset(highCutActive(set.highCut) ? 1.0 : 0.0);
         lcHz = clampv(set.lowCut, (double)kLowCutOff, 2000.0); hcHz = clampv(set.highCut, 1000.0, (double)kHighCutOff);
         ageNow = clampv(set.age, 0.0, 100.0) * 0.01;
@@ -168,8 +175,7 @@ public:
         ratio = ratioTarget();
         grDb = 0.0; duckGain = 1.0; level = 0.0;
         clearState();
-        computeTargets();
-        for (auto& ch : chans) { ch.heads.a = ch.heads.b = (int)std::lround(ch.tgt); ch.heads.t = 1.0; ch.glide = ch.tgt; }
+        settle();
         updateControls();
     }
 
@@ -206,11 +212,13 @@ private:
     struct Chan {
         fx::FracDelay line;
         Heads heads;
-        double tgt = 2.0, glide = 2.0, revWin = 1024.0;
+        double tgt = 2.0, glide = 2.0, revWin = 1024.0, revBase = 0.0;
         fx::Svf lc, hc;
         fx::DcBlocker dc;
         fx::Allpass ap[kAp];
-        int apLen[kAp] = {};
+        double apLen[kAp] = {}, apD[kAp] = {};   // the diffusers' full lengths and their lengths now (samples)
+        double apScale = 1.0;
+        bool apInt = true;   // settled: whole-sample lengths (the cheaper, exact integer allpasses)
         fx::Crusher crush;
         fx::Svf tapeHf, tapeBump, tapeRoll;
         fx::OnePole hissHp;
@@ -220,12 +228,13 @@ private:
         fx::Lfo lfo, bbdLfo;
         fx::PitchShifter shifter;
         fx::Svf pitchAa;
-        double revPh = 0.0, revPbPrev = 0.5, revTa = 1024.0, revTb = 1024.0;
+        double revAge[2] = { 0.0, 0.0 }, revW[2] = { 1024.0, 1024.0 }, revB[2] = { 0.0, 0.0 }, revFade = 1.0, revFadeStep = 0.01;
+        int revCur = 0;
+        double comp = 0.0;   // how much earlier the heads read: the diffuser chain's delay
         fx::Rng rng;
     };
 
     double fbTarget() const { return clampv(set.feedback, 0.0, 120.0) * 0.01; }
-    bool diffOn() const { return set.diffuse > 0.05; }
     // DRIVE: the signal goes into the loop's curves this much hotter (and comes out divided by it): half the dB
     // value, so 24 dB of drive puts the loop's ceiling at -12 dBFS
     double driveGain() const { return dbToGain(0.5 * clampv(set.drive, 0.0, 24.0)); }
@@ -248,18 +257,30 @@ private:
         const double s = std::sin(0.5 * kPi * h.t), gb = s * s;
         return tap(ch, h.a + mod) * (1.0 - gb) + tap(ch, h.b + mod) * gb;
     }
-    // Reverse: two readers half a window apart; each plays its window backwards (the read delay grows at twice the
-    // rate of time) under a sin^2 fade, and latches the window length when it starts a new one.
+    // Reverse: a reader plays a window of W samples backwards: its read delay starts at `base` and grows at twice the
+    // rate of time, so consecutive windows play consecutive stretches of the line, each reversed, centred on the
+    // delay time (W = the time, up to 5 s; beyond, W shrinks and `base` keeps the centre). Window length and base
+    // are latched when a window starts. At the end of a window the other reader starts the next one and the two
+    // crossfade (sin^2, up to 15 ms) while the old one runs on: no clicks.
     inline double reverseRead(Chan& ch)
     {
-        ch.revPh += 1.0 / ch.revWin;
-        if (ch.revPh >= 1.0) { ch.revPh -= std::floor(ch.revPh); ch.revTa = ch.revWin; }
-        double pb = ch.revPh + 0.5;
-        if (pb >= 1.0) pb -= 1.0;
-        if (pb < ch.revPbPrev) ch.revTb = ch.revWin;
-        ch.revPbPrev = pb;
-        const double s = std::sin(kPi * ch.revPh), ga = s * s;
-        return ga * tap(ch, 2.0 + 2.0 * ch.revPh * ch.revTa) + (1.0 - ga) * tap(ch, 2.0 + 2.0 * pb * ch.revTb);
+        int& c = ch.revCur;
+        if (ch.revAge[c] >= ch.revW[c])
+        {
+            c ^= 1;
+            ch.revAge[c] = 0.0; ch.revW[c] = ch.revWin; ch.revB[c] = ch.revBase; ch.revFade = 0.0;
+            ch.revFadeStep = 1.0 / clampv(0.25 * ch.revWin, 1.0, kRevFadeSeconds * sr);
+        }
+        double y = tap(ch, 2.0 + ch.revB[c] + 2.0 * ch.revAge[c]);
+        if (ch.revFade < 1.0)
+        {
+            const double s = std::sin(0.5 * kPi * ch.revFade), gi = s * s;
+            y = y * gi + tap(ch, 2.0 + ch.revB[c ^ 1] + 2.0 * ch.revAge[c ^ 1]) * (1.0 - gi);
+            ch.revAge[c ^ 1] += 1.0;
+            ch.revFade += ch.revFadeStep;
+        }
+        ch.revAge[c] += 1.0;
+        return y;
     }
 
     // One mode's read side: `raw` = the forward read (what freeze writes back), `out` = the echo heard, `loop` = what
@@ -272,7 +293,7 @@ private:
         case kModeTape:
         {
             const double y = tap(ch, ch.glide + modSine + tapeMod);
-            raw = tapInt(ch, ch.glide); loop = y;
+            raw = tapInt(ch, ch.glide + ch.comp); loop = y;
             out = ch.tapeBump.peak(ch.tapeRoll.highpass(y), bumpGain) + hissLevel * ch.hissHp.hp(ch.rng.bi());
             return;
         }
@@ -280,7 +301,7 @@ private:
         {
             const double y = tap(ch, ch.glide + modTri + bbdMod);
             const double l = ch.bbdRec.lowpass(y);
-            raw = tapInt(ch, ch.glide); loop = out = l;
+            raw = tapInt(ch, ch.glide + ch.comp); loop = out = l;
             const double a = std::fabs(l);
             ch.bbdOutEnv += (a - ch.bbdOutEnv) * (a > ch.bbdOutEnv ? 1.0 : envRel);
             if (whineLevel > 0.0 && ch.whineInc > 0.0)
@@ -293,19 +314,18 @@ private:
         }
         case kModePitch:
         {
-            // the heads read early by the shifter's delay; the unshifted repeat is read on time (T)
-            const double sd = ch.shifter.averageDelay();
-            const double y = headsRead(ch, modSine);
-            const double yo = headsRead(ch, modSine + sd);
+            // the shifter reads early by its own delay, so the shifted repeat lands on time; the plain one is on time
+            const double y = headsRead(ch, modSine - ch.shifter.averageDelay());
+            const double yo = headsRead(ch, modSine);
             const double sh = ch.shifter.process((float)ch.pitchAa.lowpass(y));
-            raw = tapInt(ch, headNow(ch) + sd); out = sh;
+            raw = tapInt(ch, headNow(ch) + ch.comp); out = sh;
             loop = yo + (sh - yo) * climb;
             return;
         }
         default:
         {
             const double y = headsRead(ch, modSine);
-            raw = tapInt(ch, headNow(ch)); loop = y;
+            raw = tapInt(ch, headNow(ch) + ch.comp); loop = y;
             out = m == kModeReverse ? reverseRead(ch) : y;
             return;
         }
@@ -349,13 +369,18 @@ private:
             case kModeTape: ch.tapeHf.reset(); ch.tapeBump.reset(); ch.tapeRoll.reset(); ch.hissHp.reset(); break;
             case kModeBbd: ch.bbdAa.reset(); ch.bbdRec.reset(); ch.bbdZoh.reset(); ch.bbdEnv = ch.bbdOutEnv = 0.0; break;
             case kModePitch: ch.shifter.reset(); ch.pitchAa.reset(); break;
-            case kModeReverse: ch.revPh = 0.0; ch.revPbPrev = 0.5; ch.revTa = ch.revTb = ch.revWin; break;
+            case kModeReverse: resetReverse(ch); break;
             default: break;
             }
             if (modeKind(m) == kClean && modeKind(from) != kClean) ch.crush.reset();
         }
     }
 
+    void resetReverse(Chan& ch)
+    {
+        ch.revCur = 0; ch.revAge[0] = ch.revAge[1] = 0.0; ch.revW[0] = ch.revW[1] = ch.revWin;
+        ch.revB[0] = ch.revB[1] = ch.revBase; ch.revFade = 1.0;
+    }
     void clearState()
     {
         for (auto& ch : chans)
@@ -367,23 +392,47 @@ private:
             ch.tapeHf.reset(); ch.tapeBump.reset(); ch.tapeRoll.reset(); ch.hissHp.reset();
             ch.bbdAa.reset(); ch.bbdRec.reset(); ch.bbdZoh.reset(); ch.bbdEnv = ch.bbdOutEnv = 0.0;
             ch.shifter.reset(); ch.pitchAa.reset();
-            ch.revPh = 0.0; ch.revPbPrev = 0.5;
+            resetReverse(ch);
         }
+        haas.clear();
         level = 0.0; grDb = 0.0; duckGain = 1.0;
     }
 
-    // read delays (samples) for the current times, moved earlier by the diffuser (when on) and the pitch shifter
-    void computeTargets()
+    // Read delays (samples) for the current times. The diffuser chain is always in the loop (at DIFFUSE 0 its
+    // allpasses are plain delays), so the heads read earlier by its length. Below 80 ms the chain shortens with the
+    // time (gliding by `k` per call), so short echoes stay possible; settled, its lengths are whole samples (exact).
+    void computeTargets(double k)
     {
         double secs[2];
         delaySeconds(set, bpm, secs);
         for (int c = 0; c < 2; ++c)
         {
             Chan& ch = chans[c];
-            double comp = diffOn() ? (double)apTotal[c] : 0.0;
-            if (curMode == kModePitch) comp += ch.shifter.averageDelay();
-            ch.tgt = clampv(secs[c] * sr - comp, 2.0, (double)maxD);
-            ch.revWin = clampv(ch.tgt, 16.0, 0.5 * (maxD - 8));
+            const double T = secs[c] * sr;
+            const double want = clampv(secs[c] / 0.080, 0.0, 1.0);
+            ch.apScale += (want - ch.apScale) * k;
+            if (std::fabs(want - ch.apScale) < 1e-3) ch.apScale = want;
+            const bool settled = ch.apScale == want;
+            ch.apInt = settled;
+            ch.comp = 0.0;
+            for (int j = 0; j < kAp; ++j)
+            {
+                const double d = ch.apLen[j] * ch.apScale;
+                ch.apD[j] = std::max(2.0, settled ? std::round(d) : d);
+                ch.comp += ch.apD[j];
+            }
+            ch.tgt = clampv(T - ch.comp, 2.0, (double)maxD);
+            ch.revWin = clampv(ch.tgt, 16.0, std::max(16.0, maxD - ch.tgt - 2.0 * kRevFadeSeconds * sr - 8.0));
+            ch.revBase = std::max(0.0, ch.tgt - ch.revWin);
+        }
+    }
+    void settle()
+    {
+        computeTargets(1.0);
+        for (auto& ch : chans)
+        {
+            ch.heads.a = ch.heads.b = (int)std::lround(ch.tgt); ch.heads.t = 1.0; ch.glide = ch.tgt;
+            resetReverse(ch);
         }
     }
 
@@ -399,7 +448,8 @@ private:
         {
             rFrom = rNow; rTo = routing(wantRoute); routeT = 0.0; curRoute = wantRoute;
         }
-        computeTargets();
+        const double k = 1.0 - std::exp(-(double)kChunk / (0.04 * sr));   // control-rate glides (~40 ms)
+        computeTargets(k);
         for (auto& ch : chans) ch.heads.follow((int)std::lround(ch.tgt));
         const double tau = curMode == kModeTape ? 0.25 : 0.12;
         glideK = 1.0 - std::exp(-1.0 / (tau * sr));
@@ -414,12 +464,7 @@ private:
         climbS.setTarget(set.pitchMode == kShiftClimb ? 1.0 : 0.0);
         lcOn.setTarget(lowCutActive(set.lowCut) ? 1.0 : 0.0);
         hcOn.setTarget(highCutActive(set.highCut) ? 1.0 : 0.0);
-        if (diffOn() && !diffS.isSmoothing() && diffS.current() <= 0.0)
-            for (auto& ch : chans) for (auto& a : ch.ap) a.clear();   // re-engaging from off: no stale smear
-        diffS.setTarget(diffOn() ? 1.0 : 0.0);
 
-        // control-rate glides (per chunk, ~30-50 ms)
-        const double k = 1.0 - std::exp(-(double)kChunk / (0.04 * sr));
         lcHz *= std::pow(clampv(set.lowCut, (double)kLowCutOff, 2000.0) / lcHz, k);
         hcHz *= std::pow(clampv(set.highCut, 1000.0, (double)kHighCutOff) / hcHz, k);
         ageNow += (clampv(set.age, 0.0, 100.0) * 0.01 - ageNow) * k;
@@ -448,7 +493,7 @@ private:
             if (on(kModeBbd))
             {
                 // the clock follows where the head is now
-                const double T = (ch.glide + (diffOn() ? apTotal[c] : 0)) / sr;
+                const double T = (ch.glide + ch.comp) / sr;
                 const double band = clampv(kBbdBandwidth / std::max(T, 1e-3), 800.0, 14000.0);
                 const double clock = band * kBbdClockPerBand;
                 ch.bbdRec.set(std::min(band, 0.45 * sr), 0.70710678, sr);
@@ -465,8 +510,8 @@ private:
         }
         bumpGain = dbToGain(1.5 + 2.0 * age);
         hissLevel = dbToGain(-90.0 + 26.0 * age);
-        wowDepth = (0.10 + 1.3 * age) * 0.001 * sr;
-        flutterDepth = (0.012 + 0.05 * age) * 0.001 * sr;
+        wowDepth = (0.35 + 1.4 * age) * 0.001 * sr;
+        flutterDepth = (0.02 + 0.05 * age) * 0.001 * sr;
         bbdDepth = (0.8 + 0.6 * age) * 0.001 * sr;
         bbdNoise = 0.0003 + 0.004 * age;
         zohMix = 0.6 * clampv((age - 0.5) * 2.0, 0.0, 1.0);
@@ -485,14 +530,13 @@ private:
         const double duckFrom = duckGain, duckTo = dbToGain(grDb);
         const bool tapeOn = curMode == kModeTape || fromMode == kModeTape;
         const bool bbdOn = curMode == kModeBbd || fromMode == kModeBbd;
-        const bool diffRun = diffOn() || diffS.current() > 0.0 || diffS.isSmoothing();
         const int kCur = modeKind(curMode), kFrom = modeKind(fromMode);
         double chk = 0.0, pin[2] = { 0, 0 }, pw[2] = { 0, 0 }, wobble = 0.0;
 
         for (int i = 0; i < n; ++i)
         {
             const double fb = fbS.next(), fz = freezeS.next(), g = driveS.next(), climb = climbS.next();
-            const double eng = diffS.next(), lcm = lcOn.next(), hcm = hcOn.next(), wd = widthS.next();
+            const double lcm = lcOn.next(), hcm = hcOn.next(), wd = widthS.next();
             const double mx = mixS.next(), og = outS.next(), depth = depthS.next();
             double mt = 1.0;
             if (modeT < 1.0)
@@ -511,8 +555,10 @@ private:
                         rNow.G[a][b] = rFrom.G[a][b] + (rTo.G[a][b] - rFrom.G[a][b]) * routeT;
                         rNow.M[a][b] = rFrom.M[a][b] + (rTo.M[a][b] - rFrom.M[a][b]) * routeT;
                     }
+                rNow.H = rFrom.H + (rTo.H - rFrom.H) * routeT;
             }
             const double x[2] = { L[i], R[i] };
+            const double late = haas.process((float)(0.5 * (x[0] + x[1])));
             const double ax = std::max(std::fabs(x[0]), std::fabs(x[1]));
             level = ax > level ? ax : level + (ax - level) * levelRel;
 
@@ -531,7 +577,11 @@ private:
                 Chan& ch = chans[c];
                 ch.lfo.advance();
                 double ms = 0.0, mtr = 0.0, bm = 0.0;
-                if (depth > 0.0) { ms = depth * ch.lfo.sine(); mtr = depth * ch.lfo.tri(); }
+                if (depth > 0.0)
+                {
+                    const double dp = std::min(depth, 0.45 * ch.tgt);   // short times: never past the write head
+                    ms = dp * ch.lfo.sine(); mtr = dp * ch.lfo.tri();
+                }
                 if (bbdOn) { ch.bbdLfo.advance(); bm = bbdDepth * ch.bbdLfo.tri(); }
                 ch.glide += clampv((ch.tgt - ch.glide) * glideK, -0.5, 0.5);
                 readMode(curMode, ch, ms, mtr, tapeMod, bm, climb, raw[c], out[c], loop[c]);
@@ -554,20 +604,22 @@ private:
             for (int c = 0; c < 2; ++c)
             {
                 Chan& ch = chans[c];
-                const double in = (rNow.G[c][0] * x[0] + rNow.G[c][1] * x[1]) * feed;
+                const double in = (rNow.G[c][0] * x[0] + rNow.G[c][1] * x[1] + (c ? 2.0 * rNow.H * late : 0.0)) * feed;
                 double v = in + fb * (rNow.M[c][0] * loop[0] + rNow.M[c][1] * loop[1]);
                 { const double h = ch.lc.highpass(v); v += (h - v) * lcm; }
                 { const double l = ch.hc.lowpass(v); v += (l - v) * hcm; }
-                if (diffRun)
                 {
                     float d = (float)v;
-                    for (int k = 0; k < kAp; ++k) d = ch.ap[k].processInt(d, ch.apLen[k], (float)apG);
-                    v += ((double)d - v) * eng;
+                    if (ch.apInt) for (int k = 0; k < kAp; ++k) d = ch.ap[k].processInt(d, (int)ch.apD[k], (float)apG);
+                    else for (int k = 0; k < kAp; ++k) d = ch.ap[k].process(d, ch.apD[k], (float)apG);
+                    v = d;
                 }
                 double w = recordStage(kCur, ch, v, g);
                 if (mt < 1.0 && kFrom != kCur) { const double w0 = recordStage(kFrom, ch, v, g); w = w0 + (w - w0) * mt; }
                 w = ch.dc.process(w);
-                w += (raw[c] - w) * fz;
+                // frozen: an exact copy of what the heads read, through the routing (ping-pong keeps bouncing)
+                const double held = rNow.M[c][0] * raw[0] + rNow.M[c][1] * raw[1];
+                w += (held - w) * fz;
                 ch.line.push((float)w);
                 chk += w;
             }
@@ -588,7 +640,7 @@ private:
         if (!std::isfinite(chk))
         {
             clearState();
-            for (auto& ch : chans) { ch.glide = ch.tgt; ch.heads.a = ch.heads.b = (int)std::lround(ch.tgt); ch.heads.t = 1.0; }
+            settle();
             sanitizeBlock(L, n); sanitizeBlock(R, n);
             return;
         }
@@ -597,11 +649,9 @@ private:
             inPeak[c].setMax((float)pin[c]);
             wetPeak[c].setMax((float)pw[c]);
             const Chan& ch = chans[c];
-            const bool glides = modeKind(curMode) != kClean;
-            const double head = glides ? ch.glide : (ch.heads.t < 1.0 ? ch.heads.b : ch.heads.a);
-            double comp = diffOn() ? (double)apTotal[c] : 0.0;
-            if (curMode == kModePitch) comp += ch.shifter.averageDelay();
-            timeFeed[c].store((float)(1000.0 * (head + comp) / sr), std::memory_order_relaxed);
+            double head = modeKind(curMode) != kClean ? ch.glide : (double)(ch.heads.t < 1.0 ? ch.heads.b : ch.heads.a);
+            if (curMode == kModePitch) { const double sd = ch.shifter.averageDelay(); head = std::max(head - sd, 2.0) + sd; }
+            timeFeed[c].store((float)(1000.0 * (head + ch.comp) / sr), std::memory_order_relaxed);
         }
         tempoFeed.store((float)bpm, std::memory_order_relaxed);
         wobbleFeed.store((float)(1000.0 * wobble / sr), std::memory_order_relaxed);
@@ -612,11 +662,11 @@ private:
     int maxD = 1 << 16;
     Settings set;
     Chan chans[2];
-    int apTotal[2] = { 0, 0 };
     int wantMode = kModeDigital, curMode = kModeDigital, fromMode = kModeDigital;
     int wantRoute = kRouteStereo, curRoute = kRouteStereo;
     double modeT = 1.0, modeStep = 0.001, routeT = 1.0, routeStep = 0.001, xfStep = 0.001, glideK = 0.001;
     Routing rFrom = routing(kRouteStereo), rTo = routing(kRouteStereo), rNow = routing(kRouteStereo);
+    DelayLine haas;
     fx::Wander wow;
     fx::Lfo flutter[2];
     double lcHz = kLowCutOff, hcHz = kHighCutOff, ageNow = 0.0, apG = 0.0, ratio = 2.0;
@@ -625,7 +675,7 @@ private:
     double bbdNoise = 0.0, zohMix = 0.0, whineLevel = 0.0;
     double envRel = 0.001, levelRel = 0.001;
     double level = 0.0, grDb = 0.0, duckGain = 1.0;
-    LinearSmoother fbS, mixS, outS, widthS, driveS, depthS, freezeS, climbS, diffS, lcOn, hcOn;
+    LinearSmoother fbS, mixS, outS, widthS, driveS, depthS, freezeS, climbS, lcOn, hcOn;
     std::atomic<float> timeFeed[2] { { 375.0f }, { 500.0f } }, tempoFeed { 120.0f }, wobbleFeed { 0.0f }, duckFeed { 0.0f };
 };
 
