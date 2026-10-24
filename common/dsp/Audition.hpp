@@ -1,4 +1,4 @@
-// pump DSP: "Alt-solo" audition (standard style) — while the user holds Alt on a spectrum display, the output is
+// pump DSP: "Alt-solo" audition — while the user holds Alt on a spectrum display, the output is
 // replaced by just the region under the mouse: a band-pass (or the part below/above a frequency), crossfaded in and
 // out over 10 ms and glided when the mouse moves, so sweeping it is smooth. Framework-free.
 #pragma once

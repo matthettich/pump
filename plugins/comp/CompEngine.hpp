@@ -1,4 +1,4 @@
-// pump COMP engine: a compressor style compressor with six detector/envelope designs, lookahead, oversampling,
+// pump COMP engine: a mastering compressor with six detector/envelope designs, lookahead, oversampling,
 // mid/side, stereo link, external sidechain with filters, parallel mix and auto makeup. Framework-free (tested
 // offline in tests/test_comp.cpp).
 //

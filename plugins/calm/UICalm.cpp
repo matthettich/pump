@@ -1,4 +1,4 @@
-// pump CALM: interface. A resonance suppressor-style display: input spectrum (dim), output spectrum (neon), the live reduction
+// pump CALM: interface. The display: input spectrum (dim), output spectrum (neon), the live reduction
 // hanging from the top, the sensitivity curve with six draggable nodes and the focus range with draggable edges.
 #include "ui/PumpUI.hpp"
 #include "PluginCalm.hpp"
@@ -476,7 +476,7 @@ protected:
     }
 
     // ---------------------------------------------------------------- mouse on the display
-    // EQ conventions on the sensitivity nodes, the Alt-solo on the display:
+    // EQ-style node conventions on the sensitivity nodes, Alt-solo on the display:
     //   drag a node: frequency + sensitivity (Shift: fine); Ctrl/Cmd + vertical drag or the wheel: width (Q);
     //   Ctrl/Cmd + wheel: sensitivity; double-click: type frequency, Tab to sensitivity and Q; right-click: menu
     //   Alt + click-and-hold a node: hear only that node's band; Alt + hold / drag empty space: listen to the

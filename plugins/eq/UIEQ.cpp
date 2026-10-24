@@ -510,7 +510,7 @@ protected:
     }
 
     // ---------------------------------------------------------------- mouse on the display
-    // EQ conventions, plus the Alt-solo:
+    // Node conventions, plus Alt-solo:
     //   double-click / Ctrl-click (Cmd-click on macOS, where Ctrl-click is a right-click) empty: new band (Alt + double-click: a dynamic band); drag the curve: new band
     //   drag a node: frequency + gain of all selected bands; Shift: fine; Alt while dragging: lock to one axis;
     //   Ctrl/Cmd + vertical drag: Q; wheel: Q (cuts: slope), Ctrl/Cmd + wheel: gain, Alt + wheel: dynamic range
@@ -566,7 +566,7 @@ protected:
             if (alt && shift) { cycleSlope(b); return false; }
             if (alt)
             {
-                // standard Alt-solo on a node: hear this band's region while the button is held; drag to move it
+                // Alt-solo on a node: hear this band's region while the button is held; drag to move it
                 // (still soloed) like an ordinary node drag
                 if (!selMask[b]) selectOnly(b);
                 else { sel = b; rebind(); }
@@ -618,7 +618,7 @@ protected:
         switch (dmode)
         {
         case dmAudition: {
-            // left/right: frequency; up: narrower, down: wider (standard); the wheel still sets the width too
+            // left/right: frequency; up: narrower, down: wider; the wheel still sets the width too
             audF = (float)fOfX(std::max(display.x, std::min(display.r(), x)));
             const float fine = (mod & kModifierShift) ? 0.15f : 1.0f;
             audQ = spec(kAuditionQ).clamp(audQ * std::pow(2.0f, -(y - lastY) * fine / 60.0f));
@@ -650,7 +650,7 @@ protected:
             effY += (y - lastY) * fine;
             lastX = x; lastY = y;
             float dx = effX, dy = effY;
-            if (alt && !soloHeld)   // lock to the dominant axis (EQ); Alt held for a solo-drag doesn't count
+            if (alt && !soloHeld)   // lock to the dominant axis; Alt held for a solo-drag doesn't count
             {
                 if (axis == 0 && std::fabs(dx) + std::fabs(dy) > 6.0f) axis = std::fabs(dx) >= std::fabs(dy) ? 1 : 2;
                 if (axis == 1) dy = 0.0f; else if (axis == 2) dx = 0.0f;
@@ -660,7 +660,7 @@ protected:
             for (int b : dragSet)
             {
                 setParam(bandParam(b, kFreq), (float)std::min(kHi, std::max(kLo, orig[b][0] * std::pow(kHi / kLo, (double)(dx / display.w)))));
-                // Q: Ctrl/Cmd-drag, shapes without gain, and Alt-solo drags (standard: up = narrower, down = wider)
+                // Q: Ctrl/Cmd-drag, shapes without gain, and Alt-solo drags (up = narrower, down = wider)
                 if (cmd || soloHeld || !pump::shapeHasGain(bandShape(b)))
                     setParam(bandParam(b, kQ), orig[b][2] * std::pow(2.0f, -dy / 60.0f));
                 else
@@ -786,7 +786,7 @@ protected:
         setStatus(bandReadout(b));
     }
 
-    // copy/paste (EQ): band settings, shared between instances in this process
+    // copy/paste: band settings, shared between instances in this process
     static std::vector<std::vector<float>>& clip() { static std::vector<std::vector<float>> c; return c; }
     void copyBands(const std::vector<int>& bands)
     {

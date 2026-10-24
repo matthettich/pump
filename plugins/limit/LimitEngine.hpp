@@ -1,4 +1,4 @@
-// pump LIMIT engine: a true-peak lookahead limiter in the spirit of limiter / maximizer. Framework-free.
+// pump LIMIT engine: a true-peak lookahead limiter. Framework-free.
 //
 // Signal flow (base rate unless noted):
 //   input -> [DC filter] -> drive -> LEVELING (slow, program dependent; takes a style-defined share of the

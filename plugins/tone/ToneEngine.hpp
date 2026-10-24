@@ -1,4 +1,4 @@
-// pump TONE engine: an intelligent auto-balance EQ (auto-balance-style). Framework-free, header-only.
+// pump TONE engine: an intelligent auto-balance EQ. Framework-free, header-only.
 //
 // Per STFT frame (sqrt-Hann, 75% overlap, latency exactly N), linked stereo:
 //   1. 48 ERB-spaced band levels (triangular, overlapping bands on the ERB-number scale), expressed as power per

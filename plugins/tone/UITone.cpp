@@ -311,7 +311,7 @@ protected:
         return buf;
     }
 
-    // ---------------------------------------------------------------- mouse on the display (standard Alt-solo)
+    // ---------------------------------------------------------------- mouse on the display (Alt-solo)
     enum ToneDragMode { dmNone = 0, dmAudition };
 
     bool bodyMouseDown(float x, float y, int button, uint mod, bool) override

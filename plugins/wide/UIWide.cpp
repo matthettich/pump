@@ -1,6 +1,6 @@
 // pump WIDE: interface. Left: mid (fill) and side (line) spectra behind the band regions, each band's width as a
 // draggable bar (100% = unchanged) with its stereoize amount; crossover handles; per-band S / M / B keys. Right: a
-// polar-sample vectorscope (half disc, standard style: mono straight up, L and R on the diagonals, out-of-phase
+// polar-sample vectorscope (half disc: mono straight up, L and R on the diagonals, out-of-phase
 // content toward the flat edge) with phosphor persistence, and correlation meters, overall and per band.
 #include "ui/MultibandUI.hpp"
 #include "PluginWide.hpp"
