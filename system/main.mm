@@ -1,9 +1,12 @@
 // System EQ: pump EQ on everything the Mac plays.
 //
-// A menu-bar app (macOS 14.2+). It taps the mix of every other app with a Core Audio process tap (muted while it is
-// being read, so the original sound stops), runs it through the pump EQ Audio Unit bundled inside the app
-// (Contents/PlugIns/pump-eq.component, the same build as the plugin, with its own window), and plays the result on the
-// current output device. Turning it off destroys the tap, so the Mac goes back to its untouched output.
+// A menu-bar app (macOS 14.2+). It taps the mix of every other app with a Core Audio process tap (muted for as long as
+// the tap exists), runs it through the pump EQ Audio Unit bundled inside the app (Contents/PlugIns/pump-eq.component,
+// the same build as the plugin, with its own window), and plays the result on the current output device. Turning it
+// off destroys the tap, so the Mac goes back to its untouched output.
+//
+// It follows the Mac's own output and sample rate, keeps separate EQ settings for each output (or one for all), skips
+// the EQ during silence and stops the audio device entirely while no app is playing.
 //
 // Audio path:   every app (except this one) -> tap -> private aggregate device [tap + output device]
 //               -> IOProc -> pump EQ (AudioUnitRender) -> output device
@@ -18,7 +21,9 @@
 #import <AudioUnit/AUCocoaUIView.h>
 #import <ServiceManagement/ServiceManagement.h>
 #include <dlfcn.h>
+#include <algorithm>
 #include <atomic>
+#include <cmath>
 #include <cstring>
 #include <vector>
 
@@ -115,7 +120,11 @@ struct Engine
     // audio-thread buffers (allocated once)
     std::vector<float> inL, inR, outL, outR;
     Float64 sampleTime = 0.0;
-    std::atomic<bool> running { false };
+    std::atomic<bool> running { false };   // tap + device exist (EQ on)
+    bool paused = false;                   // device stopped while nothing plays (main thread)
+
+    // frames of continuous silence at the tap (written by the audio thread, read by the main thread)
+    std::atomic<uint64_t> silentFrames { 0 };
 
     Engine() : inL(kMaxFrames), inR(kMaxFrames), outL(kMaxFrames), outR(kMaxFrames) {}
 
@@ -153,6 +162,10 @@ struct Engine
         // the tap arrives as one stereo mixdown (interleaved or not: readSlice handles both)
         const UInt32 inFrames = framesIn(inInput);
 
+        // after 2 s of digital silence (EQ tails long gone) skip the EQ entirely: an app holding its output open
+        // without playing costs almost nothing. The first non-silent slice brings it straight back.
+        const uint64_t dozeAfter = (uint64_t)(2.0 * (e->auRate > 0.0 ? e->auRate : 48000.0));
+
         UInt32 done = 0;
         while (done < total)
         {
@@ -168,6 +181,18 @@ struct Engine
             {
                 std::memset(e->inL.data(), 0, n * sizeof(float));
                 std::memset(e->inR.data(), 0, n * sizeof(float));
+            }
+
+            bool sound = false;
+            for (UInt32 i = 0; i < n && !sound; ++i)
+                sound = std::fabs(e->inL[i]) > 1.0e-6f || std::fabs(e->inR[i]) > 1.0e-6f;   // above -120 dBFS
+            const uint64_t silent = sound ? 0 : e->silentFrames.load(std::memory_order_relaxed) + n;
+            e->silentFrames.store(silent, std::memory_order_relaxed);
+            if (silent > dozeAfter)
+            {
+                e->sampleTime += n;
+                done += n;   // output already zeroed
+                continue;
             }
 
             struct { AudioBufferList list; AudioBuffer second; } out;
@@ -286,7 +311,8 @@ struct Engine
         Float64 rate = 48000.0;
         getProp(output, kAudioDevicePropertyNominalSampleRate, rate);
 
-        // every process except this one, mixed to stereo, muted while we read it
+        // every process except this one, mixed to stereo, muted for as long as the tap exists (also while paused,
+        // so nothing ever plays unprocessed; destroying the tap gives the Mac its own output back)
         NSMutableArray<NSNumber*>* exclude = [NSMutableArray array];
         const AudioObjectID self = ownProcessObject();
         if (self != kAudioObjectUnknown)
@@ -295,7 +321,7 @@ struct Engine
         CATapDescription* desc = [[CATapDescription alloc] initStereoGlobalTapButExcludeProcesses:exclude];
         desc.name = kAppName;
         desc.privateTap = YES;
-        desc.muteBehavior = CATapMutedWhenTapped;
+        desc.muteBehavior = CATapMuted;
 
         OSStatus err = AudioHardwareCreateProcessTap(desc, &tap);
         if (err != noErr || tap == kAudioObjectUnknown)
@@ -357,7 +383,27 @@ struct Engine
         }
 
         running = true;
+        paused = false;
+        silentFrames = 0;
         return nil;
+    }
+
+    // stop the device while nothing plays (the tap stays, still muting), and start it again
+    void pause()
+    {
+        if (!running || paused || aggregate == kAudioObjectUnknown || ioProc == nullptr)
+            return;
+        if (AudioDeviceStop(aggregate, ioProc) == noErr)
+            paused = true;
+    }
+
+    void resume()
+    {
+        if (!running || !paused)
+            return;
+        silentFrames = 0;
+        if (AudioDeviceStart(aggregate, ioProc) == noErr)
+            paused = false;
     }
 
     void stop()
@@ -378,8 +424,36 @@ struct Engine
         tap = kAudioObjectUnknown;
 
         running = false;
+        paused = false;
     }
 };
+
+// is any other process playing (has its output running)?
+static bool otherProcessPlaying(std::vector<AudioObjectID>* listOut = nullptr)
+{
+    AudioObjectPropertyAddress a = addr(kAudioHardwarePropertyProcessObjectList);
+    UInt32 size = 0;
+    if (AudioObjectGetPropertyDataSize(kAudioObjectSystemObject, &a, 0, nullptr, &size) != noErr)
+        return true;   // can't tell: assume yes, so we never pause on a guess
+    std::vector<AudioObjectID> procs(size / sizeof(AudioObjectID));
+    if (AudioObjectGetPropertyData(kAudioObjectSystemObject, &a, 0, nullptr, &size, procs.data()) != noErr)
+        return true;
+    procs.resize(size / sizeof(AudioObjectID));
+    if (listOut != nullptr)
+        *listOut = procs;
+
+    const pid_t me = getpid();
+    for (AudioObjectID p : procs)
+    {
+        pid_t pid = 0;
+        UInt32 out = 0;
+        if (getProp(p, kAudioProcessPropertyPID, pid) && pid == me)
+            continue;
+        if (getProp(p, kAudioProcessPropertyIsRunningOutput, out) && out != 0)
+            return true;
+    }
+    return false;
+}
 
 // ---------------------------------------------------------------------------------------------------------------------
 // the bundled pump EQ: register the component inside the app for this process only
@@ -417,18 +491,42 @@ static AudioComponent registerBundledEQ()
     NSStatusItem* statusItem;
     NSWindow* window;
     NSView* eqView;
+    id frameObserver;
     NSString* problem;
     BOOL wantOn;
-    NSTimer* saveTimer;
+    NSString* stateKey;                  // whose settings the EQ holds: an output's UID, or nil for "every output"
+    std::vector<AudioObjectID> watchedProcesses;
 }
 
-static NSURL* stateURL()
+static NSUserDefaults* prefs() { return NSUserDefaults.standardUserDefaults; }
+static BOOL perDevice() { return ![prefs() boolForKey:@"oneEQ"]; }
+
+static NSURL* stateDir()
 {
     NSURL* dir = [[NSFileManager.defaultManager URLsForDirectory:NSApplicationSupportDirectory
                                                        inDomains:NSUserDomainMask].firstObject
                   URLByAppendingPathComponent:@"wake/System EQ" isDirectory:YES];
     [NSFileManager.defaultManager createDirectoryAtURL:dir withIntermediateDirectories:YES attributes:nil error:nil];
-    return [dir URLByAppendingPathComponent:@"eq-state.plist"];
+    return dir;
+}
+
+// one file per output (named from its UID), plus eq-state.plist for "same EQ on every output"
+static NSURL* stateURL(NSString* key)
+{
+    if (key == nil)
+        return [stateDir() URLByAppendingPathComponent:@"eq-state.plist"];
+    NSMutableString* safe = [NSMutableString string];
+    for (NSUInteger i = 0; i < key.length && safe.length < 120; ++i)
+    {
+        const unichar c = [key characterAtIndex:i];
+        [safe appendFormat:@"%C", (unichar)(((c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')) ? c : '_')];
+    }
+    return [stateDir() URLByAppendingPathComponent:[NSString stringWithFormat:@"eq-%@.plist", safe]];
+}
+
+static NSString* currentOutputKey()
+{
+    return perDevice() ? stringProp(defaultOutputDevice(), kAudioDevicePropertyDeviceUID) : nil;
 }
 
 - (void)applicationDidFinishLaunching:(NSNotification*)note
@@ -441,8 +539,12 @@ static NSURL* stateURL()
     }
     else
     {
-        engine.prepareUnit(48000.0);
-        [self restoreState];
+        Float64 rate = 48000.0;
+        getProp(defaultOutputDevice(), kAudioDevicePropertyNominalSampleRate, rate);
+        engine.prepareUnit(rate);
+        stateKey = currentOutputKey();
+        if (![self loadStateFor:stateKey] && stateKey != nil)
+            [self loadStateFor:nil];   // a new output starts from the last shared settings, if any
     }
 
     statusItem = [NSStatusBar.systemStatusBar statusItemWithLength:NSVariableStatusItemLength];
@@ -455,16 +557,19 @@ static NSURL* stateURL()
     statusItem.menu = menu;
 
     [self listenForDeviceChanges];
+    [self watchProcesses];
 
-    wantOn = ![NSUserDefaults.standardUserDefaults boolForKey:@"off"];
+    wantOn = ![prefs() boolForKey:@"off"];
     if (wantOn)
         [self startEngine];
 
-    saveTimer = [NSTimer scheduledTimerWithTimeInterval:30 repeats:YES block:^(NSTimer*) { [self saveState]; }];
+    // save now and then; check once a second whether the Mac has gone quiet
+    [NSTimer scheduledTimerWithTimeInterval:30 repeats:YES block:^(NSTimer*) { [self saveState]; }];
+    [NSTimer scheduledTimerWithTimeInterval:1 repeats:YES block:^(NSTimer*) { [self idleCheck]; }];
 
-    if (![NSUserDefaults.standardUserDefaults boolForKey:@"launchedBefore"])
+    if (![prefs() boolForKey:@"launchedBefore"])
     {
-        [NSUserDefaults.standardUserDefaults setBool:YES forKey:@"launchedBefore"];
+        [prefs() setBool:YES forKey:@"launchedBefore"];
         [self showEQ:nil];
     }
 }
@@ -487,6 +592,12 @@ static NSURL* stateURL()
 {
     if (engine.au == nullptr)
         return;
+
+    // a different output: keep the old one's settings, bring back the new one's
+    NSString* key = currentOutputKey();
+    if (perDevice() && key != nil && ![key isEqualToString:stateKey ?: @""])
+        [self switchStateTo:key];
+
     problem = engine.start();
     if (problem != nil)
         NSLog(@"%@: %@", kAppName, problem);
@@ -496,7 +607,7 @@ static NSURL* stateURL()
 - (void)toggle:(id)sender
 {
     wantOn = !wantOn;
-    [NSUserDefaults.standardUserDefaults setBool:!wantOn forKey:@"off"];
+    [prefs() setBool:!wantOn forKey:@"off"];
     if (wantOn)
         [self startEngine];
     else
@@ -510,7 +621,14 @@ static NSURL* stateURL()
 - (void)updateStatus
 {
     statusItem.button.appearsDisabled = !engine.running;
-    window.title = engine.running ? @"System EQ — on" : @"System EQ — off";
+    NSString* state = engine.running ? @"on" : @"off";
+    if (perDevice())
+    {
+        NSString* name = stringProp(defaultOutputDevice(), kAudioObjectPropertyName) ?: @"output";
+        window.title = [NSString stringWithFormat:@"System EQ — %@ — %@", name, state];
+    }
+    else
+        window.title = [NSString stringWithFormat:@"System EQ — every output — %@", state];
 }
 
 // restart on a new default output, a sample-rate change or a device going away
@@ -532,7 +650,10 @@ static OSStatus deviceListener(AudioObjectID, UInt32, const AudioObjectPropertyA
 - (void)devicesChanged
 {
     if (!wantOn)
+    {
+        [self updateStatus];
         return;
+    }
     // our own aggregate appearing/disappearing also changes the device list: only restart for real changes
     Float64 rate = 0.0;
     const AudioObjectID out = defaultOutputDevice();
@@ -541,6 +662,52 @@ static OSStatus deviceListener(AudioObjectID, UInt32, const AudioObjectPropertyA
         return;
     [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(startEngine) object:nil];
     [self performSelector:@selector(startEngine) withObject:nil afterDelay:0.3];
+}
+
+// --- idle: stop the audio device while nothing plays, start it the moment something does
+
+static OSStatus processListener(AudioObjectID, UInt32, const AudioObjectPropertyAddress*, void* ctx)
+{
+    AppDelegate* app = (__bridge AppDelegate*)ctx;
+    dispatch_async(dispatch_get_main_queue(), ^{ [app processesChanged]; });
+    return noErr;
+}
+
+- (void)watchProcesses
+{
+    AudioObjectPropertyAddress list = addr(kAudioHardwarePropertyProcessObjectList);
+    AudioObjectAddPropertyListener(kAudioObjectSystemObject, &list, processListener, (__bridge void*)self);
+    [self processesChanged];
+}
+
+- (void)processesChanged
+{
+    // listen to every process's "output running" flag (new processes appear in the list)
+    std::vector<AudioObjectID> procs;
+    const bool playing = otherProcessPlaying(&procs);
+    AudioObjectPropertyAddress running = addr(kAudioProcessPropertyIsRunningOutput);
+    for (AudioObjectID p : procs)
+        if (std::find(watchedProcesses.begin(), watchedProcesses.end(), p) == watchedProcesses.end())
+        {
+            AudioObjectAddPropertyListener(p, &running, processListener, (__bridge void*)self);
+            watchedProcesses.push_back(p);
+        }
+    // forget processes that are gone
+    watchedProcesses.erase(std::remove_if(watchedProcesses.begin(), watchedProcesses.end(), [&](AudioObjectID p) {
+        return std::find(procs.begin(), procs.end(), p) == procs.end();
+    }), watchedProcesses.end());
+
+    if (playing && engine.paused)
+        engine.resume();
+}
+
+- (void)idleCheck
+{
+    if (!engine.running || engine.paused || engine.auRate <= 0.0)
+        return;
+    // 5 s of silence and no app with its output running: nothing can start without us hearing about it
+    if (engine.silentFrames.load() > (uint64_t)(5.0 * engine.auRate) && !otherProcessPlaying())
+        engine.pause();
 }
 
 // --- menu
@@ -560,11 +727,17 @@ static OSStatus deviceListener(AudioObjectID, UInt32, const AudioObjectPropertyA
 
     NSString* outName = stringProp(defaultOutputDevice(), kAudioObjectPropertyName) ?: @"none";
     NSString* info = engine.running
-        ? [NSString stringWithFormat:@"Output: %@ · %.1f kHz", outName, engine.auRate / 1000.0]
+        ? [NSString stringWithFormat:@"Output: %@ · %.1f kHz%@", outName, engine.auRate / 1000.0,
+                                     engine.paused ? @" · idle" : @""]
         : [NSString stringWithFormat:@"Output: %@", outName];
     [menu addItemWithTitle:info action:nil keyEquivalent:@""].enabled = NO;
     if (problem != nil)
         [menu addItemWithTitle:problem action:nil keyEquivalent:@""].enabled = NO;
+
+    NSMenuItem* each = [menu addItemWithTitle:@"Separate EQ for Each Output" action:@selector(togglePerDevice:)
+                                keyEquivalent:@""];
+    each.target = self;
+    each.state = perDevice() ? NSControlStateValueOn : NSControlStateValueOff;
 
     [menu addItem:NSMenuItem.separatorItem];
 
@@ -580,6 +753,23 @@ static OSStatus deviceListener(AudioObjectID, UInt32, const AudioObjectPropertyA
     [menu addItem:NSMenuItem.separatorItem];
     NSMenuItem* quit = [menu addItemWithTitle:@"Quit System EQ" action:@selector(terminate:) keyEquivalent:@"q"];
     quit.target = NSApp;
+}
+
+- (void)togglePerDevice:(id)sender
+{
+    [self saveState];
+    [prefs() setBool:perDevice() forKey:@"oneEQ"];   // flips it
+    // the current settings carry over into the new mode when it has none saved yet
+    NSString* key = currentOutputKey();
+    if (![self loadStateFor:key])
+        stateKey = key;
+    else
+    {
+        stateKey = key;
+        [self reloadView];
+    }
+    [self saveState];
+    [self updateStatus];
 }
 
 - (void)toggleLogin:(id)sender
@@ -602,6 +792,64 @@ static OSStatus deviceListener(AudioObjectID, UInt32, const AudioObjectPropertyA
 
 // --- the EQ window (the plugin's own view)
 
+- (NSView*)makeView
+{
+    AudioUnitCocoaViewInfo info = {};
+    UInt32 size = sizeof(info);
+    if (AudioUnitGetProperty(engine.au, kAudioUnitProperty_CocoaUI, kAudioUnitScope_Global, 0, &info, &size) != noErr)
+        return nil;
+
+    NSURL* bundleURL = (__bridge_transfer NSURL*)info.mCocoaAUViewBundleLocation;
+    NSString* className = (__bridge_transfer NSString*)info.mCocoaAUViewClass[0];
+    NSBundle* bundle = [NSBundle bundleWithURL:bundleURL];
+    Class cls = [bundle classNamed:className] ?: NSClassFromString(className);
+    id<AUCocoaUIBase> factory = [cls new];
+    if (factory == nil)
+        return nil;
+    return [factory uiViewForAudioUnit:engine.au withSize:NSMakeSize(1040, 660)];
+}
+
+- (void)attachView:(NSView*)view
+{
+    if (frameObserver != nil)
+        [NSNotificationCenter.defaultCenter removeObserver:frameObserver];
+    frameObserver = nil;
+
+    eqView = view;
+    window.contentView = view;
+    [window setContentSize:view.frame.size];
+
+    // the plugin resizes its own view (corner drag, scale): follow it
+    view.postsFrameChangedNotifications = YES;
+    __weak AppDelegate* weakSelf = self;
+    frameObserver = [NSNotificationCenter.defaultCenter addObserverForName:NSViewFrameDidChangeNotification
+                                                                    object:view
+                                                                     queue:nil
+                                                                usingBlock:^(NSNotification*) {
+        AppDelegate* me = weakSelf;
+        if (me == nil || me->window == nil || me->eqView == nil)
+            return;
+        NSRect content = [me->window contentRectForFrameRect:me->window.frame];
+        const NSSize want = me->eqView.frame.size;
+        if (NSEqualSizes(content.size, want))
+            return;
+        NSRect frame = [me->window frameRectForContentRect:
+            NSMakeRect(content.origin.x, NSMaxY(content) - want.height, want.width, want.height)];
+        [me->window setFrame:frame display:YES];
+    }];
+    [window makeFirstResponder:view];
+}
+
+// the view reads its state when it opens: after loading other settings, open a fresh one
+- (void)reloadView
+{
+    if (window == nil)
+        return;
+    NSView* view = [self makeView];
+    if (view != nil)
+        [self attachView:view];
+}
+
 - (void)showEQ:(id)sender
 {
     if (engine.au == nullptr)
@@ -609,50 +857,22 @@ static OSStatus deviceListener(AudioObjectID, UInt32, const AudioObjectPropertyA
 
     if (window == nil)
     {
-        AudioUnitCocoaViewInfo info = {};
-        UInt32 size = sizeof(info);
-        if (AudioUnitGetProperty(engine.au, kAudioUnitProperty_CocoaUI, kAudioUnitScope_Global, 0, &info, &size)
-            != noErr)
+        NSView* view = [self makeView];
+        if (view == nil)
             return;
 
-        NSURL* bundleURL = (__bridge_transfer NSURL*)info.mCocoaAUViewBundleLocation;
-        NSString* className = (__bridge_transfer NSString*)info.mCocoaAUViewClass[0];
-        NSBundle* bundle = [NSBundle bundleWithURL:bundleURL];
-        Class cls = [bundle classNamed:className] ?: NSClassFromString(className);
-        id<AUCocoaUIBase> factory = [cls new];
-        if (factory == nil)
-            return;
-
-        eqView = [factory uiViewForAudioUnit:engine.au withSize:NSMakeSize(1040, 660)];
-        if (eqView == nil)
-            return;
-
-        window = [[NSWindow alloc] initWithContentRect:eqView.frame
+        window = [[NSWindow alloc] initWithContentRect:view.frame
                                              styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
                                                        NSWindowStyleMaskMiniaturizable
                                                backing:NSBackingStoreBuffered
                                                  defer:NO];
         window.releasedWhenClosed = NO;
         window.delegate = self;
-        window.contentView = eqView;
+        [self attachView:view];
         [window setFrameAutosaveName:@"SystemEQ"];
         if (![window setFrameUsingName:@"SystemEQ"])
             [window center];
-
-        // the plugin resizes its own view (corner drag, scale): follow it
-        eqView.postsFrameChangedNotifications = YES;
-        [NSNotificationCenter.defaultCenter addObserverForName:NSViewFrameDidChangeNotification
-                                                        object:eqView
-                                                         queue:nil
-                                                    usingBlock:^(NSNotification*) {
-            NSRect content = [self->window contentRectForFrameRect:self->window.frame];
-            if (NSEqualSizes(content.size, self->eqView.frame.size))
-                return;
-            NSRect frame = [self->window frameRectForContentRect:
-                NSMakeRect(content.origin.x, NSMaxY(content) - self->eqView.frame.size.height,
-                           self->eqView.frame.size.width, self->eqView.frame.size.height)];
-            [self->window setFrame:frame display:YES];
-        }];
+        [window setContentSize:view.frame.size];
         [self updateStatus];
     }
 
@@ -666,7 +886,7 @@ static OSStatus deviceListener(AudioObjectID, UInt32, const AudioObjectPropertyA
     [self saveState];
 }
 
-// --- state: the EQ's full state, kept between launches
+// --- state: the EQ's full state per output (or one for every output), kept between launches
 
 - (void)saveState
 {
@@ -682,19 +902,33 @@ static OSStatus deviceListener(AudioObjectID, UInt32, const AudioObjectPropertyA
                                                              options:0
                                                                error:nil];
     CFRelease(plist);
-    [data writeToURL:stateURL() atomically:YES];
+    [data writeToURL:stateURL(stateKey) atomically:YES];
+    if (stateKey != nil)
+        [data writeToURL:stateURL(nil) atomically:YES];   // also the starting point for outputs not seen yet
 }
 
-- (void)restoreState
+- (BOOL)loadStateFor:(NSString*)key
 {
-    NSData* data = [NSData dataWithContentsOfURL:stateURL()];
+    NSData* data = [NSData dataWithContentsOfURL:stateURL(key)];
     if (data == nil)
-        return;
+        return NO;
     id plist = [NSPropertyListSerialization propertyListWithData:data options:0 format:nil error:nil];
     if (plist == nil)
-        return;
+        return NO;
     CFPropertyListRef ref = (__bridge CFPropertyListRef)plist;
-    AudioUnitSetProperty(engine.au, kAudioUnitProperty_ClassInfo, kAudioUnitScope_Global, 0, &ref, sizeof(ref));
+    return AudioUnitSetProperty(engine.au, kAudioUnitProperty_ClassInfo, kAudioUnitScope_Global, 0, &ref,
+                                sizeof(ref)) == noErr;
+}
+
+- (void)switchStateTo:(NSString*)key
+{
+    [self saveState];                 // the old output keeps what it had
+    const BOOL loaded = [self loadStateFor:key];
+    stateKey = key;
+    if (loaded)
+        [self reloadView];
+    else
+        [self saveState];             // an output seen for the first time starts with the current settings
 }
 
 @end
