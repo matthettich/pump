@@ -78,6 +78,11 @@ jobs:
           set -o pipefail
           make -j4 MACOS=true 2>&1 | tee build.log \
             || { grep -E "error|Error|undefined|No rule" build.log | head -12 | while IFS= read -r l; do echo "::error::$l"; done; exit 1; }
+      - name: pump SYSTEM (system-wide EQ app)
+        run: |
+          set -o pipefail
+          sh system/build.sh "0.1.$GITHUB_RUN_NUMBER" 2>&1 | tee system.log \
+            || { grep -E "error|Error|undefined" system.log | head -12 | while IFS= read -r l; do echo "::error::$l"; done; exit 1; }
       - name: Sign (ad-hoc) and package
         run: |
           # our own bundle identifiers (DPF's template uses studio.kx.distrho.*)
@@ -90,8 +95,10 @@ jobs:
           cp -R bin/*.vst3 dist/pump-macos/VST3/
           cp -R bin/*.clap dist/pump-macos/CLAP/
           cp -R bin/*.component dist/pump-macos/Components/ 2>/dev/null || true
+          cp -R "bin/pump SYSTEM.app" dist/pump-macos/
           cp docs/INSTALL-macos.txt dist/pump-macos/INSTALL.txt
           cp THIRD_PARTY_NOTICES.md dist/pump-macos/
+          ditto -c -k --keepParent "bin/pump SYSTEM.app" dist/pump-system-macos.zip
           cd dist && ditto -c -k --keepParent pump-macos pump-macos.zip
       - name: Installer (.pkg)
         # Files installed by macOS Installer are not quarantined, so after one "Open Anyway" for the installer
@@ -112,11 +119,18 @@ jobs:
           build_component vst3 "bin/*.vst3" "/Library/Audio/Plug-Ins/VST3"
           build_component au "bin/*.component" "/Library/Audio/Plug-Ins/Components"
           build_component clap "bin/*.clap" "/Library/Audio/Plug-Ins/CLAP"
+          rm -rf root-app && mkdir -p root-app && cp -R "bin/pump SYSTEM.app" root-app/
+          pkgbuild --analyze --root root-app comp-app.plist
+          plutil -replace 0.BundleIsRelocatable -bool NO comp-app.plist
+          pkgbuild --root root-app --component-plist comp-app.plist --install-location /Applications \
+            --identifier com.wake.pump.system --version "$VERSION" pkgs/pump-system.pkg
           args=""; for p in pkgs/*.pkg; do args="$args --package $p"; done
           productbuild $args --identifier com.wake.pump --version "$VERSION" dist/pump-macos.pkg
           ls -la dist
       - uses: actions/upload-artifact@v4
         with: { name: pump-macos, path: "dist/pump-macos.*" }
+      - uses: actions/upload-artifact@v4
+        with: { name: pump-system-macos, path: dist/pump-system-macos.zip }
 
   linux:
     runs-on: ubuntu-24.04
