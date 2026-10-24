@@ -53,6 +53,9 @@ inline const std::vector<ParamSpec>& params()
     return v;
 }
 
+#include "LimitPresetsSources.hpp"
+#include "LimitPresetsChains.hpp"
+
 inline const std::vector<Preset>& presets()
 {
     static std::vector<Preset> v;
@@ -71,6 +74,8 @@ inline const std::vector<Preset>& presets()
     v.push_back({ "Gentle peak catcher", { { "gain", 0 }, { "ceiling", -1 }, { "style", kSafe }, { "lookahead", 2 }, { "release", 50 }, { "target", 0 } } });
     v.push_back({ "Tight low end", { { "gain", 6 }, { "ceiling", -1 }, { "style", kSafe }, { "lookahead", 10 }, { "attack", 100 }, { "release", 300 }, { "link_release", 100 } } });
     v.push_back({ "YouTube -14 LUFS", { { "gain", 5 }, { "ceiling", -1 }, { "style", kAllround }, { "target", 5 } } });
+    addSourcePresets(v);   // LimitPresetsSources.hpp: vocals, drums, bass, ... (SOURCES)
+    addChainPresets(v);    // LimitPresetsChains.hpp: matching mastering chains (CHAINS)
     return v;
 }
 

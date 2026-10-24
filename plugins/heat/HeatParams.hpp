@@ -64,6 +64,9 @@ inline const std::vector<ParamSpec>& params()
 
 // preset helpers: one band's settings
 struct BP { int band; int mode; float drive, mix, level; };
+#include "HeatPresetsSources.hpp"
+#include "HeatPresetsChains.hpp"
+
 inline const std::vector<Preset>& presets()
 {
     static std::vector<Preset> v;
@@ -105,6 +108,8 @@ inline const std::vector<Preset>& presets()
       { { 1, 1, 16, 100, 0 }, { 2, 2, 18, 100, 0 }, { 3, 0, 16, 100, 0 } });
     P("Linear phase: gentle", { { "bands", 3 }, { "xover_mode", 1 }, { "xover1", 120 }, { "xover2", 4000 } },
       { { 1, 1, 6, 60, 0 }, { 2, 0, 5, 50, 0 }, { 3, 2, 4, 40, 0 } });
+    addSourcePresets(v);   // HeatPresetsSources.hpp: vocals, drums, bass, ... (SOURCES)
+    addChainPresets(v);    // HeatPresetsChains.hpp: matching mastering chains (CHAINS)
     return v;
 }
 

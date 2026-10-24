@@ -56,6 +56,9 @@ inline const std::vector<ParamSpec>& params()
     return v;
 }
 
+#include "CompPresetsSources.hpp"
+#include "CompPresetsChains.hpp"
+
 inline const std::vector<Preset>& presets()
 {
     static std::vector<Preset> v;
@@ -86,6 +89,8 @@ inline const std::vector<Preset>& presets()
         { "release", 45 }, { "mix", 70 }, { "auto_makeup", 1 } } });
     v.push_back({ "Bus limiter (INF)", { { "style", 0 }, { "threshold", -6 }, { "ratio", 100 }, { "knee", 2 }, { "attack", 0.05f },
         { "release", 120 }, { "auto_release", 1 }, { "lookahead", 1.5f }, { "oversampling", 2 } } });
+    addSourcePresets(v);   // CompPresetsSources.hpp: vocals, drums, bass, ... (SOURCES)
+    addChainPresets(v);    // CompPresetsChains.hpp: matching mastering chains (CHAINS)
     return v;
 }
 

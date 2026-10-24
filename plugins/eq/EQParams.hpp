@@ -93,6 +93,9 @@ inline void addBand(Preset& p, const B& b)
     p.values.push_back({ sym("dyn_thresh"), b.thresh });
 }
 
+#include "EQPresetsSources.hpp"
+#include "EQPresetsChains.hpp"
+
 inline const std::vector<Preset>& presets()
 {
     static std::vector<Preset> v;
@@ -127,6 +130,8 @@ inline const std::vector<Preset>& presets()
         { 3, 0, 1400, 6.0f, 1.0f, 1, 0, 0, -6, -30 } });
     P("Rumble + hiss cleanup", { { 1, 3, 30, 0, 0.71f, 6, 0, 0, -6, -30 }, { 2, 4, 18500, 0, 0.71f, 6, 0, 0, -6, -30 } });
     P("Linear: master low cut", { { 1, 3, 30, 0, 0.71f, 4, 0, 0, -6, -30 } }, { { "phase", 1 }, { "lin_quality", 2 } });
+    addSourcePresets(v);   // EQPresetsSources.hpp: vocals, drums, bass, ... (SOURCES)
+    addChainPresets(v);    // EQPresetsChains.hpp: matching mastering chains (CHAINS)
     return v;
 }
 
