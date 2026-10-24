@@ -16,6 +16,7 @@
 #include "../plugins/grain/GrainParams.hpp"
 #include "../plugins/gate/GateParams.hpp"
 #include "../plugins/echo/EchoParams.hpp"
+#include "../plugins/verb/VerbParams.hpp"
 #include <cstdio>
 #include <cstring>
 #include <map>
@@ -97,6 +98,7 @@ int main()
         { "GRAIN", grain::params(), grain::presets() },
         { "GATE", gate::params(), gate::presets() },
         { "ECHO", echo::params(), echo::presets() },
+        { "VERB", verb::params(), verb::presets() },
     };
     std::map<std::string, int> sections;
     std::vector<std::vector<std::string>> chains;
