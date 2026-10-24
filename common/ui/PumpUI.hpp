@@ -613,6 +613,7 @@ public:
         }
         fEdit.original = fEdit.text;
         fEdit.selectAll = true;
+        takeKeyboardFocus();
         repaint();
     }
 
@@ -624,8 +625,12 @@ public:
         fEdit.text = initial; fEdit.original = "\x01";
         fEdit.selectAll = true;
         fEdit.onText = std::move(onText);
+        takeKeyboardFocus();
         repaint();
     }
+    // Typing goes to whichever view has the keyboard: a host (or System EQ) may have given it to the view around
+    // ours, so take it before asking for text.
+    void takeKeyboardFocus() { getWindow().focus(); }
 
     void* pluginPtr() const { return getPluginInstancePointer(); }
     double sampleRate() const { return getSampleRate(); }

@@ -30,6 +30,8 @@
 	<true/>
 	<key>NSAudioCaptureUsageDescription</key>
 	<string>System EQ runs everything your Mac plays through pump EQ.</string>
+	<key>NSDocumentsFolderUsageDescription</key>
+	<string>System EQ keeps your pump EQ presets in Documents/wake/pump/Presets, shared with the plugin.</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>© wake</string>
 </dict>

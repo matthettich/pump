@@ -509,6 +509,17 @@ static AudioComponent registerBundledEQ()
 // ---------------------------------------------------------------------------------------------------------------------
 // the app: status item, EQ window, state
 
+// The plugin's own view inside the AU's container: the one that should get the keyboard. Making the container
+// first responder (it accepts, but doesn't pass keys on) left typing in preset names going nowhere.
+static NSView* keyViewIn(NSView* v)
+{
+    for (NSView* sub in v.subviews)   // the outermost one that takes it (pugl's wrapper view, not its GL view)
+        if (sub.acceptsFirstResponder) return sub;
+    for (NSView* sub in v.subviews)
+        if (NSView* deeper = keyViewIn(sub)) return deeper;
+    return nil;
+}
+
 @interface AppDelegate : NSObject <NSApplicationDelegate, NSWindowDelegate, NSMenuDelegate>
 - (void)devicesChanged:(BOOL)force;
 - (void)processesChanged;
@@ -921,7 +932,7 @@ static OSStatus processListener(AudioObjectID, UInt32, const AudioObjectProperty
             NSMakeRect(content.origin.x, NSMaxY(content) - want.height, want.width, want.height)];
         [me->window setFrame:frame display:YES];
     }];
-    [window makeFirstResponder:view];
+    [window makeFirstResponder:keyViewIn(view) ?: view];
 }
 
 // the view reads its state when it opens: after loading other settings, open a fresh one
@@ -967,7 +978,7 @@ static OSStatus processListener(AudioObjectID, UInt32, const AudioObjectProperty
 
     [NSApp activateIgnoringOtherApps:YES];
     [window makeKeyAndOrderFront:nil];
-    [window makeFirstResponder:eqView];
+    [window makeFirstResponder:keyViewIn(eqView) ?: eqView];
 }
 
 - (void)windowWillClose:(NSNotification*)note
