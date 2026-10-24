@@ -10,6 +10,8 @@ EASIEST: the installer
      "pump-macos.pkg was blocked…" and click Open Anyway, then confirm.
   3. The installer puts every plugin in /Library/Audio/Plug-Ins (VST3, Components = Audio Units, CLAP).
      Plugins installed this way are not blocked.
+  4. It also puts System EQ in Applications (macOS 14.2 or later): pump EQ on everything the Mac plays.
+     Open it once; it lives in the menu bar (the three-sliders icon), not the Dock.
 
 OR: copy the files yourself
   1. Copy the plugins into your user plug-in folders (Finder: Go > Go to Folder…, paste the path):
