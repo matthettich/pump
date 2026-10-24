@@ -13,6 +13,7 @@
 #include "../plugins/meter/MeterParams.hpp"
 #include "../plugins/tube/TubeParams.hpp"
 #include "../plugins/snap/SnapParams.hpp"
+#include "../plugins/grain/GrainParams.hpp"
 #include <cstdio>
 #include <cstring>
 #include <map>
@@ -91,6 +92,7 @@ int main()
         { "METER", meter::params(), meter::presets() },
         { "TUBE", tube::params(), tube::presets() },
         { "SNAP", snap::params(), snap::presets() },
+        { "GRAIN", grain::params(), grain::presets() },
     };
     std::map<std::string, int> sections;
     std::vector<std::vector<std::string>> chains;

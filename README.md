@@ -22,6 +22,7 @@ offset block, Share Tech Mono, one light-neon colour per plugin, light or dark. 
 |---|---|---|
 | **pump TUBE** Tube Distortion | cherry | six circuits (glow, triode, pentode, push-pull, starve, fuzz) with dynamic grid bias, supply sag, voltage and up to three stages; focus, tone, oversampling, auto gain; live curve, scope and harmonics |
 | **pump SNAP** Transient Shaper | grass | level-independent attack and sustain shaping; detector focus, band split, stereo link, lookahead, soft clip to a ceiling, delta listening |
+| **pump GRAIN** Granular | seafoam | real-time granular: position, size, density, spray, pitch with scale quantize, reverse, five envelopes, tempo-synced grains, feedback, freeze, filter and space; morph pad and motion |
 
 ## Download
 
