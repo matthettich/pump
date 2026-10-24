@@ -28,6 +28,7 @@ offset block, Share Tech Mono, one light-neon colour per plugin, light or dark. 
 | **pump VERB** Reverb | periwinkle | twelve voices: studio hall/room/chamber/plate, late-70s and 80s digital halls and plates, a 90s rack, gated, reverse and shimmer; RT60-accurate decay with bass multiplier and damping, early reflections, age colour, duck, freeze |
 | **pump GRAIN** Granular | seafoam | real-time granular: position, size, density, spray, pitch with scale quantize, reverse, five envelopes, tempo-synced grains, feedback, freeze, filter and space; morph pad and motion |
 | **pump VOX** Vocoder | lilac | four modes: classic band vocoder (8-40 bands), spectral (FFT envelope), talkbox (an LPC model of the mouth, with driver and tube) and convolve; formant shift, carrier flatten, emphasis, sibilance, unvoiced noise, gate, freeze, ensemble; a built-in carrier synth that plays MIDI or follows your voice in key with chords; sidechain, voice-on-sidechain or split L/R routing |
+| **pump TUNE** Pitch Correction | peach | live correction to a key and scale or to MIDI notes (retune speed, humanize, flex, amount, added vibrato); a graph that captures the voice from the song as notes you drag, snap, straighten and re-vibrato; formant shift that keeps or follows the pitch; up to four harmonies by scale step, semitones or MIDI, with their own formant and humanize |
 
 ## Download
 
@@ -70,6 +71,9 @@ Every plugin shares the same mouse and key conventions. Press **?** in a plugin 
 - VOX goes on your vocal: its built-in synth sings along (FOLLOW) or plays the MIDI you send it (in Live: a MIDI track's
   *MIDI To* set to the vocal track, VOX). For your own synth as the carrier, set ROUTE to *Sidechain carrier* and send
   the synth to VOX's sidechain; *Split L/R* takes one stereo track with the carrier left and the voice right
+- TUNE goes on a solo voice. Live: set KEY and SCALE (or send it MIDI notes) and RETUNE. Graph: turn CAPTURE on and play
+  the song once; the voice appears as notes on the host's timeline: drag them (Alt = free), double-click to snap,
+  select several to STRAIGHTEN, change VIBRATO, FORMANT or GAIN. The edits are saved with the session
 
 ## Presets
 

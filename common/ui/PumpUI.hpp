@@ -685,6 +685,7 @@ protected:
             fPresetName = fPresetIsUser ? v.substr(5) : v;
         }
         else if (std::strcmp(key, "ui") == 0) { fUiState = value ? value : ""; loadUiState(fUiState); }
+        else onExtraState(key, value ? value : "");
         repaint();
     }
     void sampleRateChanged(double newRate) override { onSampleRateChanged(newRate); repaint(); }
@@ -1157,10 +1158,14 @@ protected:
             std::snprintf(buf, sizeof buf, "%s=%.9g;", fSpecs[i].symbol, fValues[i]);
             s += buf;
         }
+        const std::string extra = serializeExtra();
+        if (!extra.empty()) { s += '\x1E'; s += extra; }
         return s;
     }
-    void deserialize(const std::string& s)
+    void deserialize(const std::string& all)
     {
+        const size_t sep = all.find('\x1E');
+        const std::string s = sep == std::string::npos ? all : all.substr(0, sep);
         beginGroup();
         size_t p = 0;
         while (p < s.size())
@@ -1176,6 +1181,7 @@ protected:
                     if (key == fSpecs[i].symbol) { if (!(fSpecs[i].flags & (pump::kPNoUndo | pump::kPHidden | pump::kPOutput))) setParamGesture((int)i, v); break; }
             p = sc + 1;
         }
+        if (sep != std::string::npos) deserializeExtra(all.substr(sep + 1));
         endGroup();
     }
     void applyPreset(int idx)
@@ -1198,6 +1204,13 @@ protected:
         repaint();
     }
     virtual void onPresetApplied() {}
+    // A plugin's own states (beyond the parameters) that take part in undo and A/B: serialize() appends
+    // serializeExtra() after a \x1E separator (nothing when it is empty, so other plugins are unchanged), and
+    // deserialize() hands that part back to deserializeExtra().
+    virtual std::string serializeExtra() const { return ""; }
+    virtual void deserializeExtra(const std::string&) {}
+    // states of the plugin's own that the host restores (TUNE's notes)
+    virtual void onExtraState(const char* /*key*/, const char* /*value*/) {}
 
     // ---- the preset menu: factory presets (grouped by section), your own presets, Save / Delete ----------------------
     struct PresetRow { enum Kind { Other, Factory, User, Save, Delete } kind = Other; int index = -1; };

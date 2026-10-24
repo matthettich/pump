@@ -21,14 +21,16 @@ static constexpr uint32_t kPumpNumStates = 6;
 
 class PumpPlugin : public Plugin {
 public:
-    PumpPlugin(const ParamSpec* specs, uint32_t numParams, const std::vector<Preset>* presets)
+    // extraStates: states of the plugin's own (TUNE's notes), declared by the subclass's initState / setState /
+    // getState for indices from kPumpNumStates on
+    PumpPlugin(const ParamSpec* specs, uint32_t numParams, const std::vector<Preset>* presets, uint32_t extraStates = 0)
         // Presets are NOT exposed as host programs: DPF's VST3 wrapper loads a program whenever the host sets its
         // hidden program parameter, and Ableton Live re-sends it around gestures, which reset everything to the
         // first preset. The plugins' own preset menu applies presets as ordinary parameter changes instead.
        #if DISTRHO_PLUGIN_WANT_PROGRAMS
-        : Plugin(numParams, presets ? (uint32_t)presets->size() : 0, kPumpNumStates),
+        : Plugin(numParams, presets ? (uint32_t)presets->size() : 0, kPumpNumStates + extraStates),
        #else
-        : Plugin(numParams, 0, kPumpNumStates),
+        : Plugin(numParams, 0, kPumpNumStates + extraStates),
        #endif
           fSpecs(specs), fNumParams(numParams), fPresets(presets),
           fValues(numParams), fChanged(numParams)

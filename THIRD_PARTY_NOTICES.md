@@ -23,4 +23,5 @@ Filter design after M. Vicanek, "Matched Second Order Digital Filters" (2016); h
 M. Holters and U. Zölzer (2006); loudness to ITU-R BS.1770-4 and EBU R128 / Tech 3341-3342; noise-shaping
 coefficients from S. Lipshitz et al. (1991). Pitch tracking after A. de Cheveigné
 and H. Kawahara, "YIN, a fundamental frequency estimator for speech and music" (2002); linear prediction by the
-Levinson-Durbin recursion; band-limited oscillators after V. Välimäki and A. Huovilainen (2007).
+Levinson-Durbin recursion; band-limited oscillators after V. Välimäki and A. Huovilainen (2007); pitch-synchronous overlap-add after E. Moulines and
+F. Charpentier (1990).

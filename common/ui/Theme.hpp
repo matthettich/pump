@@ -46,6 +46,7 @@ namespace accents {
     inline Accent verb()   { return { "verb",   hexColor(0x949FFF), hexColor(0x262C99), hexColor(0xFFA84D) }; }   // periwinkle
     inline Accent grain()  { return { "grain",  hexColor(0x3DF5D0), hexColor(0x006652), hexColor(0xFF6F91) }; }   // seafoam
     inline Accent vox()    { return { "vox",    hexColor(0xD38CFF), hexColor(0x50138C), hexColor(0x1FB89E) }; }   // lilac
+    inline Accent tune()   { return { "tune",   hexColor(0xFFAA85), hexColor(0x8A3210), hexColor(0x2E86E0) }; }   // peach
 }
 
 struct Theme {

@@ -48,6 +48,7 @@ plugins/<name>/          one folder per plugin (plugins/eq is the complete refer
   Plugin<Name>.hpp/.cpp  PumpPlugin subclass: syncs params to the engine, run(), feeds for the UI
   UI<Name>.cpp           PumpUI subclass: controls, layout(), drawBody(), graph interaction
   Makefile, pffft.c, fonts.cpp   (copy from plugins/eq; pffft.c goes in FILES_DSP only, fonts.cpp in FILES_UI only)
+plugins/tune/TuneNotes.hpp  TUNE's graph notes and captured pitch as state text, and the note finder (also used by tests)
 tests/test_<name>.cpp    offline tests; `make tests` builds each with -Iplugins/<name>
 tests/wasm_wrapper.cpp   the WebAssembly wrapper built natively (every effect through its C interface)
 wasm/                    the nine mastering engines for Thunder Plus (see "WebAssembly" below; the creative effects
