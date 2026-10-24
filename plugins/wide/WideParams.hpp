@@ -59,6 +59,9 @@ inline const std::vector<ParamSpec>& params()
     return v;
 }
 
+#include "WidePresetsSources.hpp"
+#include "WidePresetsChains.hpp"
+
 inline const std::vector<Preset>& presets()
 {
     static std::vector<Preset> v;
@@ -82,6 +85,8 @@ inline const std::vector<Preset>& presets()
     P("Tame phasey highs", { { "bands", 2 }, { "xover1", 5000 } }, { 100, 65 });
     P("Mono check (all bands 0%)", {}, { 0, 0, 0, 0 });
     P("Linear phase: gentle", { { "xover_mode", 1 }, { "mono_bass", 1 }, { "mono_freq", 80 }, { "mono_slope", 1 } }, { 85, 100, 110, 118 });
+    addSourcePresets(v);   // WidePresetsSources.hpp: vocals, drums, bass, ... (SOURCES)
+    addChainPresets(v);    // WidePresetsChains.hpp: matching mastering chains (CHAINS)
     return v;
 }
 

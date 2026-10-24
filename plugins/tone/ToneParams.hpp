@@ -40,6 +40,9 @@ inline const std::vector<ParamSpec>& params()
     return v;
 }
 
+#include "TonePresetsSources.hpp"
+#include "TonePresetsChains.hpp"
+
 inline const std::vector<Preset>& presets()
 {
     static std::vector<Preset> v;
@@ -54,6 +57,8 @@ inline const std::vector<Preset>& presets()
     v.push_back({ "Lively (fast)", { { "recover", 40 }, { "tame", 40 }, { "speed", 85 } } });
     v.push_back({ "Gentle tilt only", { { "recover", 0 }, { "tame", 0 }, { "brighten", 25 }, { "body", 15 } } });
     v.push_back({ "Heavy rebalance", { { "recover", 80 }, { "tame", 80 }, { "speed", 40 }, { "quality", 1 } } });
+    addSourcePresets(v);   // TonePresetsSources.hpp: vocals, drums, bass, ... (SOURCES)
+    addChainPresets(v);    // TonePresetsChains.hpp: matching mastering chains (CHAINS)
     return v;
 }
 

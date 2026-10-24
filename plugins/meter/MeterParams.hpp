@@ -51,6 +51,9 @@ inline const std::vector<ParamSpec>& params()
     return v;
 }
 
+#include "MeterPresetsSources.hpp"
+#include "MeterPresetsChains.hpp"
+
 inline const std::vector<Preset>& presets()
 {
     static std::vector<Preset> v;
@@ -67,6 +70,8 @@ inline const std::vector<Preset>& presets()
     v.push_back({ "Podcast -16 LUFS", { { "target", 7 }, { "custom_lufs", -16 }, { "custom_tp", -1 } } });
     v.push_back({ "Film -27 LKFS", { { "target", 7 }, { "custom_lufs", -27 }, { "custom_tp", -2 }, { "history", 2 }, { "scale", 1 } } });
     v.push_back({ "Full range -60..0", { { "scale", 2 }, { "history", 0 } } });
+    addSourcePresets(v);   // MeterPresetsSources.hpp: vocals, drums, bass, ... (SOURCES)
+    addChainPresets(v);    // MeterPresetsChains.hpp: matching mastering chains (CHAINS)
     return v;
 }
 

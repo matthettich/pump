@@ -40,6 +40,9 @@ build/tests/%: tests/%.cpp build/tests/pffft.o $(wildcard common/*.hpp common/ds
 	@mkdir -p build/tests
 	$(CXX) $(TEST_FLAGS) -Iplugins/$(word 2,$(subst _, ,$*)) $< build/tests/pffft.o -lpthread -o $@
 
+# the preset check reads every plugin's tables
+build/tests/test_presets: $(wildcard plugins/*/*.hpp)
+
 tests: $(TESTS)
 	@for t in $(TESTS); do echo "== $$t"; ./$$t || exit 1; done
 

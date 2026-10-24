@@ -23,7 +23,7 @@ public:
         bandSel->getFn = [this]() { return sel; };
         bandSel->setFn = [this](int i) { select(i); };
         bandSel->textFn = [this]() { return "BAND " + std::to_string(sel + 1) + "  " + bandName(sel, numBands()); };
-        bandSel->tip = "Selected band (◀ ▶, keys 1-4 or click a band in the display)";
+        bandSel->tip = "Selected band (side arrows, keys 1-4 or click a band in the display)";
         modeSeg = addSegmented(-1, { "WARM", "TAPE", "TUBE", "TRIODE", "RETRO", "CLIP" });
         modeSeg->tip = "Curve: Warm (smooth, odd) · Tape (highs first, HF loss) · Tube (even) · Triode (asymmetric) · Retro (transformer) · Clip (rounded clipper)";
         driveDial = addDial(-1, "DRIVE", Dial::Large);

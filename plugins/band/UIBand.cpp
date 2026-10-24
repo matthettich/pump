@@ -24,7 +24,7 @@ public:
         bandSel->getFn = [this]() { return sel; };
         bandSel->setFn = [this](int i) { select(i); };
         bandSel->textFn = [this]() { return "BAND " + std::to_string(sel + 1) + "  " + bandName(sel, numBands()); };
-        bandSel->tip = "Selected band (◀ ▶, keys 1-4 or click a band in the display)";
+        bandSel->tip = "Selected band (side arrows, keys 1-4 or click a band in the display)";
         modeSeg = addSegmented(-1, { "COMPRESS", "EXPAND", "UPWARD" });
         modeSeg->tip = "Compress: turn down above the threshold · Expand: turn down below it · Upward: lift quiet parts up toward it";
         thrDial = addDial(-1, "THRESH");

@@ -226,6 +226,8 @@ struct ParamSpec {
 
 // A factory preset: name and a list of symbol=value pairs (anything unlisted takes its default).
 struct PresetValue { const char* symbol; float value; };
-struct Preset { const char* name; std::vector<PresetValue> values; };
+// A factory preset. `section` groups presets under a heading in the preset menu (nullptr = the main factory list,
+// e.g. "SOURCES", "CHAINS"); sections appear in the order their first preset is added.
+struct Preset { const char* name; std::vector<PresetValue> values; const char* section = nullptr; };
 
 } // namespace pump

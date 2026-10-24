@@ -74,6 +74,9 @@ inline const std::vector<ParamSpec>& params()
     return v;
 }
 
+#include "CalmPresetsSources.hpp"
+#include "CalmPresetsChains.hpp"
+
 inline const std::vector<Preset>& presets()
 {
     static std::vector<Preset> v;
@@ -106,6 +109,8 @@ inline const std::vector<Preset>& presets()
     v.push_back({ "Fast & tight (1024)", {
         { "depth", 45 }, { "sharpness", 50 }, { "selectivity", 50 }, { "attack", 1.5f }, { "release", 40 }, { "quality", 0 },
         { "focus_low", 300 } } });
+    addSourcePresets(v);   // CalmPresetsSources.hpp: vocals, drums, bass, ... (SOURCES)
+    addChainPresets(v);    // CalmPresetsChains.hpp: matching mastering chains (CHAINS)
     return v;
 }
 
