@@ -238,6 +238,9 @@ private:
     }
 
     inline double tap(const Chan& ch, double d) const { return ch.line.read(clampv(d, 2.0, (double)maxD) - 1.0); }
+    // the exact sample `d` ago (what FREEZE writes back: an integer copy, so the held loop never loses anything)
+    inline double tapInt(const Chan& ch, double d) const { return ch.line.at(clampv((int)std::lround(d), 1, maxD) - 1); }
+    int headNow(const Chan& ch) const { return ch.heads.t < 0.5 ? ch.heads.a : ch.heads.b; }
     inline double headsRead(const Chan& ch, double mod) const
     {
         const Heads& h = ch.heads;
@@ -269,7 +272,7 @@ private:
         case kModeTape:
         {
             const double y = tap(ch, ch.glide + modSine + tapeMod);
-            raw = loop = y;
+            raw = tapInt(ch, ch.glide); loop = y;
             out = ch.tapeBump.peak(ch.tapeRoll.highpass(y), bumpGain) + hissLevel * ch.hissHp.hp(ch.rng.bi());
             return;
         }
@@ -277,7 +280,7 @@ private:
         {
             const double y = tap(ch, ch.glide + modTri + bbdMod);
             const double l = ch.bbdRec.lowpass(y);
-            raw = y; loop = out = l;
+            raw = tapInt(ch, ch.glide); loop = out = l;
             const double a = std::fabs(l);
             ch.bbdOutEnv += (a - ch.bbdOutEnv) * (a > ch.bbdOutEnv ? 1.0 : envRel);
             if (whineLevel > 0.0 && ch.whineInc > 0.0)
@@ -295,14 +298,14 @@ private:
             const double y = headsRead(ch, modSine);
             const double yo = headsRead(ch, modSine + sd);
             const double sh = ch.shifter.process((float)ch.pitchAa.lowpass(y));
-            raw = yo; out = sh;
+            raw = tapInt(ch, headNow(ch) + sd); out = sh;
             loop = yo + (sh - yo) * climb;
             return;
         }
         default:
         {
             const double y = headsRead(ch, modSine);
-            raw = loop = y;
+            raw = tapInt(ch, headNow(ch)); loop = y;
             out = m == kModeReverse ? reverseRead(ch) : y;
             return;
         }
