@@ -6,8 +6,8 @@
 // Signal path (the tank is mono in, stereo out, like the hardware):
 //   (L + R) / 2 -> pre-delay (0..250 ms, glided) -> the voice playing the current model -> low cut (12 dB/oct) ->
 //   tone (a low-pass: 2 kHz dark, 9 kHz in the middle, 20 kHz bright, plus up to +6 dB of high shelf above 2.5 kHz on
-//   the bright side) -> width (M/S) ->
-//   mix (the dry stays at full level up to 50 %, the wet reaches full level at 50 %) -> output
+//   the bright side) -> width (M/S) -> mix (the dry stays at full level up to 50 %, the wet reaches full level at
+//   50 %) -> output
 // Two voices: a model change starts the new model in the idle voice while the old one stops taking input (5 ms) and
 // rings out under a 150 ms fade (a change that arrives during that fade waits for it).
 //
@@ -17,14 +17,16 @@
 //              saturation -> make-up gain. A low-pass at the transition frequency fc feeds the springs; the part above
 //              fc (a high-pass at fc) feeds the high-frequency path.
 //   a spring   two travels per round trip: forward (input transducer -> output transducer) and back. Each travel is a
-//              cascade of 48 stretched first-order allpasses A(z) = (a + D(z)) / (1 + a D(z)), D(z) = z^-K T(z) (T a
-//              first-order Thiran allpass, so the stretch can be fractional and glide; K is fixed per sample rate),
+//              cascade of 80 stretched first-order allpasses A(z) = (a + D(z)) / (1 + a D(z)), D(z) = z^-K T(z) (T a
+//              first-order Thiran allpass, so the transition can sit anywhere and glide; K is fixed per sample rate),
 //              then a delay line for the rest of the travel time. Below fc the group delay rises toward fc: every echo
 //              is a rising chirp (the drip), and echo n has travelled 2n + 1 lengths, so the chirps lengthen as the
-//              tail goes on. The output transducer also picks up a small pre-echo (the ripple ahead of each chirp);
-//              the way back has the loop low-pass at fc (the highest chirps decay faster); the loop
-//              gain sets the T60 (DECAY). Longer springs disperse more; the springs' fc are detuned by about 2 %.
-//              (The loop's high-pass is at 20 Hz: it only keeps DC out; the transducers do the rest.)
+//              tail goes on. The output transducer also hears each wave ~1.1 ms early, quietly (the pre-echo ripple
+//              ahead of each chirp); the way back has the loop low-pass at fc (the highest chirps decay faster) and a
+//              20 Hz high-pass (DC); the loop gain sets the T60 (DECAY). Longer springs get a higher allpass
+//              coefficient (longer chirps near fc); the springs' fc are detuned by about 2 %.
+//              The 8 cascades (forward and back of up to 4 springs) run side by side in two 4-float vectors, their
+//              state contiguous in one ring (rows x sections x lanes).
 //   wobble     each travel's delay drifts with slow random motion (WOBBLE: up to +-1.2 ms, a tank being nudged)
 //   high path  above fc: a loop of 0.62 x the round trip through 32 plain allpasses with a negative coefficient (the
 //              weak, splashy chirps in which high frequencies arrive first), decaying 2.5x faster
@@ -42,14 +44,18 @@
 // one-pole reconstruction filter. TENSION scales the combs, DRIP the flutter and the chirp; the clock glides (sweeping
 // GRIT bends the tail's pitch instead of clicking).
 //
-// Everything is smoothed: per-sample ramps for mix, output, width and the voice fades; 16-sample control ticks with
-// ~50 ms glides for the tank (coefficients, delay times, gains), the converter clock and the filters. No latency.
+// Everything is smoothed: per-sample ramps for mix, output, width and the voice fades; control ticks every 16 samples
+// (whatever the block size) with ~50 ms glides for the tank (coefficients, delay times, gains), the converter clock
+// and the filters. No latency.
 #pragma once
 
 #include "dsp/Fx.hpp"
 #include "SpringParams.hpp"
 
 namespace pump { namespace spring {
+
+// four floats in one SIMD register (GCC / Clang vector extension: SSE on x86, NEON on ARM)
+typedef float f4 __attribute__((vector_size(16)));
 
 struct Settings {
     int model = kTwoSpring;
@@ -58,8 +64,7 @@ struct Settings {
 };
 
 constexpr int kLanes = 4;                 // springs per tank (models use 2 or 3)
-constexpr int kW = 2 * kLanes;            // dispersion lanes: the forward and backward travel of every spring
-constexpr int kSections = 48;             // stretched allpasses per travel
+constexpr int kSections = 80;             // stretched allpasses per travel
 constexpr int kHfSections = 32;           // allpasses in the high-frequency loop
 constexpr int kTick = 16;                 // control period (samples)
 constexpr double kHfCoef = -0.55;         // the high path's allpass coefficient (high frequencies arrive first)
@@ -85,6 +90,7 @@ inline const TankModel& tankModel(int m)
     };
     return t[clampv(m, 0, 3)];
 }
+constexpr double kLongestTravel = 0.0311;
 constexpr double kDetune[kLanes] = { -0.018, 0.014, -0.006, 0.022 };   // per-spring fc offsets
 constexpr double kFcMax = 5310.0;                                      // fc at TENSION +100
 
@@ -92,7 +98,7 @@ inline double transitionHz(double tensionPct) { return 4350.0 * std::pow(1.22, c
 inline double lengthScale(double tensionPct) { return std::pow(2.0, -0.22 * clampv(tensionPct, -100.0, 100.0) * 0.01); }
 inline double baseCoef(double tensionPct, double dripPct)
 {
-    return 0.58 - 0.07 * clampv(tensionPct, -100.0, 100.0) * 0.01 + 0.10 * clampv(dripPct, 0.0, 100.0) * 0.01;
+    return 0.54 - 0.07 * clampv(tensionPct, -100.0, 100.0) * 0.01 + 0.10 * clampv(dripPct, 0.0, 100.0) * 0.01;
 }
 // The integer part of the stretch at a sample rate: the largest that still reaches the highest fc of any spring.
 inline int stretchInt(double sr)
@@ -152,7 +158,7 @@ inline Design design(int model, double tensionPct, double dripPct, double sr)
         const double tr = (l < tm.springs ? tm.travel[l] : 0.015) * ls;
         d.travel[l] = tr;
         d.pan[l] = tm.pan[l];
-        // dispersion grows with the spring's length (relative to a 20 ms spring)
+        // the peak dispersion (1 + a) / (1 - a) grows with the spring's length (relative to a 20 ms spring)
         const double disp = disp0 * std::pow(tr / 0.020, 0.8);
         d.a[l] = clampv((disp - 1.0) / (disp + 1.0), 0.10, 0.82);
         d.fcl[l] = d.fc * (1.0 + kDetune[l]);
@@ -196,11 +202,12 @@ constexpr double kDigitalMaxClock = 32000.0;
 // ---- small helpers ---------------------------------------------------------------------------------------------------
 inline double quantise(double x, double step) { return std::round(x / step) * step; }
 inline double truncate(double x, double step) { return std::trunc(x / step) * step; }
+inline f4 splat(float v) { return f4 { v, v, v, v }; }
 
 // A control value: the target set from the settings, the glided value used.
 struct Glided {
     double cur = 0.0, target = 0.0;
-    inline double step(double k) { const double d = target - cur; cur += d * k; return std::fabs(d); }
+    inline void step(double k) { cur += (target - cur) * k; }
 };
 
 // The kick: a noise crack and a low thump, a little different every time.
@@ -237,25 +244,26 @@ public:
         kint = stretchInt(sr);
         rows = 4;
         while (rows < kint + 2) rows <<= 1;
-        ring.assign((size_t)(rows * kSections * kW), 0.0f);
-        vprev.assign((size_t)(kSections * kW), 0.0f);
-        hfState.assign((size_t)(kHfSections * kLanes), 0.0f);
-        const double longest = 0.0311 * kMaxStretch;
-        for (auto& d : line) d.setMax((int)(sr * (longest + kMaxWobble + kJoltWobble * 1.5)) + 64);
+        ring.assign((size_t)(rows * kSections * 2), splat(0.0f));
+        vprev.assign((size_t)(kSections * 2), splat(0.0f));
+        const double longest = kLongestTravel * kMaxStretch;
+        for (auto& d : line) d.setMax((int)(sr * (longest + kMaxWobble + 1.5 * kJoltWobble)) + 64);
         for (auto& d : hfLine) d.setMax((int)(sr * kHfRatio * 2.0 * longest) + 64);
         glideK = 1.0 - std::exp(-kTick / (0.05 * sr));
         joltDecay = std::exp(-kTick / (0.6 * sr));
-        for (int k = 0; k < kW; ++k) wob[k].setup(sr / kTick, 0x2F00u + 977u * (uint32_t)k);
+        for (int k = 0; k < 2 * kLanes; ++k) wob[k].setup(sr / kTick, 0x2F00u + 977u * (uint32_t)k);
         for (int l = 0; l < kLanes; ++l) { loopHp[l].set(20.0, sr); hfDamp[l].set(std::min(16000.0, 0.45 * sr), sr); }
+        drvHp.set(120.0, 0.70710678, sr);
+        for (int c = 0; c < 2; ++c) outHp[c].set(70.0, 0.70710678, sr);
         envFk = 1.0 - std::exp(-1.0 / (0.001 * sr)); envFr = 1.0 - std::exp(-1.0 / (0.015 * sr));
         envSk = 1.0 - std::exp(-1.0 / (0.030 * sr)); envSr = 1.0 - std::exp(-1.0 / (0.150 * sr));
         reset();
     }
     void reset()
     {
-        std::fill(ring.begin(), ring.end(), 0.0f);
-        std::fill(vprev.begin(), vprev.end(), 0.0f);
-        std::fill(hfState.begin(), hfState.end(), 0.0f);
+        std::fill(ring.begin(), ring.end(), splat(0.0f));
+        std::fill(vprev.begin(), vprev.end(), splat(0.0f));
+        for (auto& s : hfState) s = splat(0.0f);
         for (auto& d : line) d.clear();
         for (auto& d : hfLine) d.clear();
         for (int l = 0; l < kLanes; ++l) { loopLp[l].reset(); loopHp[l].reset(); hfDamp[l].reset(); }
@@ -264,10 +272,12 @@ public:
         envF = envS = 0.0;
         wpos = 0;
         jolt = 0.0;
-        for (int k = 0; k < kW; ++k) wobFrom[k] = wobTo[k] = 0.0;
+        for (int k = 0; k < 2 * kLanes; ++k) wobFrom[k] = wobTo[k] = 0.0;
+        for (auto& v : vis) v = 0.0f;
+        for (auto& v : laneOut) v = 0.0f;
         primed = false;
     }
-    void setModel(int m) { model = clampv(m, 0, 3); primed = false; }
+    void setModel(int m) { model = clampv(m, 0, 3); springs = tankModel(model).springs; primed = false; }
 
     // new targets (when the settings change)
     void setTargets(const Settings& s)
@@ -275,7 +285,7 @@ public:
         const Design d = design(model, s.tension, s.drip, sr);
         const double t60 = clampv(s.decay, 0.1, 20.0);
         const double ls = lengthScale(s.tension);
-        const double nSprings = (double)d.springs;
+        const double norm = std::sqrt(2.0 / d.springs);
         for (int l = 0; l < kLanes; ++l)
         {
             const bool on = l < d.springs;
@@ -291,13 +301,12 @@ public:
             ctl.ripple[l].target = (0.0011 + 0.00023 * l) * sr * ls;
             const double g = std::pow(10.0, -3.0 * 2.0 * d.travel[l] / t60);
             ctl.g[l].target = on ? g : 0.0;
-            ctl.norm[l].target = on ? std::pow(1.0 - g * g, 0.25) * std::sqrt(2.0 / nSprings) : 0.0;
+            ctl.norm[l].target = on ? std::pow(1.0 - g * g, 0.25) * norm : 0.0;
             const double hl = d.hfLoop(l);
             const double gh = std::pow(10.0, -3.0 * hl / (0.4 * t60));
             ctl.gh[l].target = on ? gh : 0.0;
-            ctl.normH[l].target = on ? std::pow(1.0 - gh * gh, 0.25) * std::sqrt(2.0 / nSprings) : 0.0;
+            ctl.normH[l].target = on ? std::pow(1.0 - gh * gh, 0.25) * norm : 0.0;
             ctl.dH[l].target = std::max(6.0, hl * sr - kHfSections * hfSectionDelay(0.0) - 1.0);
-            ctl.in[l].target = on ? 1.0 : 0.0;
             const double p = clampv(d.pan[l], -1.0, 1.0);
             ctl.panL[l].target = on ? std::cos((p + 1.0) * 0.25 * kPi) : 0.0;
             ctl.panR[l].target = on ? std::sin((p + 1.0) * 0.25 * kPi) : 0.0;
@@ -308,33 +317,28 @@ public:
         ctl.makeup.target = std::pow(drv, -0.7);
         ctl.drip.target = clampv(s.drip, 0.0, 100.0) * 0.01;
         ctl.wobble.target = clampv(s.wobble, 0.0, 100.0) * 0.01 * kMaxWobble * sr;
-        if (!primed) { ctl.snap(); primed = true; filtersSet = false; }
+        if (!primed) { ctl.snap(); primed = true; designFilters(); }
     }
 
     // every kTick samples: glide, coefficients, wobble
     void tick()
     {
-        const double moved = ctl.step(glideK);
+        if (ctl.step(glideK)) designFilters();
+        float av[2 * kLanes], ev[2 * kLanes];
         for (int l = 0; l < kLanes; ++l)
         {
-            a[l] = a[l + kLanes] = (float)ctl.a[l].cur;
-            eta[l] = eta[l + kLanes] = (float)ctl.eta[l].cur;
+            av[l] = av[l + kLanes] = (float)ctl.a[l].cur;
+            ev[l] = ev[l + kLanes] = (float)ctl.eta[l].cur;
         }
-        if (moved > 1e-7 || !filtersSet)
+        for (int h = 0; h < 2; ++h)
         {
-            for (int l = 0; l < kLanes; ++l) loopLp[l].set(ctl.fc[l].cur, 0.70710678, sr);
-            const double fc0 = ctl.fc0.cur;
-            feedLp.set(fc0, 0.70710678, sr);
-            feedHp.set(fc0, 0.70710678, sr);
-            drvHp.set(120.0, 0.70710678, sr);
-            for (int c = 0; c < 2; ++c) { outHp[c].set(70.0, 0.70710678, sr); dripPk[c].set(0.5 * fc0, 0.8, sr); }
-            dripGain = 1.0 + 1.25 * ctl.drip.cur;
-            filtersSet = true;
+            a4[h] = f4 { av[4 * h], av[4 * h + 1], av[4 * h + 2], av[4 * h + 3] };
+            e4[h] = f4 { ev[4 * h], ev[4 * h + 1], ev[4 * h + 2], ev[4 * h + 3] };
         }
-        // wobble: every travel's delay drifts on its own; a kick multiplies the depth and the rate for a moment
+        // wobble: every travel's delay drifts on its own; a kick adds depth and speed for a moment
         const double j = std::min(jolt, 1.5);
         const double depth = ctl.wobble.cur + kJoltWobble * sr * j;
-        for (int k = 0; k < kW; ++k)
+        for (int k = 0; k < 2 * kLanes; ++k)
         {
             wob[k].setRate((0.35 + 0.17 * (k % kLanes)) * (1.0 + 2.0 * std::min(j, 1.0)));
             wobFrom[k] = wobTo[k];
@@ -359,57 +363,61 @@ public:
         envF += (ah - envF) * (ah > envF ? envFk : envFr);
         envS += (ah - envS) * (ah > envS ? envSk : envSr);
         const double tr = clampv(envF / (envS + 1e-5) - 1.0, 0.0, 2.0);
-        const double boost = 1.0 + 0.9 * ctl.drip.cur * tr;
-        const double drv = ctl.drive.cur * boost;
+        const double drv = ctl.drive.cur * (1.0 + 0.9 * ctl.drip.cur * tr);
         const double d = ((double)fastTanh((float)(h * drv) + 0.2f) - kTanh02) * ctl.makeup.cur;
-        double lfIn, bp, hp;
-        feedLp.process(d, lfIn, bp, hp);
+        const double lfIn = feedLp.lowpass(d);
         const double hfIn = feedHp.highpass(d) + 0.5 * kick;
         drvOut = (float)d;
 
         // the springs: read the travels (before writing), run the cascades, write back
-        alignas(16) float xs[kW];
-        float tap[kLanes];
-        for (int l = 0; l < kLanes; ++l)
+        alignas(16) float xs[2 * kLanes] = {};
+        float tap[kLanes] = {};
+        for (int l = 0; l < springs; ++l)
         {
             const double dA = ctl.dA[l].cur + wobFrom[l] + (wobTo[l] - wobFrom[l]) * frac;
             const double dB = ctl.dB[l].cur + wobFrom[l + kLanes] + (wobTo[l + kLanes] - wobFrom[l + kLanes]) * frac;
             const float t = line[l].read(dA);
             // the output transducer also hears the wave a little before it arrives (the pre-echo ripple); the loop
             // carries the wave itself
-            tap[l] = (t + kRipple * line[l].read(std::max(1.0, dA - ctl.ripple[l].cur))) * kTapNorm;
-            xs[l] = (float)((lfIn + kick * kickG[l]) * ctl.in[l].cur + ctl.g[l].cur * line[l + kLanes].read(dB));
+            tap[l] = (t + kRipple * line[l].readLinear(std::max(1.0, dA - ctl.ripple[l].cur))) * kTapNorm;
+            xs[l] = (float)((lfIn + kick * kickG[l]) + ctl.g[l].cur * line[l + kLanes].read(dB));
             xs[l + kLanes] = t;
         }
-        for (int k = 0; k < kW; ++k) vis[k] = xs[k];
-        disperse(xs);
-        for (int l = 0; l < kLanes; ++l)
+        for (int k = 0; k < 2 * kLanes; ++k) vis[k] = xs[k];
+        f4 x0, x1;
+        std::memcpy(&x0, xs, sizeof x0);
+        std::memcpy(&x1, xs + kLanes, sizeof x1);
+        disperse(x0, x1);
+        std::memcpy(xs, &x0, sizeof x0);
+        std::memcpy(xs + kLanes, &x1, sizeof x1);
+        for (int l = 0; l < springs; ++l)
         {
             line[l].push(xs[l]);
             line[l + kLanes].push((float)loopHp[l].hp(loopLp[l].lowpass(xs[l + kLanes])));
         }
 
         // the high path
-        float hx[kLanes], htap[kLanes];
-        for (int l = 0; l < kLanes; ++l)
+        alignas(16) float hx[kLanes] = {}, htap[kLanes] = {};
+        for (int l = 0; l < springs; ++l)
         {
-            htap[l] = hfLine[l].read(ctl.dH[l].cur);
-            hx[l] = (float)(hfIn * ctl.in[l].cur + ctl.gh[l].cur * htap[l]);
+            htap[l] = hfLine[l].readLinear(ctl.dH[l].cur);
+            hx[l] = (float)(hfIn + ctl.gh[l].cur * htap[l]);
         }
-        float* st = hfState.data();
-        const float ha = (float)kHfCoef;
-        for (int m = 0; m < kHfSections; ++m, st += kLanes)
-            for (int l = 0; l < kLanes; ++l)
-            {
-                const float w = hx[l] - ha * st[l];
-                hx[l] = ha * w + st[l];
-                st[l] = w;
-            }
-        for (int l = 0; l < kLanes; ++l) hfLine[l].push((float)hfDamp[l].lp(hx[l]));
+        f4 hv;
+        std::memcpy(&hv, hx, sizeof hv);
+        const f4 ha = splat((float)kHfCoef);
+        for (int m = 0; m < kHfSections; ++m)
+        {
+            const f4 w = hv - ha * hfState[m];
+            hv = ha * w + hfState[m];
+            hfState[m] = w;
+        }
+        std::memcpy(hx, &hv, sizeof hv);
+        for (int l = 0; l < springs; ++l) hfLine[l].push((float)hfDamp[l].lp(hx[l]));
 
         // output transducer: the springs panned, 70 Hz high-pass, the chirp-band peak
         double L = 0.0, R = 0.0;
-        for (int l = 0; l < kLanes; ++l)
+        for (int l = 0; l < springs; ++l)
         {
             const double o = ctl.norm[l].cur * tap[l] + kHfLevel * ctl.normH[l].cur * htap[l];
             L += ctl.panL[l].cur * o;
@@ -423,82 +431,91 @@ public:
     double finiteCheck() const
     {
         double s = envF + envS + outHp[0].ic1 + outHp[1].ic1 + dripPk[0].ic2 + dripPk[1].ic2;
-        for (int k = 0; k < kW; ++k) s += line[k].at(0);
-        for (int l = 0; l < kLanes; ++l) s += hfLine[l].at(0) + loopLp[l].ic1 + loopLp[l].ic2;
+        for (int l = 0; l < kLanes; ++l) s += line[l].at(0) + line[l + kLanes].at(0) + hfLine[l].at(0) + loopLp[l].ic1 + loopLp[l].ic2;
+        const f4 v = vprev[0] + vprev[1];
+        for (int k = 0; k < 4; ++k) s += v[k];
         return s;
     }
+    int springCount() const { return springs; }
 
-    // what the UI draws: the wave entering each spring at both ends, each spring's output, the driver's output
-    float vis[kW] = {}, laneOut[kLanes] = {}, drvOut = 0.0f;
+    // what the UI draws: the wave entering each spring at both ends (forward lanes, then backward lanes), each
+    // spring's output, the driver's output
+    float vis[2 * kLanes] = {}, laneOut[kLanes] = {}, drvOut = 0.0f;
 
 private:
     static constexpr float kRipple = 0.16f, kTapNorm = 1.0f / 1.16f;
     static constexpr double kHfLevel = 0.35, kTankGain = 0.55;
     static constexpr double kTanh02 = 0.19737532;   // tanh(0.2): silence stays 0 through the asymmetric drive
 
-    // one sample through all 8 cascades (contiguous float state: ring rows [row][section][lane])
-    inline void disperse(float* x)
+    void designFilters()
     {
-        const int stride = kSections * kW;
-        float* __restrict rw = ring.data() + (size_t)(wpos * stride);
-        const float* __restrict ra = ring.data() + (size_t)(((wpos - kint) & (rows - 1)) * stride);
-        const float* __restrict rb = ring.data() + (size_t)(((wpos - kint - 1) & (rows - 1)) * stride);
-        float* __restrict vp = vprev.data();
-        float xv[kW], av[kW], ev[kW];
-        for (int j = 0; j < kW; ++j) { xv[j] = x[j]; av[j] = a[j]; ev[j] = eta[j]; }
+        for (int l = 0; l < kLanes; ++l) loopLp[l].set(ctl.fc[l].cur, 0.70710678, sr);
+        const double fc0 = ctl.fc0.cur;
+        feedLp.set(fc0, 0.70710678, sr);
+        feedHp.set(fc0, 0.70710678, sr);
+        for (int c = 0; c < 2; ++c) dripPk[c].set(0.5 * fc0, 0.8, sr);
+        dripGain = 1.0 + 1.25 * ctl.drip.cur;
+    }
+
+    // one sample through all 8 cascades: x0 = the forward travels, x1 = the backward ones. The ring holds every
+    // section's w for the last `rows` samples ([row][section][2]); D(z) = z^-K T(z) reads rows K and K + 1 back.
+    inline void disperse(f4& x0, f4& x1)
+    {
+        const int stride = kSections * 2;
+        f4* __restrict rw = ring.data() + (size_t)(wpos * stride);
+        const f4* __restrict ra = ring.data() + (size_t)(((wpos - kint) & (rows - 1)) * stride);
+        const f4* __restrict rb = ring.data() + (size_t)(((wpos - kint - 1) & (rows - 1)) * stride);
+        f4* __restrict vp = vprev.data();
+        const f4 a0 = a4[0], a1 = a4[1], e0 = e4[0], e1 = e4[1];
         for (int m = 0; m < kSections; ++m)
         {
-            for (int j = 0; j < kW; ++j)
-            {
-                // D = z^-K T(z): v = Thiran of the section's own w delayed by K
-                const float v = ev[j] * (ra[j] - vp[j]) + rb[j];
-                vp[j] = v;
-                const float w = xv[j] - av[j] * v;
-                rw[j] = w;
-                xv[j] = av[j] * w + v;
-            }
-            rw += kW; ra += kW; rb += kW; vp += kW;
+            const f4 v0 = e0 * (ra[0] - vp[0]) + rb[0], v1 = e1 * (ra[1] - vp[1]) + rb[1];
+            vp[0] = v0; vp[1] = v1;
+            const f4 w0 = x0 - a0 * v0, w1 = x1 - a1 * v1;
+            rw[0] = w0; rw[1] = w1;
+            x0 = a0 * w0 + v0; x1 = a1 * w1 + v1;
+            rw += 2; ra += 2; rb += 2; vp += 2;
         }
-        for (int j = 0; j < kW; ++j) x[j] = xv[j];
         wpos = (wpos + 1) & (rows - 1);
     }
 
     struct Ctl {
         Glided a[kLanes], eta[kLanes], fc[kLanes], dA[kLanes], dB[kLanes], dH[kLanes], ripple[kLanes];
-        Glided g[kLanes], gh[kLanes], norm[kLanes], normH[kLanes], in[kLanes], panL[kLanes], panR[kLanes];
+        Glided g[kLanes], gh[kLanes], norm[kLanes], normH[kLanes], panL[kLanes], panR[kLanes];
         Glided fc0, drive, makeup, drip, wobble;
         template <class F> void each(F f)
         {
             for (int l = 0; l < kLanes; ++l)
             {
                 f(a[l]); f(eta[l]); f(fc[l]); f(dA[l]); f(dB[l]); f(dH[l]); f(ripple[l]);
-                f(g[l]); f(gh[l]); f(norm[l]); f(normH[l]); f(in[l]); f(panL[l]); f(panR[l]);
+                f(g[l]); f(gh[l]); f(norm[l]); f(normH[l]); f(panL[l]); f(panR[l]);
             }
             f(fc0); f(drive); f(makeup); f(drip); f(wobble);
         }
         void snap() { each([](Glided& v) { v.cur = v.target; }); }
-        // glides everything; returns the largest relative move of a filter frequency (to skip redesigns when still)
-        double step(double k)
+        // glides everything; true while a filter frequency or the drip still moves (the filters need redesigning)
+        bool step(double k)
         {
-            each([k](Glided& v) { v.step(k); });
             double m = std::fabs(fc0.target - fc0.cur) / fc0.target + std::fabs(drip.target - drip.cur);
             for (int l = 0; l < kLanes; ++l) m += std::fabs(fc[l].target - fc[l].cur) / std::max(1.0, fc[l].target);
-            return m;
+            each([k](Glided& v) { v.step(k); });
+            return m > 1e-7;
         }
     } ctl;
 
     double sr = 48000.0, glideK = 0.01, jolt = 0.0, joltDecay = 0.99, dripGain = 1.0;
     double envF = 0.0, envS = 0.0, envFk = 0.1, envFr = 0.01, envSk = 0.01, envSr = 0.001;
-    int model = kTwoSpring, kint = 4, rows = 8, wpos = 0;
-    bool primed = false, filtersSet = false;
-    std::vector<float> ring, vprev, hfState;
-    float a[kW] = {}, eta[kW] = {};
+    int model = kTwoSpring, springs = 2, kint = 4, rows = 8, wpos = 0;
+    bool primed = false;
+    std::vector<f4> ring, vprev;
+    f4 hfState[kHfSections] = {};
+    f4 a4[2] = {}, e4[2] = {};
     double kickG[kLanes] = { 1, -1, 1, -1 };
-    fx::FracDelay line[kW], hfLine[kLanes];
+    fx::FracDelay line[2 * kLanes], hfLine[kLanes];
     fx::Svf loopLp[kLanes], drvHp, feedLp, feedHp, outHp[2], dripPk[2];
     fx::OnePole loopHp[kLanes], hfDamp[kLanes];
-    fx::Wander wob[kW];
-    double wobFrom[kW] = {}, wobTo[kW] = {};
+    fx::Wander wob[2 * kLanes];
+    double wobFrom[2 * kLanes] = {}, wobTo[2 * kLanes] = {};
 };
 
 // ---- the digital "spring" (one voice) --------------------------------------------------------------------------------
@@ -525,12 +542,14 @@ public:
         ap[0].clear(); ap[1].clear();
         for (auto& p : damp) p.reset();
         for (int c = 0; c < 2; ++c) { res[c][0].reset(); res[c][1].reset(); recon[c].reset(); held[c] = 0.0; }
-        std::fill(&chirpW[0][0], &chirpW[0][0] + kChirp * 2, 0.0);
+        for (auto& w : chirpW) w[0] = w[1] = 0.0;
+        for (auto& v : vis) v = 0.0f;
         chirpPos = 0;
         phase = 1.0;
         primed = false;
     }
     void setModel(int m) { model = m == kLofi ? kLofi : kDigital; primed = false; }
+    int combCount() const { return digitalModel(model).combs; }
 
     void setTargets(const Settings& s)
     {
@@ -565,14 +584,14 @@ public:
         const DigitalModel& dm = digitalModel(model);
         const double fsC = ctl.clock.cur;
         ratio = fsC / sr;
-        stepQ = std::pow(2.0, 1.0 - ctl.bits.cur);   // one step of a signed word (the converters)
+        stepQ = std::pow(2.0, 1.0 - ctl.bits.cur);           // one step of a signed word (the converters)
         loopQ = stepQ * std::pow(2.0, -ctl.loopBits.cur);   // the loops keep a few bits more
         for (int i = 0; i < 4; ++i) lenS[i] = clampv(ctl.len[i].cur * fsC, 2.0, (double)comb[i].maxDelay());
         apS[0] = clampv(dm.ap[0] * fsC, 2.0, (double)ap[0].line().maxDelay() - 2.0);
         apS[1] = clampv(dm.ap[1] * fsC, 2.0, (double)ap[1].line().maxDelay() - 2.0);
         // the flutter tap moves in whole clock periods (zipper)
         const double w = flWander.next() * ctl.wobble.cur;
-        flS = clampv((int)std::lround(ctl.flutter.cur * fsC * (1.0 + 0.35 * w)), 2, flut[0].maxDelay() - 1);
+        flS = clampv((int)std::lround(ctl.flutter.cur * fsC * (1.0 + 0.35 * w)), 2, flut[0].maxDelay() - 2);
         for (int i = 0; i < 4; ++i) damp[i].set(0.30 * fsC, fsC);
         for (int c = 0; c < 2; ++c)
         {
@@ -597,8 +616,8 @@ public:
 
     double finiteCheck() const { return held[0] + held[1] + recon[0].s + recon[1].s + comb[0].at(0) + flut[0].at(0) + flut[1].at(0); }
 
+    // what the UI draws: each comb's output (at the clock rate, held)
     float vis[kLanes] = {};
-    int combs() const { return digitalModel(model).combs; }
 
 private:
     static constexpr double kDigitalGain = 0.42;
@@ -607,36 +626,32 @@ private:
     inline void clockStep(double x, double kick)
     {
         const double q = stepQ;
-        double v = clampv(x * ctl.drive.cur + 0.8 * kick, -1.0, 1.0);
-        v = quantise(v, q);
+        double v = quantise(clampv(x * ctl.drive.cur + 0.8 * kick, -1.0, 1.0), q);
         v = ap[0].process((float)v, apS[0], 0.62f);
         v = ap[1].process((float)v, apS[1], 0.60f);
-        // token chirp: 6 allpasses stretched to a quarter of the clock rate
+        // token chirp: 6 allpasses (a + z^-2) / (1 + a z^-2)
         const double ca = ctl.chirpA.cur;
-        const int p = chirpPos, p2 = chirpPos ^ 1;
         for (int k = 0; k < kChirp; ++k)
         {
-            const double w2 = chirpW[k][p];   // w[n - 2] (two slots per section, alternating)
+            const double w2 = chirpW[k][chirpPos];   // w two ticks ago (two slots per section, alternating)
             const double w = v - ca * w2;
             v = ca * w + w2;
-            chirpW[k][p] = w;
+            chirpW[k][chirpPos] = w;
         }
-        chirpPos = p2;
-        // the combs: damped loops truncated to the word length
+        chirpPos ^= 1;
+        // the combs: damped loops truncated to the loop word
         double y[4];
         for (int i = 0; i < 4; ++i)
         {
             y[i] = comb[i].readLinear(lenS[i] - 1.0);
-            const double fb = truncate(v + ctl.g[i].cur * damp[i].lp(y[i]), loopQ);
-            comb[i].push((float)fb);
+            comb[i].push((float)truncate(v + ctl.g[i].cur * damp[i].lp(y[i]), loopQ));
             y[i] *= ctl.norm[i].cur;
             vis[i] = (float)y[i];
         }
-        double o[2] = { y[0] + y[2] + 0.35 * y[1], y[1] + y[3] + 0.35 * y[2] };
+        const double o[2] = { y[0] + y[2] + 0.35 * y[1], y[1] + y[3] + 0.35 * y[2] };
         for (int c = 0; c < 2; ++c)
         {
-            const double f = flut[c].at(flS - 1 + c);
-            const double fv = o[c] + ctl.flutterG.cur * f;
+            const double fv = o[c] + ctl.flutterG.cur * flut[c].at(flS - 1 + c);
             flut[c].push((float)truncate(fv, loopQ));
             double r = 0.6 * o[c] + 0.4 * fv;
             r = res[c][0].peak(r, 2.8);
@@ -656,7 +671,7 @@ private:
         void step(double k) { each([k](Glided& v) { v.step(k); }); }
     } ctl;
 
-    double sr = 48000.0, glideK = 0.01, ratio = 0.5, phase = 1.0, stepQ = 1.0 / 32768.0, loopQ = 1.0 / 524288.0;
+    double sr = 48000.0, glideK = 0.01, ratio = 0.5, phase = 1.0, stepQ = 1.0 / 32768.0, loopQ = 1.0 / 8388608.0;
     double lenS[4] = { 400, 500, 600, 700 }, apS[2] = { 100, 40 }, held[2] = { 0, 0 };
     double chirpW[kChirp][2] = {};
     int model = kDigital, flS = 200, chirpPos = 0;
@@ -674,46 +689,66 @@ public:
     void prepare(double sampleRate, int /*maxBlock*/)
     {
         sr = sampleRate;
-        for (auto& v : voice) { v.tank.prepare(sr); v.dig.prepare(sr); }
+        for (auto& v : voice)
+        {
+            v.tank.prepare(sr);
+            v.dig.prepare(sr);
+            v.inG.setRamp(std::max(1, (int)(0.005 * sr)));
+            v.outG.setRamp(std::max(1, (int)(0.150 * sr)));
+        }
         pre.setMax((int)(kMaxPreDelay * sr) + 8);
         preGlide.setTime(0.06, sr);
         burst.sr = sr;
-        burst.reset();
         const int ramp = std::max(1, (int)(0.020 * sr));
         mixS.setRamp(ramp); outS.setRamp(ramp); widthS.setRamp(ramp); lcOn.setRamp(ramp);
         filterK = 1.0 - std::exp(-kTick / (0.03 * sr));
         decim = std::max(1, (int)std::lround(sr / 12000.0));
-        activeV = 0;
-        for (auto& v : voice) { v.inG.setRamp(std::max(1, (int)(0.005 * sr))); v.outG.setRamp(std::max(1, (int)(0.15 * sr))); }
+        for (int c = 0; c < 2; ++c) shelf[c].set(2500.0, 0.6, sr);
         clearState();
     }
 
     // ---- settings (audio thread, block start) ----
     void setSettings(const Settings& s) { set = s; set.model = clampv(s.model, 0, kNumModels - 1); dirty = true; }
-    // the KICK key (audio thread): crash the tank
+    // the KICK key (audio thread): crash the tank (strength 1 = a full kick)
     void kick(double strength = 1.0)
     {
         burst.trigger(strength);
-        Voice& v = voice[activeV];
-        v.tank.kicked(rng, strength);
+        voice[activeV].tank.kicked(rng, strength);
         kickAgeS = 0;
     }
 
     int latency() const { return 0; }
-    int activeModel() const { return voice[activeV].model; }
     double visRate() const { return sr / decim; }
 
     // ---- feeds (UI) ----
-    // the wave entering each spring at the input end (F) and at the far end (B), ~12 kHz; digital models: the combs
-    pump::ScopeRing visF[kLanes] = { pump::ScopeRing(4096), pump::ScopeRing(4096), pump::ScopeRing(4096), pump::ScopeRing(4096) };
-    pump::ScopeRing visB[kLanes] = { pump::ScopeRing(4096), pump::ScopeRing(4096), pump::ScopeRing(4096), pump::ScopeRing(4096) };
-    pump::MeterValue laneLevel[kLanes], driverLevel;
-    std::atomic<int> kickAge { 1 << 30 };          // samples since the last kick
-    std::atomic<int> modelNow { kTwoSpring };      // the model the active voice plays
+    // the wave entering each spring at the input end (F) and at the far end (B), at visRate(); digital models: the
+    // combs' outputs (in both)
+    pump::ScopeRing visF[kLanes] = { pump::ScopeRing(2048), pump::ScopeRing(2048), pump::ScopeRing(2048), pump::ScopeRing(2048) };
+    pump::ScopeRing visB[kLanes] = { pump::ScopeRing(2048), pump::ScopeRing(2048), pump::ScopeRing(2048), pump::ScopeRing(2048) };
+    pump::MeterValue laneLevel[kLanes], driverLevel;   // peaks since the UI last read them
+    std::atomic<int> kickAge { 1 << 30 };              // samples since the last kick
+    std::atomic<int> activeModel { kTwoSpring };       // the model the sounding voice plays
+    std::atomic<int> activeSprings { 2 };              // springs (or combs) in it
 
     void process(float* L, float* R, int n)
     {
-        for (int off = 0; off < n; off += kTick) processTick(L + off, R + off, std::min(kTick, n - off));
+        int done = 0;
+        while (done < n)
+        {
+            if (tickPos == 0) controlTick();
+            const int m = std::min(n - done, kTick - tickPos);
+            processRun(L + done, R + done, m);
+            tickPos = (tickPos + m) % kTick;
+            done += m;
+        }
+        if (!std::isfinite(chk))
+        {
+            clearState();
+            sanitizeBlock(L, n); sanitizeBlock(R, n);
+        }
+        chk = 0.0;
+        kickAgeS = std::min(kickAgeS + n, 1 << 30);
+        kickAge.store(kickAgeS, std::memory_order_relaxed);
     }
 
 private:
@@ -731,27 +766,39 @@ private:
             inG.reset(1.0); outG.reset(1.0);
             busy = true;
         }
+        void setTargets(const Settings& s) { if (isDigital(model)) dig.setTargets(s); else tank.setTargets(s); }
+        void tick() { if (isDigital(model)) dig.tick(); else tank.tick(); }
+        double finiteCheck() const { return isDigital(model) ? dig.finiteCheck() : tank.finiteCheck(); }
+        int lanes() const { return isDigital(model) ? dig.combCount() : tank.springCount(); }
     };
 
     void clearState()
     {
         pre.clear();
-        preGlide.reset(set.preDelay * 0.001 * sr);
+        preGlide.reset(clampv(set.preDelay, 0.0, 250.0) * 0.001 * sr);
         mixS.reset(set.mix * 0.01); outS.reset(dbToGain(set.outDb)); widthS.reset(set.width * 0.01);
         lcOn.reset(lowCutActive(set.lowCut) ? 1.0 : 0.0);
         for (int c = 0; c < 2; ++c) { lc[c].reset(); toneLp[c].reset(); shelf[c].reset(); }
-        lcHz.cur = lcHz.target = std::max(20.0, set.lowCut);
+        lcHz.cur = lcHz.target = std::max((double)kLowCutOff, set.lowCut);
         lpHz.cur = lpHz.target = toneLpHz(set.tone);
         shelfG.cur = shelfG.target = toneShelf(set.tone);
         designWet();
         voice[1].busy = false;
         activeV = 0;
         voice[0].start(set.model, set);
-        modelNow.store(set.model, std::memory_order_relaxed);
+        publishVoice();
         burst.reset();
+        tickPos = 0;
+        decimPos = 0;
+        chk = 0.0;
         dirty = false;
     }
-    // TONE: a low-pass at 9 kHz in the middle, 2 kHz fully dark, 20 kHz fully bright (with the shelf)
+    void publishVoice()
+    {
+        activeModel.store(voice[activeV].model, std::memory_order_relaxed);
+        activeSprings.store(voice[activeV].lanes(), std::memory_order_relaxed);
+    }
+    // TONE: a low-pass at 9 kHz in the middle, 2 kHz fully dark, 20 kHz fully bright (plus the shelf)
     static double toneLpHz(double tone)
     {
         const double t = clampv(tone, -100.0, 100.0) * 0.01;
@@ -764,13 +811,12 @@ private:
         {
             lc[c].set(lcHz.cur, 0.70710678, sr);
             toneLp[c].set(std::min(lpHz.cur, 0.45 * sr), 0.70710678, sr);
-            shelf[c].set(2500.0, 0.6, sr);
         }
     }
 
     void controlTick()
     {
-        // a model change: the idle voice takes over, the old one rings out (a change during a fade waits for it)
+        // a model change: the idle voice takes over, the old one rings out (a change during that fade waits for it)
         Voice& act = voice[activeV];
         Voice& other = voice[1 - activeV];
         if (set.model != act.model && !other.busy)
@@ -779,36 +825,36 @@ private:
             act.outG.setTarget(0.0);
             other.start(set.model, set);
             activeV = 1 - activeV;
-            modelNow.store(set.model, std::memory_order_relaxed);
+            publishVoice();
         }
         for (auto& v : voice)
         {
             if (!v.busy) continue;
-            if (dirty) { if (isDigital(v.model)) v.dig.setTargets(set); else v.tank.setTargets(set); }
-            if (isDigital(v.model)) v.dig.tick(); else v.tank.tick();
+            if (dirty) v.setTargets(set);
+            v.tick();
         }
         dirty = false;
         mixS.setTarget(set.mix * 0.01);
         outS.setTarget(dbToGain(set.outDb));
         widthS.setTarget(set.width * 0.01);
         lcOn.setTarget(lowCutActive(set.lowCut) ? 1.0 : 0.0);
-        lcHz.target = std::max(20.0, set.lowCut);
+        lcHz.target = std::max((double)kLowCutOff, set.lowCut);
         lpHz.target = toneLpHz(set.tone);
         shelfG.target = toneShelf(set.tone);
-        const double m = lcHz.step(filterK) / lcHz.target + lpHz.step(filterK) / lpHz.target;
-        shelfG.step(filterK);
-        if (m > 1e-6) designWet();
+        const double moved = std::fabs(lcHz.target - lcHz.cur) / lcHz.target + std::fabs(lpHz.target - lpHz.cur) / lpHz.target;
+        lcHz.step(filterK); lpHz.step(filterK); shelfG.step(filterK);
+        if (moved > 1e-6) designWet();
     }
 
-    void processTick(float* L, float* R, int n)
+    void processRun(float* L, float* R, int n)
     {
-        controlTick();
         const double preTarget = clampv(set.preDelay, 0.0, 250.0) * 0.001 * sr;
+        const Voice& a = voice[activeV];
+        const bool digital = isDigital(a.model);
         float lv[kLanes] = {}, dv = 0.0f;
-        double chk = 0.0;
         for (int i = 0; i < n; ++i)
         {
-            const double frac = (i + 0.5) / kTick;
+            const double frac = (tickPos + i + 0.5) / kTick;
             pre.push(0.5f * (L[i] + R[i]));
             const double x = pre.readLinear(preGlide.next(preTarget));
             const double k = burst.next();
@@ -844,37 +890,27 @@ private:
             R[i] = (float)((R[i] * dryG + (mid - side) * wetG) * og);
             chk += wl + wr;
             // UI feeds
-            const Voice& a = voice[activeV];
             if (++decimPos >= decim)
             {
                 decimPos = 0;
-                if (isDigital(a.model)) for (int l = 0; l < kLanes; ++l) { visF[l].push(a.dig.vis[l]); visB[l].push(a.dig.vis[l]); }
-                else for (int l = 0; l < kLanes; ++l) { visF[l].push(a.tank.vis[l]); visB[l].push(a.tank.vis[l + kLanes]); }
+                for (int l = 0; l < kLanes; ++l)
+                {
+                    visF[l].push(digital ? a.dig.vis[l] : a.tank.vis[l]);
+                    visB[l].push(digital ? a.dig.vis[l] : a.tank.vis[l + kLanes]);
+                }
             }
-            if (isDigital(a.model)) for (int l = 0; l < kLanes; ++l) lv[l] = std::max(lv[l], std::fabs(a.dig.vis[l]));
-            else
-            {
-                for (int l = 0; l < kLanes; ++l) lv[l] = std::max(lv[l], std::fabs(a.tank.laneOut[l]));
-                dv = std::max(dv, std::fabs(a.tank.drvOut));
-            }
+            for (int l = 0; l < kLanes; ++l) lv[l] = std::max(lv[l], std::fabs(digital ? a.dig.vis[l] : a.tank.laneOut[l]));
+            if (!digital) dv = std::max(dv, std::fabs(a.tank.drvOut));
         }
-        for (const auto& v : voice) if (v.busy) chk += isDigital(v.model) ? v.dig.finiteCheck() : v.tank.finiteCheck();
-        if (!std::isfinite(chk))
-        {
-            clearState();
-            sanitizeBlock(L, n); sanitizeBlock(R, n);
-            return;
-        }
+        for (const auto& v : voice) if (v.busy) chk += v.finiteCheck();
         for (int l = 0; l < kLanes; ++l) laneLevel[l].setMax(lv[l]);
         driverLevel.setMax(dv);
-        kickAgeS = std::min(kickAgeS + n, 1 << 30);
-        kickAge.store(kickAgeS, std::memory_order_relaxed);
     }
 
-    double sr = 48000.0, filterK = 0.01;
+    double sr = 48000.0, filterK = 0.01, chk = 0.0;
     Settings set;
     Voice voice[2];
-    int activeV = 0, decim = 4, decimPos = 0, kickAgeS = 1 << 30;
+    int activeV = 0, decim = 4, decimPos = 0, tickPos = 0, kickAgeS = 1 << 30;
     bool dirty = true;
     fx::FracDelay pre;
     fx::Glide preGlide;

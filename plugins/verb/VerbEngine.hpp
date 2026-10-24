@@ -34,7 +34,7 @@
 //   90s rack   ~15..10 kHz, 44..24 kHz hold, 16..11-bit fixed-point converters (no dither), a 20..15-bit
 //              fixed-point loop truncated toward zero, so tails end in grit
 //   Truncation toward zero only ever removes energy, so the quantised loops stay stable.
-// Shimmer: two lines of the FDN pass through pitch shifters (two-head, 70 ms windows) inside the loop, crossfaded by
+// Shimmer: two lines of the FDN pass through pitch shifters (correlation-aligned splices) inside the loop, crossfaded by
 //   AMOUNT; each pass shifts again, so the tail climbs (or falls) in steps of PITCH. Shifted samples are convex
 //   combinations of past samples, so the loop gain never exceeds the unshifted one.
 // FREEZE: the input to the tanks fades out and the absorption fades to unity (an endless, lossless tail).
@@ -114,7 +114,7 @@ inline Voice voice(int mode)
         v.wanderMs = 0.0; v.spinMs = 0.35; v.spinMul = 1.0; room(14.0, 10.0, 5.0, 0.7, 0.55, 9000); v.trim = 0.6; break;
     case kGated:
     case kReverse:
-        v.topo = kTopoBurst; v.diffMs = 2.0; v.diffG = 0.6; v.wanderMs = 0.0; room(1, 1, 1, 0.5, 0.0, 10000); v.trim = 1.0; break;
+        v.topo = kTopoBurst; v.diffMs = 2.0; v.diffG = 0.5; v.wanderMs = 0.0; room(1, 1, 1, 0.5, 0.0, 10000); v.trim = 1.0; break;
     case kShimmerMode:
         v.lenMin = 40; v.lenMax = 140; v.apMs = 8; v.apG = 0.55; v.diffMs = 11; v.diffG = 0.72; v.wanderMs = 0.3;
         room(36.0, 24.0, 14.0, 0.75, 0.25, 7000); v.trim = 1.2; break;
@@ -197,7 +197,7 @@ inline double burstEnvelope(int mode, double u, double T, double d)
     double e;
     if (mode == kReverse) e = std::exp(-6.907755 * (1.0 - u) * T / std::max(0.05, d));
     else e = std::exp(-6.907755 * t / std::max(0.05, d));
-    const double taper = std::min(0.010, 0.15 * T), left = T - t;   // a short raised-cosine cut
+    const double taper = std::min(0.006, 0.15 * T), left = T - t;   // a short raised-cosine cut
     if (left < taper) e *= 0.5 - 0.5 * std::cos(kPi * std::max(0.0, left) / taper);
     return e;
 }
@@ -235,8 +235,7 @@ public:
             erLine[ch].setMax((int)(maxEr * sMax * sr) + 8);
             burst[ch].setMax((int)(1.6 * sr) + 8);
             for (auto& a : post[ch]) a.setMax((int)(2.0 * ms) + 8);
-            shifter[ch].prepare(sr, 0.1);
-            shifter[ch].setWindow(0.07);
+            shifter[ch].prepare(sr);
             shimLp[ch].set(std::min(9000.0, 0.2 * sr), sr);
         }
         for (int b = 0; b < 2; ++b)
@@ -512,7 +511,7 @@ private:
         densG = (float)(vc.apG * d);
         plateG1 = (float)(0.7 * (0.4 + 0.6 * d));
         plateG2 = (float)(0.5 * (0.4 + 0.6 * d));
-        postG = (float)(0.5 * (0.4 + 0.6 * d));
+        postG = (float)(0.4 * (0.4 + 0.6 * d));
 
         // burst taps: re-shape when TIME or DECAY moved
         if (vc.topo == kTopoBurst && (std::fabs(envTS - burstShapeT) > 1e-4 * envTS || std::fabs(rtS - burstShapeD) > 1e-4 * rtS || burstShapeMode != curMode))
@@ -796,7 +795,7 @@ private:
     fx::Wander wander[kMaxLines];
     fx::Lfo spin[kMaxLines];
     float modNow[kMaxLines] = {}, modStep[kMaxLines] = {};
-    fx::PitchShifter shifter[2];
+    AlignedPitchShifter shifter[2];
     fx::OnePole shimLp[2];
     // plate
     PlateBranch plate[2];
