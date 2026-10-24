@@ -15,6 +15,7 @@
 #include "../plugins/snap/SnapParams.hpp"
 #include "../plugins/grain/GrainParams.hpp"
 #include "../plugins/gate/GateParams.hpp"
+#include "../plugins/echo/EchoParams.hpp"
 #include <cstdio>
 #include <cstring>
 #include <map>
@@ -95,6 +96,7 @@ int main()
         { "SNAP", snap::params(), snap::presets() },
         { "GRAIN", grain::params(), grain::presets() },
         { "GATE", gate::params(), gate::presets() },
+        { "ECHO", echo::params(), echo::presets() },
     };
     std::map<std::string, int> sections;
     std::vector<std::vector<std::string>> chains;
