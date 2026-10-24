@@ -24,6 +24,7 @@ offset block, Share Tech Mono, one light-neon colour per plugin, light or dark. 
 | **pump SNAP** Transient Shaper | grass | level-independent attack and sustain shaping; detector focus, band split, stereo link, lookahead, soft clip to a ceiling, delta listening |
 | **pump GATE** Sequenced Gate | sky | tempo-locked step gate, up to 32 steps with levels; rate, swing, length, attack/release, smooth, depth; volume or resonant filter; stereo offset; pattern tools |
 | **pump ECHO** Delay | fuchsia | digital, tape, bucket-brigade, pitched (once or climbing per repeat) and reverse modes; tempo sync, ping-pong and wide; age, drive, diffuse, filters in the loop, ducking, freeze, self-oscillation |
+| **pump SPRING** Spring Reverb | gold | dispersive two-, three-, short and long spring tanks with dwell, drip, tension and wobble, plus cheap and lo-fi early-digital springs with grit; a KICK key crashes the tank |
 | **pump VERB** Reverb | periwinkle | twelve voices: studio hall/room/chamber/plate, late-70s and 80s digital halls and plates, a 90s rack, gated, reverse and shimmer; RT60-accurate decay with bass multiplier and damping, early reflections, age colour, duck, freeze |
 | **pump GRAIN** Granular | seafoam | real-time granular: position, size, density, spray, pitch with scale quantize, reverse, five envelopes, tempo-synced grains, feedback, freeze, filter and space; morph pad and motion |
 

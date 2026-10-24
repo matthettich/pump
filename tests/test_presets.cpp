@@ -17,6 +17,7 @@
 #include "../plugins/gate/GateParams.hpp"
 #include "../plugins/echo/EchoParams.hpp"
 #include "../plugins/verb/VerbParams.hpp"
+#include "../plugins/spring/SpringParams.hpp"
 #include <cstdio>
 #include <cstring>
 #include <map>
@@ -99,6 +100,7 @@ int main()
         { "GATE", gate::params(), gate::presets() },
         { "ECHO", echo::params(), echo::presets() },
         { "VERB", verb::params(), verb::presets() },
+        { "SPRING", spring::params(), spring::presets() },
     };
     std::map<std::string, int> sections;
     std::vector<std::vector<std::string>> chains;
