@@ -447,7 +447,7 @@ static NSURL* stateURL()
 
     statusItem = [NSStatusBar.systemStatusBar statusItemWithLength:NSVariableStatusItemLength];
     NSImage* img = [NSImage imageWithSystemSymbolName:@"slider.vertical.3" accessibilityDescription:kAppName];
-    img.template = YES;
+    [img setTemplate:YES];   // (".template" is a C++ keyword in Objective-C++)
     statusItem.button.image = img;
     statusItem.button.toolTip = kAppName;
     NSMenu* menu = [NSMenu new];
