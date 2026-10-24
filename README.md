@@ -31,6 +31,7 @@ offset block, Share Tech Mono, one light-neon colour per plugin, light or dark. 
 | **pump TUNE** Pitch Correction | peach | live correction to a key and scale or to MIDI notes (retune speed, humanize, flex, amount, added vibrato); a graph that captures the voice from the song as notes you drag, snap, straighten and re-vibrato; formant shift that keeps or follows the pitch; up to four harmonies by scale step, semitones or MIDI, with their own formant and humanize |
 | **pump CRUSH** Lo-Fi Degrader | olive | seven sampler voicings (clean, gritty and hi-fi 12-bit, a dark resonant 12-bit, companded 8-bit, toy, phone) with drive, bits, rate and clock jitter; worn media before or after the sampler: wow, flutter, age, hiss, crackle and dropouts; converter pad, spectrum with the Nyquist marked, close-up wave |
 | **pump SWIRL** Modulation | rose | six types with four variants each: stereo ensemble, bucket-brigade chorus (slow, fast, shimmer, vibrato), 2-6 voice rack chorus, tape flanger (classic, through-zero, negative, jet), 4-12 stage phaser and a lamp phaser; rate or host sync, depth, manual, feedback, spread, tone, warmth; live motion, response and stereo screens |
+| **pump STUTTER** Beat Repeat | ice | eight moves (repeat, roll, reverse, tape stop, half speed, shuffle, gate, glitch) from a dice roll on the song grid, from pads (or keys 1-8) or from MIDI notes; grid, gate, pitch, decay and filter per repeat, variation; timeline, pads and a bar clock |
 
 ## Download
 
@@ -73,6 +74,8 @@ Every plugin shares the same mouse and key conventions. Press **?** in a plugin 
 - VOX goes on your vocal: its built-in synth sings along (FOLLOW) or plays the MIDI you send it (in Live: a MIDI track's
   *MIDI To* set to the vocal track, VOX). For your own synth as the carrier, set ROUTE to *Sidechain carrier* and send
   the synth to VOX's sidechain; *Split L/R* takes one stereo track with the carrier left and the voice right
+- STUTTER: hold a pad (or keys 1-8) to play a move; MIDI notes C, C#, D, D#, E, F, F#, G of any octave do the same (in
+  Live: a MIDI track's *MIDI To* set to the track with STUTTER). The small AUTO box on a pad lets the dice pick that move
 - TUNE goes on a solo voice. Live: set KEY and SCALE (or send it MIDI notes) and RETUNE. Graph: turn CAPTURE on and play
   the song once; the voice appears as notes on the host's timeline: drag them (Alt = free), double-click to snap,
   select several to STRAIGHTEN, change VIBRATO, FORMANT or GAIN. The edits are saved with the session

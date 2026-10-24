@@ -10,9 +10,7 @@ finished. Voicings that recall classic hardware get names of their own (no produ
 Effects, in this order:
 - **CRUSH** lo-fi degrader — done (2026-10-24).
 - **SWIRL** chorus / flanger / phaser — done (2026-10-24).
-- **Stutter / beat repeat**: an original take on the tempo-synced repeat family: repeats and rolls with gating and
-  decay, pitch and filter per repeat, slice shuffle and reverse, tape stop and start, buffer glitches; its own
-  sequence of moves rather than a copy of any one unit.
+- **STUTTER** beat repeat — done (2026-10-24).
 - **Amp modelling (NAM)**: loads `.nam` neural amp models with the MIT-licensed NAM core
   (github.com/sdatkinson/NeuralAmpModelerCore; needs Eigen, a submodule on GitLab), plus impulse-response cabinets,
   input gain / gate / tone stack / output.
