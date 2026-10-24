@@ -2,3 +2,6 @@
 	path = dpf
 	url = https://github.com/DISTRHO/DPF.git
 	ignore = dirty
+[submodule "third_party/NeuralAmpModelerCore"]
+	path = third_party/NeuralAmpModelerCore
+	url = https://github.com/sdatkinson/NeuralAmpModelerCore

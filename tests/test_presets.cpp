@@ -23,6 +23,7 @@
 #include "../plugins/crush/CrushParams.hpp"
 #include "../plugins/swirl/SwirlParams.hpp"
 #include "../plugins/stutter/StutterParams.hpp"
+#include "../plugins/amp/AmpParams.hpp"
 #include <cstdio>
 #include <cstring>
 #include <map>
@@ -111,6 +112,7 @@ int main()
         { "CRUSH", crush::params(), crush::presets() },
         { "SWIRL", swirl::params(), swirl::presets() },
         { "STUTTER", stutter::params(), stutter::presets() },
+        { "AMP", amp::params(), amp::presets() },
     };
     std::map<std::string, int> sections;
     std::vector<std::vector<std::string>> chains;

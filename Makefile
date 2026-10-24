@@ -54,6 +54,17 @@ build/tests/wasm_wrapper: tests/wasm_wrapper.cpp wasm/pump_wasm.cpp build/tests/
 	@mkdir -p build/tests
 	$(CXX) $(TEST_FLAGS) -DPUMP_SYNC_KERNELS=1 $< build/tests/pffft.o -o $@
 
+# AMP's test links the NAM core (float samples, Eigen from the NAM submodule; EIGEN_PATH= to use another copy)
+NAM_DIR := third_party/NeuralAmpModelerCore
+EIGEN_PATH ?= $(NAM_DIR)/Dependencies/eigen
+NAM_FLAGS = -DNAM_SAMPLE_FLOAT -I$(NAM_DIR) -I$(EIGEN_PATH) -I$(NAM_DIR)/Dependencies/nlohmann
+build/tests/nam.o: plugins/amp/nam_unity.cpp $(wildcard $(NAM_DIR)/NAM/* $(NAM_DIR)/NAM/*/*)
+	@mkdir -p build/tests
+	$(CXX) -O2 $(NAM_FLAGS) -c $< -o $@
+build/tests/test_amp: tests/test_amp.cpp build/tests/pffft.o build/tests/nam.o $(wildcard common/*.hpp common/dsp/*.hpp tests/*.hpp plugins/amp/*.hpp)
+	@mkdir -p build/tests
+	$(CXX) $(TEST_FLAGS) $(NAM_FLAGS) -Iplugins/amp $< build/tests/pffft.o build/tests/nam.o -lpthread -o $@
+
 tests: $(TESTS) $(SYNC_TESTS) build/tests/wasm_wrapper
 	@for t in $(TESTS) $(SYNC_TESTS) build/tests/wasm_wrapper; do echo "== $$t"; ./$$t || exit 1; done
 

@@ -11,9 +11,7 @@ Effects, in this order:
 - **CRUSH** lo-fi degrader — done (2026-10-24).
 - **SWIRL** chorus / flanger / phaser — done (2026-10-24).
 - **STUTTER** beat repeat — done (2026-10-24).
-- **Amp modelling (NAM)**: loads `.nam` neural amp models with the MIT-licensed NAM core
-  (github.com/sdatkinson/NeuralAmpModelerCore; needs Eigen, a submodule on GitLab), plus impulse-response cabinets,
-  input gain / gate / tone stack / output.
+- **AMP** neural amp models and cabinet IRs — done (2026-10-24).
 
 Instruments (MIDI in, stereo out):
 - **Wavetable** synth.

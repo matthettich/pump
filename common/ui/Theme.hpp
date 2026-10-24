@@ -50,6 +50,7 @@ namespace accents {
     inline Accent crush()  { return { "crush",  hexColor(0xDCEB5A), hexColor(0x4E5700), hexColor(0xB24BE8) }; }   // olive
     inline Accent swirl()  { return { "swirl",  hexColor(0xFF92C2), hexColor(0x8A1450), hexColor(0x22A88E) }; }   // rose
     inline Accent stutter(){ return { "stutter",hexColor(0x8FE8FF), hexColor(0x064A63), hexColor(0xFF6A3D) }; }   // ice
+    inline Accent amp()    { return { "amp",    hexColor(0xF5A672), hexColor(0x6E3410), hexColor(0x2C9FD0) }; }   // copper
 }
 
 struct Theme {
