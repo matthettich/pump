@@ -11,7 +11,7 @@
 //   Wander         smooth random modulation (a new random target every period, cosine-interpolated)
 //   Glide          one-pole exponential smoother for continuously moving controls (delay times, pitch)
 //   Crusher        sample-rate reduction (zero-order hold at a fractional rate) and bit reduction
-//   PitchShifter   two-head delay-line pitch shifter with complementary sin^2 windows (shimmer, pitched echoes)
+//   PitchShifter   delay-line pitch shifter with correlation-aligned head splices (shimmer, pitched echoes)
 //   equalPower     equal-power crossfade gains
 #pragma once
 
@@ -213,37 +213,106 @@ struct Crusher {
 };
 
 // ---- pitch ---------------------------------------------------------------------------------------------------------------------
-// Delay-line pitch shifter: two read heads sweep through a window at the rate that gives the pitch ratio, each faded by
-// a sin^2 window; the windows are complementary (they sum to 1), and a head jumps back only where its gain is 0.
-// Window 20..120 ms: shorter = less smear, more roughness. Mono; use one per channel.
+// Delay-line pitch shifter with one sounding read head that sweeps through the line at the pitch ratio. When the
+// head nears the end of its range it hands over to a second head about 40 ms away, over a sin^2 crossfade of up to
+// 15 ms. The jump is chosen within +-12 ms (periods down to ~42 Hz) to maximise the correlation around the two heads,
+// so they are in phase when they cross: a fixed-window two-head shifter cancels whenever its heads land half a period
+// apart (a 220 Hz tone an octave up came out as 430 + 450 Hz with a hole at 440). Tones stay whole; noisy material
+// still gets a smooth crossfade. The search runs once per splice (coarse, then refined). Mono; one per channel.
 class PitchShifter {
 public:
-    void prepare(double sampleRate, double maxWindowSeconds)
+    void prepare(double sampleRate)
     {
         sr = sampleRate;
-        maxW = std::max(64, (int)(maxWindowSeconds * sr) + 4);
-        d.setMax(maxW + 8);
-        setWindow(std::min(0.06, maxWindowSeconds));
+        J = std::floor(0.040 * sr);
+        S = std::floor(0.012 * sr);
+        Xmax = std::floor(0.015 * sr);
+        Lc = std::max(32, (int)(0.010 * sr));
+        const double k = sr / 48000.0;
+        lagStride = std::max(2, (int)std::lround(2.0 * k));
+        sampleStride = std::max(4, (int)std::lround(4.0 * k));
+        maxD = kMin + 2.0 * S + 2.0 * J + 2.0 * Xmax + Lc + 16.0;
+        line.setMax((int)maxD + 8);
         reset();
     }
-    void reset() { d.clear(); p = 0.0; }
-    void setWindow(double seconds) { W = clampv(seconds * sr, 32.0, (double)maxW); }
-    void setRatio(double r) { ratio = clampv(r, 0.125, 8.0); }
+    void reset()
+    {
+        line.clear();
+        m = 0;
+        d[0] = d[1] = averageDelay();
+        xf = xfLen = 1;
+    }
+    void setRatio(double r) { ratio = clampv(r, 0.25, 4.0); }
+    // the sounding head's mean delay (for timing compensation)
+    double averageDelay() const { return kMin + S + 0.5 * J + std::min(Xmax * std::fabs(ratio - 1.0), 0.5 * J); }
+
+    // while the shifter isn't heard: keep its line current (the heads hold their delays), so it can fade in at once
+    inline void write(float x) { line.push(x); }
+
     inline float process(float x)
     {
-        d.push(x);
-        p += (1.0 - ratio) / W;
-        p -= std::floor(p);
-        double q = p + 0.5; q -= std::floor(q);
-        const double ga = std::sin(kPi * p), gb = std::sin(kPi * q);
-        return (float)(ga * ga * d.read(1.0 + p * W) + gb * gb * d.read(1.0 + q * W));
+        line.push(x);
+        const double dr = ratio - 1.0;   // the delay shrinks by this per sample (grows when negative)
+        d[0] = clampv(d[0] - dr, 1.0, maxD);
+        d[1] = clampv(d[1] - dr, 1.0, maxD);
+        if (xf >= xfLen)
+        {
+            const double a = std::fabs(dr);
+            if (a > 1e-9)
+            {
+                const double xs = std::min(Xmax, 0.5 * J / a);
+                if (dr > 0.0 && d[m] <= kMin + S + xs * a) splice(+1, xs);
+                else if (dr < 0.0 && d[m] >= kMin + S + J + xs * a) splice(-1, xs);
+            }
+        }
+        if (xf >= xfLen) return line.read(d[m]);
+        const double t = (xf + 0.5) / xfLen, s = std::sin(0.5 * kPi * t), gn = s * s;
+        const float y = (float)((1.0 - gn) * line.read(d[1 - m]) + gn * line.read(d[m]));
+        if (++xf >= xfLen) d[1 - m] = d[m];
+        return y;
     }
-    // the average delay the shifter adds (half a window), for latency-aware mixing
-    double averageDelay() const { return 1.0 + 0.5 * W; }
+
 private:
-    FracDelay d;
-    double sr = 48000.0, W = 2048.0, p = 0.0, ratio = 1.0;
-    int maxW = 4096;
+    // start the other head `dir` x (a jump near J) away, in phase with this one, and make it the sounding one
+    void splice(int dir, double xs)
+    {
+        const int base = (int)std::lround(d[m]);
+        auto corr = [&](int lag, int stride) {
+            double ab = 0.0, bb = 1e-12;
+            for (int k = 0; k < Lc; k += stride)
+            {
+                const double av = line.at(base + k), bv = line.at(base + dir * lag + k);
+                ab += av * bv; bb += bv * bv;
+            }
+            return ab / std::sqrt(bb);
+        };
+        const int lo = (int)(J - S), hi = (int)(J + S);
+        int best = (int)J;
+        double bestC = -1e30;
+        for (int lag = lo; lag <= hi; lag += lagStride)
+        {
+            const double c = corr(lag, sampleStride);
+            if (c > bestC) { bestC = c; best = lag; }
+        }
+        const int c0 = best;
+        bestC = -1e30;
+        for (int lag = std::max(lo, c0 - lagStride); lag <= std::min(hi, c0 + lagStride); ++lag)
+        {
+            const double c = corr(lag, 1);
+            if (c > bestC) { bestC = c; best = lag; }
+        }
+        const int n = 1 - m;
+        d[n] = clampv(d[m] + dir * best, 1.0, maxD);
+        m = n;   // the new head sounds; the old one fades out
+        xfLen = std::max(1, (int)xs);
+        xf = 0;
+    }
+
+    static constexpr double kMin = 2.0;
+    FracDelay line;
+    double sr = 48000.0, J = 1920.0, S = 576.0, Xmax = 720.0, ratio = 1.0, maxD = 8192.0;
+    double d[2] = { 1000.0, 1000.0 };
+    int m = 0, xf = 1, xfLen = 1, Lc = 480, lagStride = 2, sampleStride = 4;
 };
 
 inline double semitonesToRatio(double st) { return std::pow(2.0, st / 12.0); }
