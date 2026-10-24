@@ -9,6 +9,7 @@
 #include "dsp/FFT.hpp"
 #include <chrono>
 #include <cstdio>
+#include <cstring>
 #include <random>
 
 using namespace pump;
@@ -373,6 +374,35 @@ static void testFuzz(double sr)
     CHECK(ok && peak < 4.0, "30 random settings / notes / MIDI / block sizes: finite, peak %.2f", peak);
 }
 
+// every factory preset on a sung melody (MIDI presets get a held chord): a usable level, no clipping
+static void testPresets()
+{
+    printf("Factory presets (48 kHz)\n");
+    const double sr = 48000; const size_t n = (size_t)(sr * 3);
+    std::vector<double> f0(n);
+    for (size_t i = 0; i < n; ++i) f0[i] = pitch::midiToHz(57.3 + 2.0 * std::floor(i / (0.5 * sr)) + 0.3 * std::sin(kTwoPi * 5.5 * i / sr));
+    const auto x = sing(sr, f0);
+    const auto& ps = params();
+    for (const Preset& pr : presets())
+    {
+        float v[kNumParams];
+        for (int i = 0; i < kNumParams; ++i) v[i] = ps[(size_t)i].def;
+        for (const auto& pv : pr.values) for (int i = 0; i < kNumParams; ++i) if (std::strcmp(ps[(size_t)i].symbol, pv.symbol) == 0) v[i] = pv.value;
+        Settings s;
+        s.mode = (int)v[kMode]; s.key = (int)v[kKey]; s.scale = (int)v[kScale]; s.midi = (int)v[kMidi]; s.range = (int)v[kRange];
+        s.retuneMs = v[kRetune]; s.amount = v[kAmount]; s.humanize = v[kHumanize]; s.flexCents = v[kFlex]; s.vibDepth = v[kVibDepth]; s.vibRate = v[kVibRate];
+        s.transpose = (int)v[kTranspose]; s.formant = v[kFormant]; s.formantFollow = v[kFormantFollow] >= 0.5f; s.harmMode = (int)v[kHarmMode];
+        for (int h = 0; h < kVoices; ++h) { s.interval[h] = (int)v[kH1 + h]; s.level[h] = v[kH1Level + h]; s.pan[h] = v[kH1Pan + h]; }
+        s.harmFormant = v[kHarmFormant]; s.harmHumanize = v[kHarmHumanize]; s.lead = v[kLead]; s.harmLevelDb = v[kHarmLevel]; s.outDb = v[kOutGain];
+        Engine e; e.setSettings(s); e.prepare(sr, 256);
+        const MidiMsg ev[3] = { { 0, 0x90, 57, 100 }, { 0, 0x90, 60, 100 }, { 0, 0x90, 64, 100 } };
+        std::vector<float> L, R; run(e, x, L, R, 256, ev, 3);
+        double pk = 0; for (size_t i = 0; i < n; ++i) pk = std::max(pk, (double)std::max(std::fabs(L[i]), std::fabs(R[i])));
+        const double lv = 0.5 * (rmsDb(L, (size_t)(0.3 * sr), n) + rmsDb(R, (size_t)(0.3 * sr), n));
+        CHECK(lv > -26.0 && lv < -8.0 && pk < 1.0, "%-24s %6.1f dB RMS, peak %5.1f dBFS", pr.name, lv, 20 * std::log10(pk + 1e-12));
+    }
+}
+
 static void cpu()
 {
     printf("CPU (48 kHz)\n");
@@ -403,6 +433,7 @@ int main()
         testNotes(sr);
         testFuzz(sr);
     }
+    testPresets();
     cpu();
     if (fails) { printf("%d FAILURE(S)\n", fails); return 1; }
     printf("all passed\n");

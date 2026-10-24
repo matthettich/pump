@@ -95,10 +95,10 @@ inline const std::vector<Preset>& presets()
     F("Low voice", { { "range", 2 }, { "retune", 40 }, { "humanize", 40 }, { "scale", 1 } });
     H("Third above", { { "scale", 1 }, { "harm_mode", 1 }, { "h1", 2 }, { "h1_level", 75 }, { "h2_level", 0 }, { "h1_pan", 0 } });
     H("Thirds and fifths", { { "scale", 1 }, { "harm_mode", 1 }, { "h1", 2 }, { "h2", 4 }, { "h1_level", 70 }, { "h2_level", 60 } });
-    H("Wide stack", { { "scale", 1 }, { "harm_mode", 1 }, { "h1", 2 }, { "h2", -3 }, { "h3", 4 }, { "h4", -7 }, { "h1_level", 65 }, { "h2_level", 60 }, { "h3_level", 50 }, { "h4_level", 55 } });
+    H("Wide stack", { { "scale", 1 }, { "harm_mode", 1 }, { "h1", 2 }, { "h2", -3 }, { "h3", 4 }, { "h4", -7 }, { "h1_level", 65 }, { "h2_level", 60 }, { "h3_level", 50 }, { "h4_level", 55 }, { "harm_level", -4 } });
     H("Octave doubles", { { "harm_mode", 2 }, { "h1", 12 }, { "h2", -12 }, { "h1_level", 45 }, { "h2_level", 55 }, { "h1_pan", -30 }, { "h2_pan", 30 } });
     H("Power fifths", { { "harm_mode", 2 }, { "h1", 7 }, { "h2", -5 }, { "h1_level", 60 }, { "h2_level", 50 } });
-    H("Choir from MIDI", { { "midi", 2 }, { "harm_mode", 1 }, { "h1_level", 70 }, { "h2_level", 70 }, { "h3_level", 70 }, { "h4_level", 70 }, { "harm_humanize", 60 } });
+    H("Choir from MIDI", { { "midi", 2 }, { "harm_mode", 1 }, { "h1_level", 70 }, { "h2_level", 70 }, { "h3_level", 70 }, { "h4_level", 70 }, { "harm_humanize", 60 }, { "harm_level", -6 } });
     C("Robot", { { "retune", 0 }, { "humanize", 0 }, { "scale", 13 }, { "formant", -2 } });
     C("Chipmunk", { { "transpose", 12 }, { "formant_follow", 1 } });
     C("Giant", { { "transpose", -7 }, { "formant", -5 } });
