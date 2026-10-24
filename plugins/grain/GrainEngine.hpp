@@ -2,10 +2,11 @@
 //
 // Capture: the input is written continuously into a stereo ring (10.9-11.9 s at the usual rates, allocated in
 // prepare()), with two band-limited copies beside it (6th-order low pass at 0.2 x the rate, kept at 1/2 and 1/4 of
-// the rate). A grain pitched up reads the copy that cannot alias at its ratio: up to +6 semitones the full-band ring,
-// up to +18 the half-rate copy, above that the quarter-rate copy (what a copy loses on top lands above ~14 kHz once
-// shifted up). FREEZE stops writing after a 5 ms fade (so the frozen loop has no step at its seam), the write head
-// stands still, and writing fades back in from silence when it is released.
+// the rate). A grain pitched up reads the copy that keeps it from aliasing at its ratio: up to +7 semitones the
+// full-band ring, up to +17 the half-rate copy, above that the quarter-rate copy (what a copy loses on top lands above
+// ~13 kHz once shifted up). FREEZE fades the writing out over 5 ms and stops the head once a few ms of silence follow
+// the fade, so grains that run into the newest audio fade out with it instead of reaching a step; releasing it starts
+// the head at once and fades the writing back in.
 //
 // Grains: up to 64 voices. Each reads the ring with cubic (Hermite) interpolation, both channels, starting POSITION
 // behind the write head plus SPRAY (0..1 s, always further back), for SIZE ms, at a pitch ratio from PITCH + a random
@@ -243,7 +244,7 @@ public:
         for (int i = 0; i < 8; ++i)
         {
             len[i] = ms[i] * 0.001 * sr;
-            line[i].setMax((int)(len[i] + modDepth) + 8);
+            line[i].setMax((int)(len[i] + 2.0 * modDepth) + 8);
             const double w = kTwoPi * rates[i] / sr;
             rc[i] = std::cos(w); rs[i] = std::sin(w);
             const double ph = kTwoPi * i / 8.0;
@@ -315,9 +316,9 @@ private:
 class Engine {
 public:
     static constexpr int kSub = 32;            // grains are rendered in sub-blocks of this many samples
-    static constexpr int kMargin = 64;         // closest a grain reads behind the moving write head (base samples):
-                                               // a sub-block, the interpolation taps and the copies' filter delay
-    static constexpr int kMarginFrozen = 24;   // ... behind a stopped head (no writes: only the taps need room)
+    static constexpr int kMargin = 128;        // closest a grain starts behind the write head (base samples)
+    static constexpr int kSafe = 64;           // closest it may ever read: a sub-block, the interpolation taps and
+                                               // the band-limited copies' filter delay (a grain fades out before)
     static constexpr int kLogN = 1024;
 
     struct SpawnInfo { int64_t time; float ratio, delay, size; bool reverse; };   // delay, size in samples
@@ -329,7 +330,7 @@ public:
         int n0 = 1 << 12;
         while (n0 < (int)std::ceil(sr * 10.5)) n0 <<= 1;
         for (int k = 0; k < 3; ++k) { ring[k].assign((size_t)(2 * (n0 >> k)), 0.0f); mask[k] = (int64_t)(n0 >> k) - 1; }
-        maxD = (double)(n0 - 128);
+        maxD = (double)n0 - 0.02 * sr - 64.0;   // headroom past the far end for a grain's last fade
         // band-limiting filters of the copies (6th-order Butterworth at 0.2 x the rate each copy is filtered at)
         static const double q[3] = { 0.51763809, 0.70710678, 1.93185165 };
         for (int ch = 0; ch < 2; ++ch)
@@ -362,7 +363,7 @@ public:
     uint64_t spawnCount() const { return spawned; }
     uint64_t droppedCount() const { return dropped; }
     int activeGrains() const { return numActive; }
-    const SpawnInfo& spawnLog(uint64_t i) const { return log[i % kLogN]; }
+    const SpawnInfo& spawnLog(uint64_t i) const { return history[i % kLogN]; }
     int64_t clockSamples() const { return clock; }
 
     void process(float* L, float* R, int n)
@@ -399,6 +400,8 @@ private:
         spaceIdle = true;
         countdown = 0.0; gridLocked = false; lastGrid = INT64_MIN; nextGrid = 0;
         moving = !set.freeze;
+        zeroRun = set.freeze ? kMargin : 0;
+        spDry = 1.0; spWet = 0.0;
         writeG.reset(set.freeze ? 0.0 : 1.0);
         mixS.reset(set.mix * 0.01); outS.reset(dbToGain(set.outDb)); fbS.reset(fbGain(set.feedback));
         spaceS.reset(set.space * 0.01); cutS.reset(std::log2(clampv(set.cutoff, 20.0, 20000.0))); resS.reset(resQ(set.resonance));
@@ -428,10 +431,10 @@ private:
         gridSamples = std::max(16.0, qn * 60.0 / clampv(tr.bpm, 20.0, 999.0) * sr);
         if (set.sync && tr.playing && tr.valid)
         {
-            // the next grid line at or after the block start; never one already started (blocks meet exactly on a
-            // line), unless the transport jumped back (a loop)
+            // the next grid line at or after the block start (within half a sample: hosts round the position);
+            // never one already started, unless the transport jumped back (a loop)
             const double g = tr.ppq / qn;
-            int64_t next = (int64_t)std::ceil(g - 1e-7);
+            int64_t next = (int64_t)std::ceil(g - 0.5 / gridSamples);
             if (gridLocked && next <= lastGrid)
             {
                 if ((double)lastGrid - g > 1.5) lastGrid = next - 1;
@@ -444,7 +447,8 @@ private:
         else
         {
             gridLocked = false;
-            countdown = std::min(countdown, set.sync ? gridSamples : sr / sh.density);
+            // a faster rate takes effect at once (the longest interval it can draw, so spray doesn't bias the rate)
+            countdown = std::min(countdown, set.sync ? gridSamples : sr / sh.density * (1.0 + 0.45 * sh.spray));
         }
         mixS.setTarget(clampv(set.mix * 0.01, 0.0, 1.0));
         outS.setTarget(dbToGain(set.outDb));
@@ -468,16 +472,17 @@ private:
     // When the head starts or stops, grains that would now run into it (or off the far end) fade out in time.
     void recheck(double h)
     {
-        const double margin = h > 0.0 ? kMargin : kMarginFrozen;
         for (int j = 0; j < numActive; ++j)
         {
             Grain& g = voices[active[j]];
-            const double D = (double)(W - 1) - g.pos;
+            const double D = (double)W - g.pos;
             const double rate = h - g.step;
             const int remain = g.len - g.k;
             double v = remain;
-            if (rate < 0.0) v = (D - margin) / -rate;
-            else if (rate > 0.0) v = (maxD - D) / rate;
+            // toward the head: the audio there is the freeze fade (quiet), so a short fade is enough; toward the far
+            // end: at least the shortest envelope edge (the ring has room for it)
+            if (rate < 0.0) v = std::max(1.0, (D - kSafe) / -rate);
+            else if (rate > 0.0) v = std::max((maxD - D) / rate, 0.0015 * sr);
             if (v < remain) g.kd = std::max(g.kd, g.kg / (float)std::max(1.0, v));
         }
     }
@@ -488,7 +493,7 @@ private:
         const double md = sh.motionDepth;
         double sizeMs = clampv(sh.sizeMs * std::exp2(md * mot[1]), 5.0, 1000.0);
         const int len = std::max(16, (int)(sizeMs * 0.001 * sr));
-        double st = set.pitch + sh.pitchSpread * rng.bi() + md * mot[2];
+        double st = set.pitch + sh.pitchSpread * rng.bi() + 0.5 * md * mot[2];
         st = clampv(quantizeSemis(clampv(st, -24.0, 24.0), set.quantize), -24.0, 24.0);
         const double r = std::exp2(st / 12.0);
         const bool rev = rng.uni() < sh.reverse;
@@ -496,18 +501,16 @@ private:
         double d0 = (set.positionMs + md * mot[0] * (0.5 * set.positionMs + 150.0)) * 0.001 * sr + sh.spray * sr * rng.uni();
         // keep the whole grain inside the valid part of the ring: never ahead of the head, never off the far end
         const double rate = h - step;                 // how fast its delay changes
-        const double margin = h > 0.0 ? kMargin : kMarginFrozen;
         if (rate < 0.0) d0 = std::max(d0, -rate * len + kMargin);
         d0 = clampv(d0, (double)kMargin, maxD - std::max(0.0, rate) * len);
-        (void)margin;
         const double pan = sh.stereo * rng.bi();
 
         Grain& g = voices[freeList[--numFree]];
         active[numActive++] = (int)(&g - voices);
-        g.pos = (double)(W - 1) + at * h - d0;
+        g.pos = (double)W + at * h - d0;   // (the input of sample `at` is written at W + at)
         g.step = step;
         g.len = len; g.k = 0; g.skip = at;
-        g.level = r <= 1.4143 ? 0 : (r <= 2.8285 ? 1 : 2);
+        g.level = r <= 1.4984 ? 0 : (r <= 2.6697 ? 1 : 2);   // +7 / +17 semitones
         const EnvSpec es = envSpec(set.envelope, len, sr);
         g.atk = es.atk; g.rel = es.rel; g.body = es.body;
         g.invAtk = 1.0f / (float)es.atk; g.invRel = 1.0f / (float)es.rel; g.invLen = 1.0f / (float)len;
@@ -517,7 +520,8 @@ private:
         const double N = std::min((double)kMaxGrains, rateHz * len / sr);
         const double rBase = std::exp2(clampv(set.pitch, -24.0, 24.0) / 12.0);
         const double c = std::exp(-sh.spray * 1000.0 / 4.0) * std::exp(-sh.pitchSpread / 0.15)
-                       * std::exp(-std::fabs(1.0 - rBase) * (1000.0 / rateHz) / 4.0) * (1.0 - sh.reverse) * (1.0 - sh.reverse);
+                       * std::exp(-std::fabs(1.0 - rBase) * (1000.0 / rateHz) / 4.0) * std::exp(-8.0 * md)
+                       * (1.0 - sh.reverse) * (1.0 - sh.reverse);
         const double gInc = 1.0 / std::sqrt(std::max(1.0, N * es.meanSq));
         const double gCoh = 1.0 / std::max(1.0, N * es.mean);
         const double gain = std::pow(gInc, 1.0 - c) * std::pow(gCoh, c);
@@ -526,7 +530,7 @@ private:
         g.gmR = (float)(kSqrt2 * std::sin(th) * gain);
         g.gs = (float)((1.0 - std::fabs(pan)) * gain);
         g.pitch = (float)st; g.pan = (float)pan;
-        SpawnInfo& si = log[spawned % kLogN];
+        SpawnInfo& si = history[spawned % kLogN];
         si.time = clock + at; si.ratio = (float)r; si.delay = (float)d0; si.size = (float)len; si.reverse = rev;
         ++spawned;
     }
@@ -574,8 +578,9 @@ private:
 
     void processSub(float* L, float* R, int n)
     {
-        // the head stops once the freeze fade has finished, and moves again as soon as freeze is released
-        const bool nowMoving = !(set.freeze && !writeG.isSmoothing() && writeG.current() <= 0.0);
+        // the head stops once the freeze fade has finished and kMargin samples of silence follow it; it moves again
+        // as soon as freeze is released
+        const bool nowMoving = !(set.freeze && !writeG.isSmoothing() && writeG.current() <= 0.0 && zeroRun >= kMargin);
         if (nowMoving != moving) { moving = nowMoving; recheck(moving ? 1.0 : 0.0); }
         const double h = moving ? 1.0 : 0.0;
         for (int m = 0; m < 3; ++m) mot[m] = motion[m].advance(n);
@@ -583,7 +588,7 @@ private:
         // ---- spawn the grains that start in this sub-block
         while (countdown < n)
         {
-            const int at = countdown <= 0.0 ? 0 : (int)std::ceil(countdown - 1e-9);
+            const int at = countdown <= 0.0 ? 0 : (int)std::floor(countdown + 0.5);
             if (at >= n) break;
             spawn(at, h);
             if (gridLocked) { lastGrid = nextGrid++; countdown += gridSamples; }
@@ -646,12 +651,10 @@ private:
         const bool spaceOn = spaceS.current() > 0.0 || spaceS.isSmoothing();
         if (spaceOn)
         {
-            const double a = spaceS.current();
-            space.setAmount(a);
+            space.setAmount(spaceS.current());
             space.renormalise();
-            spDry = std::cos(0.3 * kPi * a); spWet = std::sin(0.45 * kPi * a);
         }
-        else if (!spaceIdle) space.clear();
+        else if (!spaceIdle) { space.clear(); spDry = 1.0; spWet = 0.0; }
         spaceIdle = !spaceOn;
         for (int i = 0; i < n; ++i)
         {
@@ -664,6 +667,7 @@ private:
                 const float fl = fb > 0.0 ? softLimit((float)fbLp[0].lp(fbDc[0].process(gL * fb))) : 0.0f;
                 const float fr = fb > 0.0 ? softLimit((float)fbLp[1].lp(fbDc[1].process(gR * fb))) : 0.0f;
                 write((float)((clampv(inL, -8.0f, 8.0f) + fl) * wgn), (float)((clampv(inR, -8.0f, 8.0f) + fr) * wgn));
+                zeroRun = wgn > 0.0 ? 0 : zeroRun + 1;
             }
             double yl = gL, yr = gR;
             cutS.next(); resS.next();
@@ -680,7 +684,11 @@ private:
             else for (auto& f : fw) f.next();
             if (spaceOn)
             {
-                spaceS.next();
+                if (spaceS.isSmoothing() || spWet == 0.0)
+                {
+                    const double a = spaceS.next();
+                    spDry = std::cos(0.3 * kPi * a); spWet = std::sin(0.45 * kPi * a);
+                }
                 double sl, sr2;
                 space.process(yl, yr, sl, sr2);
                 yl = yl * spDry + sl * spWet;
@@ -718,7 +726,7 @@ private:
         for (int j = 0; j < numActive; ++j)
         {
             const Grain& g = voices[active[j]];
-            const double D = (double)(W - 1) - g.pos;
+            const double D = (double)W - g.pos;
             auto& o = v.g[j];
             o.head = (float)(D * toS);
             o.from = (float)((D + g.step * g.k) * toS);
@@ -766,10 +774,10 @@ private:
     Space space;
     double spDry = 1.0, spWet = 0.0, mixDry = 1.0, mixWet = 0.0;
     LinearSmoother mixS, outS, fbS, spaceS, cutS, resS, writeG, fw[kNumFilterModes];
-    int hop = 64, hopN = 0;
+    int hop = 64, hopN = 0, zeroRun = 0;
     float peak = 0.0f;
     uint64_t spawned = 0, dropped = 0;
-    SpawnInfo log[kLogN] = {};
+    SpawnInfo history[kLogN] = {};
     GrainView view;
 };
 
