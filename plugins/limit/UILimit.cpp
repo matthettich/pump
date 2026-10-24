@@ -322,7 +322,7 @@ protected:
         if (plug)
         {
             const pump::limit::Engine& e = plug->engine;
-            const uint32_t end = e.histST.position();
+            const uint32_t end = e.histST.smoothPosition();
             const int n = (int)std::min<uint32_t>((uint32_t)kHistPts, end);
             for (int k = 0; k < kHistPts; ++k)
             {

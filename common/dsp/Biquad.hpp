@@ -147,8 +147,11 @@ inline bool shapeHasSlope(Shape s)
 }
 
 // Slopes available per shape, in dB/oct.
-static constexpr int kCutSlopes[] = { 6, 12, 18, 24, 30, 36, 48, 72, 96 };
-static constexpr int kNumCutSlopes = 9;
+// BandSpec::slope value for a brickwall cut: an order-16 inverse Chebyshev (flat passband, -90 dB stopband
+// reached about 0.4 octave past the -3 dB point)
+static constexpr int kBrickwallSlope = 1000;
+static constexpr int kCutSlopes[] = { 6, 12, 18, 24, 30, 36, 48, 72, 96, kBrickwallSlope };
+static constexpr int kNumCutSlopes = 10;
 static constexpr int kShelfSlopes[] = { 6, 12, 24 };
 static constexpr int kNumShelfSlopes = 3;
 
@@ -207,6 +210,48 @@ inline void butterworthQs(int order, double* qs, int& nSecond, bool& hasFirst)
 }
 
 // Builds the analog prototype for a band at sample rate sr. Frequencies in rad/sample.
+// Order-16 inverse Chebyshev low-pass prototype, -3 dB at w = 1: pole and zero frequencies and pole Qs per section.
+struct BrickwallProto { double wp[8], qp[8], wz[8]; };
+inline const BrickwallProto& brickwallProto()
+{
+    static const BrickwallProto P = [] {
+        BrickwallProto p {};
+        constexpr int N = 16;
+        constexpr double As = 90.0;   // stopband depth, dB
+        const double eps = 1.0 / std::sqrt(std::pow(10.0, As / 10.0) - 1.0);
+        const double mu = std::asinh(1.0 / eps) / N;
+        for (int k = 0; k < N / 2; ++k)
+        {
+            const double th = kPi * (2.0 * k + 1.0) / (2.0 * N);
+            const std::complex<double> s(-std::sinh(mu) * std::sin(th), std::cosh(mu) * std::cos(th));   // Chebyshev I pole
+            const std::complex<double> pole = 1.0 / s;                                                  // stop edge at w = 1
+            p.wp[k] = std::abs(pole);
+            p.qp[k] = p.wp[k] / (-2.0 * pole.real());
+            p.wz[k] = 1.0 / std::cos(th);
+        }
+        auto mag2 = [&](double w) {
+            double m = 1.0;
+            for (int k = 0; k < N / 2; ++k)
+            {
+                const double nz = (p.wz[k] * p.wz[k] - w * w) * (p.wp[k] * p.wp[k]) / (p.wz[k] * p.wz[k]);
+                const double re = p.wp[k] * p.wp[k] - w * w, im = w * p.wp[k] / p.qp[k];
+                m *= nz * nz / (re * re + im * im);
+            }
+            return m;
+        };
+        double lo = 0.1, hi = 1.0;   // -3 dB point, below the stop edge
+        for (int i = 0; i < 80; ++i) { const double mid = 0.5 * (lo + hi); (mag2(mid) > 0.5 ? lo : hi) = mid; }
+        const double w3 = 0.5 * (lo + hi);
+        for (int k = 0; k < N / 2; ++k) { p.wp[k] /= w3; p.wz[k] /= w3; }
+        // lowest Q first, like the Butterworth cascades (keeps intermediate levels low)
+        for (int i = 1; i < N / 2; ++i)
+            for (int j = i; j > 0 && p.qp[j - 1] > p.qp[j]; --j)
+            { std::swap(p.qp[j - 1], p.qp[j]); std::swap(p.wp[j - 1], p.wp[j]); std::swap(p.wz[j - 1], p.wz[j]); }
+        return p;
+    }();
+    return P;
+}
+
 inline AnalogBand analogPrototype(const BandSpec& b, double sr)
 {
     AnalogBand out;
@@ -259,6 +304,28 @@ inline AnalogBand analogPrototype(const BandSpec& b, double sr)
     case Shape::LowCut:
     case Shape::HighCut: {
         const bool hp = b.shape == Shape::LowCut;
+        if (b.slope >= kBrickwallSlope)
+        {
+            const BrickwallProto& P = brickwallProto();
+            for (int k = 0; k < 8; ++k)
+            {
+                AnalogSection s;
+                if (hp)
+                {   // s -> w0/s: pole and zero frequencies invert, Qs stay; unity gain at high frequencies
+                    const double wp = w0 / P.wp[k], wz = w0 / P.wz[k];
+                    s.n2 = 1.0; s.n1 = 0.0; s.n0 = wz * wz;
+                    s.d2 = 1.0; s.d1 = wp / P.qp[k]; s.d0 = wp * wp;
+                }
+                else
+                {   // unity gain at DC
+                    const double wp = w0 * P.wp[k], wz = w0 * P.wz[k];
+                    s.n2 = (wp * wp) / (wz * wz); s.n1 = 0.0; s.n0 = wp * wp;
+                    s.d2 = 1.0; s.d1 = wp / P.qp[k]; s.d0 = wp * wp;
+                }
+                out.add(s);
+            }
+            break;
+        }
         const int order = clampv(b.slope / 6, 1, 16);
         double qs[8]; int nSecond = 0; bool hasFirst = false;
         butterworthQs(order, qs, nSecond, hasFirst);

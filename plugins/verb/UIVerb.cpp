@@ -216,7 +216,7 @@ protected:
         }
         // the live envelope: a hit on the input (a jump of 9 dB over its recent level) restarts the capture of the
         // wet level, so each hit's tail is drawn over the schematic from the dry hit on
-        const uint32_t end = std::min(plug->inLevel.position(), plug->wetLevel.position());
+        const uint32_t end = std::min(plug->inLevel.smoothPosition(), plug->wetLevel.position());
         const int cap = plug->inLevel.capacity();
         if (end - livePos > (uint32_t)cap) livePos = end - (uint32_t)cap;
         const float hop = (float)(PluginVerb::kLevelHop / sr());

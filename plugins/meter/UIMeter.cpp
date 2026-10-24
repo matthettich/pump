@@ -323,7 +323,7 @@ protected:
         if (plug)
         {
             const uint32_t start = plug->engine.histStart.load();
-            const uint32_t end = plug->engine.histI.position();
+            const uint32_t end = plug->engine.histI.smoothPosition();
             hw = pump::meter::historyWindow(end, start, plug->engine.histI.capacity(), N);
         }
         const int have = hw.count;                 // points shown, from ring index hw.base

@@ -6,7 +6,7 @@ offset block, Share Tech Mono, one light-neon colour per plugin, light or dark. 
 
 | Plugin (name in your host) | Colour | What it does |
 |---|---|---|
-| **pump EQ** Equalizer | aqua | 24 bands; analog-matched curves with no cramping; cuts to 96 dB/oct; dynamic bands; stereo/L/R/mid/side per band; zero latency or linear phase |
+| **pump EQ** Equalizer | aqua | 24 bands; analog-matched curves with no cramping; cuts to 96 dB/oct plus brickwall; dynamic bands; stereo/L/R/mid/side per band; zero latency or linear phase |
 | **pump COMP** Compressor | pink | Clean, Glue, Opto, Punch, Vari-Mu and Pump styles; lookahead; external sidechain with sidechain EQ; stereo link and mid/side |
 | **pump LIMIT** Limiter | lime | true-peak limiter with seven styles, up to 8x oversampling, dither, loudness metering and targets |
 | **pump CALM** Resonance Suppressor | violet | dynamic resonance suppressor with a sensitivity curve, mid/side and delta listening |

@@ -15,6 +15,7 @@
 #include "../dsp/FFT.hpp"
 #include "FontData.hpp"
 #include "Theme.hpp"
+#include "WinFrameClock.hpp"
 #include <cctype>
 #include <chrono>
 #include <filesystem>
@@ -200,11 +201,11 @@ public:
     void update(const pump::ScopeRing* a, const pump::ScopeRing* b, float dt, float speed = 1.0f)
     {
         if (!a) return;
-        a->readLatest(tmp.data(), N);
+        a->readSmooth(tmp.data(), N);
         for (int i = 0; i < N; ++i) in[(size_t)i] = tmp[(size_t)i];
         if (b)
         {
-            b->readLatest(tmp.data(), N);
+            b->readSmooth(tmp.data(), N);
             for (int i = 0; i < N; ++i) in[(size_t)i] = 0.5f * (in[(size_t)i] + tmp[(size_t)i]);
         }
         for (int i = 0; i < N; ++i) in[(size_t)i] *= win[(size_t)i];
@@ -293,6 +294,8 @@ public:
         theme.build(fAccent, fDark);
         buildHeader();
     }
+
+    ~PumpUI() override { pump::winFrameClockStop(fFrameClock); fFrameClock = nullptr; }
 
     // ---- for subclasses ------------------------------------------------------------------------------------------
     Theme theme;
@@ -696,6 +699,13 @@ protected:
     void sampleRateChanged(double newRate) override { onSampleRateChanged(newRate); repaint(); }
     void uiIdle() override
     {
+        // the frame clock drives the window on Windows; the host's idle only stands in when it falls silent
+        if (fFrameClock != nullptr && nowSeconds() - fLastTick < 0.05) return;
+        frame();
+    }
+    static void frameFromClock(void* self) { static_cast<PumpUI*>(self)->frame(); }
+    void frame()
+    {
         const double now = nowSeconds();
         float dt = (float)(now - fLastTick);
         if (dt <= 0.0f || dt > 0.25f) dt = 1.0f / 30.0f;
@@ -718,6 +728,7 @@ protected:
             if (const char* tp = std::getenv("PUMP_TEST_PRESET")) applyPreset(std::atoi(tp));
             if (const char* td = std::getenv("PUMP_TEST_DARK")) if (td[0] == '1') { fDark = true; theme.build(fAccent, true); }
             if (const char* tw = std::getenv("PUMP_TEST_WIDTH")) { const int w = std::atoi(tw); if (w > 200) setSize((uint)w, (uint)(w * H / W)); }
+            fFrameClock = pump::winFrameClockStart(getWindow().getNativeWindowHandle(), &PumpUI::frameFromClock, this);
         }
         drawHeader();
         drawBody();
@@ -1551,6 +1562,7 @@ protected:
     bool fResizing = false;
     float fResizeStartX = 0, fResizeStartW = 0;
     double fLastTick = 0.0;
+    void* fFrameClock = nullptr;   // Windows: the steady frame clock (WinFrameClock.hpp)
     MenuButton* fPresetMenu = nullptr;
     std::vector<PresetRow> fPresetRows;              // what each row of the preset menu is
     std::vector<std::string> fUserPresets;           // your presets (names, sorted), and their files

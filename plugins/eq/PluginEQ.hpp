@@ -72,7 +72,7 @@ protected:
         s.freq = pv((uint32_t)bandParam(b, kFreq));
         s.gainDb = pv((uint32_t)bandParam(b, kGain));
         s.q = pv((uint32_t)bandParam(b, kQ));
-        s.slope = kSlopeValues[pump::clampv((int)pv((uint32_t)bandParam(b, kSlope)), 0, 8)];
+        s.slope = kSlopeValues[pump::clampv((int)pv((uint32_t)bandParam(b, kSlope)), 0, kMaxSlopeIdx)];
         engine.setBand(b, pv((uint32_t)bandParam(b, kUsed)) >= 0.5f, pv((uint32_t)bandParam(b, kBandBypass)) >= 0.5f, s,
                        (int)pv((uint32_t)bandParam(b, kPlace)), pv((uint32_t)bandParam(b, kDyn)) >= 0.5f,
                        pv((uint32_t)bandParam(b, kDynRange)), pv((uint32_t)bandParam(b, kDynThresh)));

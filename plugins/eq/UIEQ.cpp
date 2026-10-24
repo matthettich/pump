@@ -149,7 +149,7 @@ protected:
         s.freq = bandFreq(b);
         s.gainDb = effGain(b) + extraGain;
         s.q = bandQ(b);
-        s.slope = kSlopeValues[pump::clampv((int)value(bandParam(b, kSlope)), 0, 8)];
+        s.slope = kSlopeValues[pump::clampv((int)value(bandParam(b, kSlope)), 0, kMaxSlopeIdx)];
         return s;
     }
 
@@ -241,7 +241,7 @@ protected:
         const int b = freeBand();
         if (b < 0) { setStatus("All 24 bands are in use"); return -1; }
         int shape = 0, slope = 1;
-        float q = 1.0f, g = gainDb;
+        float q = 10.0f, g = gainDb;
         if (f < 30.0) { shape = 3; slope = 3; q = 0.707f; g = 0; }
         else if (f > 17000.0) { shape = 4; slope = 3; q = 0.707f; g = 0; }
         else if (f < 70.0) { shape = 1; q = 0.707f; }
@@ -753,7 +753,7 @@ protected:
         std::string s = "Band " + std::to_string(b + 1) + "  " + kShapeNames[(int)bandShape(b)] + "  " + spec(bandParam(b, kFreq)).format(bandFreq(b));
         if (pump::shapeHasGain(bandShape(b))) s += "  " + spec(bandParam(b, kGain)).format(bandGain(b));
         char q[32]; std::snprintf(q, sizeof q, "  Q %.2f", bandQ(b)); s += q;
-        if (pump::shapeHasSlope(bandShape(b)) && !pump::shapeHasGain(bandShape(b))) s += std::string("  ") + kSlopeNames[pump::clampv((int)value(bandParam(b, kSlope)), 0, 8)];
+        if (pump::shapeHasSlope(bandShape(b)) && !pump::shapeHasGain(bandShape(b))) s += std::string("  ") + kSlopeNames[pump::clampv((int)value(bandParam(b, kSlope)), 0, kMaxSlopeIdx)];
         return s;
     }
 
@@ -781,7 +781,7 @@ protected:
         const pump::Shape sh = bandShape(b);
         int v = (int)value(bandParam(b, kSlope));
         if (sh == pump::Shape::LowShelf || sh == pump::Shape::HighShelf || sh == pump::Shape::TiltShelf) v = v <= 0 ? 1 : (v <= 1 ? 3 : 0);   // 6 -> 12 -> 24 dB/oct
-        else v = (v + 1) % 9;
+        else v = (v + 1) % (kMaxSlopeIdx + 1);
         setParamGesture(bandParam(b, kSlope), (float)v);
         setStatus(bandReadout(b));
     }

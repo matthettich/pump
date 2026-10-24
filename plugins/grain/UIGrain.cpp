@@ -187,7 +187,7 @@ protected:
         span = spanInit ? span + (want - span) * std::min(1.0f, dt * 4.0f) : want;
         spanInit = true;
         const int need = std::min(kWaveN, (int)(span / std::max(1e-4f, hopSec)) + 4);
-        plug->engine.wave.readLatest(wave + kWaveN - need, need);
+        plug->engine.wave.readSmooth(wave + kWaveN - need, need);
         waveCount = need;
         bpm = plug->bpmNow.load(std::memory_order_relaxed);
         playing = plug->playingNow.load(std::memory_order_relaxed);

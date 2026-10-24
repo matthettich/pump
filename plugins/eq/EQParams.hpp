@@ -2,6 +2,7 @@
 #pragma once
 
 #include "PumpParams.hpp"
+#include "dsp/Biquad.hpp"
 #include <deque>
 #include <string>
 #include <vector>
@@ -27,8 +28,9 @@ inline int bandOf(int param) { return param < kNumGlobals ? -1 : (param - kNumGl
 inline int fieldOf(int param) { return param < kNumGlobals ? -1 : (param - kNumGlobals) % kBandStride; }
 
 static const char* const kShapeNames[] = { "Bell", "Low Shelf", "High Shelf", "Low Cut", "High Cut", "Notch", "Band Pass", "Tilt Shelf" };
-static const char* const kSlopeNames[] = { "6 dB/oct", "12 dB/oct", "18 dB/oct", "24 dB/oct", "30 dB/oct", "36 dB/oct", "48 dB/oct", "72 dB/oct", "96 dB/oct" };
-static const int kSlopeValues[] = { 6, 12, 18, 24, 30, 36, 48, 72, 96 };
+static const char* const kSlopeNames[] = { "6 dB/oct", "12 dB/oct", "18 dB/oct", "24 dB/oct", "30 dB/oct", "36 dB/oct", "48 dB/oct", "72 dB/oct", "96 dB/oct", "Brickwall" };
+static const int kSlopeValues[] = { 6, 12, 18, 24, 30, 36, 48, 72, 96, pump::kBrickwallSlope };
+constexpr int kMaxSlopeIdx = 9;
 static const char* const kPlaceNames[] = { "Stereo", "Left", "Right", "Mid", "Side" };
 static const char* const kPhaseNames[] = { "Zero Latency", "Linear Phase" };
 static const char* const kQualityNames[] = { "Low", "Medium", "High", "Max" };
@@ -65,8 +67,8 @@ inline const std::vector<ParamSpec>& params()
         v.push_back({ keep(p + "shape"), keep(N + "Shape"), keep(N + "Shape"), 0, 7, 0, PUnit::None, PScale::Linear, A | kPInteger, kShapeNames, 1 });
         v.push_back({ keep(p + "freq"), keep(N + "Frequency"), keep(N + "Freq"), 10, 30000, 1000, PUnit::Hz, PScale::Log, A, nullptr, 1 });
         v.push_back({ keep(p + "gain"), keep(N + "Gain"), keep(N + "Gain"), -30, 30, 0, PUnit::dB, PScale::Linear, A, nullptr, 1 });
-        v.push_back({ keep(p + "q"), keep(N + "Q"), keep(N + "Q"), 0.025f, 40, 1, PUnit::None, PScale::Log, A, nullptr, 1 });
-        v.push_back({ keep(p + "slope"), keep(N + "Slope"), keep(N + "Slope"), 0, 8, 1, PUnit::None, PScale::Linear, A | kPInteger, kSlopeNames, 1 });
+        v.push_back({ keep(p + "q"), keep(N + "Q"), keep(N + "Q"), 0.025f, 40, 10, PUnit::None, PScale::Log, A, nullptr, 1 });
+        v.push_back({ keep(p + "slope"), keep(N + "Slope"), keep(N + "Slope"), 0, kMaxSlopeIdx, 1, PUnit::None, PScale::Linear, A | kPInteger, kSlopeNames, 1 });
         v.push_back({ keep(p + "place"), keep(N + "Stereo Placement"), keep(N + "Place"), 0, 4, 0, PUnit::None, PScale::Linear, A | kPInteger, kPlaceNames, 1 });
         v.push_back({ keep(p + "dyn"), keep(N + "Dynamic"), keep(N + "Dyn"), 0, 1, 0, PUnit::None, PScale::Linear, A | kPBoolean, nullptr, 1 });
         v.push_back({ keep(p + "dyn_range"), keep(N + "Dynamic Range"), keep(N + "Range"), -30, 30, -6, PUnit::dB, PScale::Linear, A, nullptr, 1 });
@@ -101,7 +103,7 @@ inline const std::vector<Preset>& presets()
     static std::vector<Preset> v;
     if (!v.empty()) return v;
     // shapes: 0 bell 1 lowshelf 2 highshelf 3 lowcut 4 highcut 5 notch 6 bandpass 7 tilt
-    // slope index: 0=6 1=12 2=18 3=24 4=30 5=36 6=48 7=72 8=96
+    // slope index: 0=6 1=12 2=18 3=24 4=30 5=36 6=48 7=72 8=96 9=brickwall
     auto P = [&](const char* name, std::vector<B> bands, std::vector<PresetValue> extra = {}) {
         Preset p { name, {} };
         for (const B& b : bands) addBand(p, b);

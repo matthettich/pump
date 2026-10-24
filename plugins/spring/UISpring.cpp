@@ -117,8 +117,8 @@ protected:
         {
             const float v = plug->engine.laneLevel[l].exchange(0.0f);
             energy[l] = std::max(v, energy[l] * std::exp(-dt / 0.25f));
-            plug->engine.visF[l].readLatest(waveF[l], kWaveN);
-            plug->engine.visB[l].readLatest(waveB[l], kWaveN);
+            plug->engine.visF[l].readSmooth(waveF[l], kWaveN);
+            plug->engine.visB[l].readSmooth(waveB[l], kWaveN);
         }
         const float d = plug->engine.driverLevel.exchange(0.0f);
         drvShow = std::max(d, drvShow * std::exp(-dt / 0.2f));

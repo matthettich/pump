@@ -322,7 +322,7 @@ protected:
         if (plug)
         {
             Engine& e = plug->engine;
-            endIdx = e.histDet.position();
+            endIdx = e.histDet.smoothPosition();
             endIdx -= endIdx % step;
             const uint32_t need = (uint32_t)(cols * step);
             for (int k = 0; k < cols; ++k)

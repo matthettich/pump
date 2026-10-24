@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
@@ -190,12 +191,46 @@ public:
         return end;
     }
     uint32_t position() const { return w.load(std::memory_order_acquire); }
+
+    // UI thread only. Hosts deliver audio in blocks (Renoise often 1024-2048 samples), so the newest sample jumps
+    // forward once per block and a display that always shows the newest data moves in steps. smoothPosition() is a
+    // read end that advances steadily at the measured rate, about one block behind the newest sample (it snaps back
+    // after a pause or a jump); readSmooth() copies the `count` samples ending there.
+    uint32_t smoothPosition() const
+    {
+        const double now = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+        const uint32_t pos = position();
+        if (sT < 0.0) { sT = sLastWT = now; sW = 0.0; sLastW = pos; sPos = 0.0; return pos; }
+        const double dt = clampv(now - sT, 0.0, 0.1);
+        sT = now;
+        if (pos != sLastW)
+        {
+            const double adv = (double)(uint32_t)(pos - sLastW), el = now - sLastWT;
+            sW += adv;
+            if (el > 1e-4 && el < 0.5) { const double r = adv / el; sRate = sRate <= 0.0 ? r : sRate + (r - sRate) * 0.05; }
+            sBlock = std::max(adv, sBlock * 0.995);
+            sLastW = pos; sLastWT = now;
+        }
+        sPos += sRate * dt;
+        const double target = sW - 1.25 * sBlock, behind = sW - sPos;
+        if (behind < 0.0 || behind > 4.0 * sBlock + 0.05 * sRate || sRate <= 0.0) sPos = target;
+        else sPos += (target - sPos) * 0.03;
+        return pos - (uint32_t)std::max(0.0, std::min(sW - sPos, (double)(mask / 2)));
+    }
+    void readSmooth(float* dst, int count) const
+    {
+        const uint32_t end = smoothPosition();
+        for (int k = 0; k < count; ++k) dst[k] = buf[(end - (uint32_t)count + (uint32_t)k) & (uint32_t)mask];
+    }
     float at(uint32_t index) const { return buf[index & (uint32_t)mask]; }
     int capacity() const { return mask + 1; }
 private:
     std::vector<float> buf;
     int mask;
     std::atomic<uint32_t> w { 0 };
+    // smoothPosition()'s state (UI thread)
+    mutable double sT = -1.0, sLastWT = 0.0, sW = 0.0, sPos = 0.0, sRate = 0.0, sBlock = 0.0;
+    mutable uint32_t sLastW = 0;
 };
 
 // A float published from the audio thread to the UI (max-hold until the UI reads it).

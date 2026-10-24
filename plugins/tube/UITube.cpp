@@ -146,8 +146,8 @@ protected:
         const float want = pump::clampv(2.0f * pump::dbToGainF(testDb), 0.02f, 1.0f);
         curveRange += (want - curveRange) * std::min(1.0f, dt * 3.0f);
         // scope: the newest input/output, the output shifted by the latency so the two line up
-        plug->inRing.readLatest(scopeIn, kScopeN);
-        plug->outRing.readLatest(scopeOut, kScopeN);
+        plug->inRing.readSmooth(scopeIn, kScopeN);
+        plug->outRing.readSmooth(scopeOut, kScopeN);
     }
 
     // harmonics of the chain for a sine at the input's level (peak = RMS * sqrt 2; -12 dBFS when silent)

@@ -260,7 +260,7 @@ protected:
         if (plug)
         {
             Engine& e = plug->engine;
-            endIdx = e.histIn.position();
+            endIdx = e.histIn.smoothPosition();
             endIdx -= endIdx % step;
             const uint32_t need = (uint32_t)(cols * step);
             const float decay = 120.0f * step / (float)Engine::kHistRate;   // display release, dB per column
