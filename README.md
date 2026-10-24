@@ -29,6 +29,7 @@ offset block, Share Tech Mono, one light-neon colour per plugin, light or dark. 
 | **pump GRAIN** Granular | seafoam | real-time granular: position, size, density, spray, pitch with scale quantize, reverse, five envelopes, tempo-synced grains, feedback, freeze, filter and space; morph pad and motion |
 | **pump VOX** Vocoder | lilac | four modes: classic band vocoder (8-40 bands), spectral (FFT envelope), talkbox (an LPC model of the mouth, with driver and tube) and convolve; formant shift, carrier flatten, emphasis, sibilance, unvoiced noise, gate, freeze, ensemble; a built-in carrier synth that plays MIDI or follows your voice in key with chords; sidechain, voice-on-sidechain or split L/R routing |
 | **pump TUNE** Pitch Correction | peach | live correction to a key and scale or to MIDI notes (retune speed, humanize, flex, amount, added vibrato); a graph that captures the voice from the song as notes you drag, snap, straighten and re-vibrato; formant shift that keeps or follows the pitch; up to four harmonies by scale step, semitones or MIDI, with their own formant and humanize |
+| **pump CRUSH** Lo-Fi Degrader | olive | seven sampler voicings (clean, gritty and hi-fi 12-bit, a dark resonant 12-bit, companded 8-bit, toy, phone) with drive, bits, rate and clock jitter; worn media before or after the sampler: wow, flutter, age, hiss, crackle and dropouts; converter pad, spectrum with the Nyquist marked, close-up wave |
 
 ## Download
 

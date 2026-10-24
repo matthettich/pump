@@ -2,6 +2,31 @@
 
 Planned work that isn't scheduled yet. Newest decisions at the top of each item.
 
+## More creative effects and instruments — planned (2026-10-24)
+
+Everything joins the suite: same look, same repo, "pump" + one word. Each one is committed and pushed when it is
+finished. Voicings that recall classic hardware get names of their own (no product names anywhere in the repo).
+
+Effects, in this order:
+- **CRUSH** lo-fi degrader — done (2026-10-24).
+- **Modulation**: chorus, flanger and phaser, with voicings after classic stereo ensemble choruses (four fixed
+  modes), bucket-brigade pedals and rack choruses, through-zero tape flanging and 4/6/8/12-stage phasers.
+- **Stutter / beat repeat**: an original take on the tempo-synced repeat family: repeats and rolls with gating and
+  decay, pitch and filter per repeat, slice shuffle and reverse, tape stop and start, buffer glitches; its own
+  sequence of moves rather than a copy of any one unit.
+- **Amp modelling (NAM)**: loads `.nam` neural amp models with the MIT-licensed NAM core
+  (github.com/sdatkinson/NeuralAmpModelerCore; needs Eigen, a submodule on GitLab), plus impulse-response cabinets,
+  input gain / gate / tone stack / output.
+
+Instruments (MIDI in, stereo out):
+- **Wavetable** synth.
+- **Drum machine port**: the voices of an open-sourced hardware drum machine's firmware (keep its licence and
+  notices in THIRD_PARTY_NOTICES.md; voices first, no built-in sequencer).
+- **Additive bass**: the Thunder Plus-style additive bass voice.
+- **Drum synth**: synthesized "new school" kits.
+- **Analog mono / bass synth**: 70s and 80s monosynth voicings; ladder and state-variable filters.
+- **Vintage polysynth**: classic 70s/80s polysynth voicings (five-voice era and later).
+
 ## Instance List — planned, nice to have
 
 One window that shows every pump EQ in the session. Decided 2026-10-23: build it in tiers, after the EQ bug audit;

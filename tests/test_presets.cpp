@@ -20,6 +20,7 @@
 #include "../plugins/spring/SpringParams.hpp"
 #include "../plugins/vox/VoxParams.hpp"
 #include "../plugins/tune/TuneParams.hpp"
+#include "../plugins/crush/CrushParams.hpp"
 #include <cstdio>
 #include <cstring>
 #include <map>
@@ -105,6 +106,7 @@ int main()
         { "SPRING", spring::params(), spring::presets() },
         { "VOX", vox::params(), vox::presets() },
         { "TUNE", tune::params(), tune::presets() },
+        { "CRUSH", crush::params(), crush::presets() },
     };
     std::map<std::string, int> sections;
     std::vector<std::vector<std::string>> chains;
