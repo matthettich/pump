@@ -1,4 +1,4 @@
-// pump DSP: building blocks for the creative effects (TUBE, SNAP, GATE, ECHO, SPRING, VERB, GRAIN, CRUSH). Header-only,
+// pump DSP: building blocks for the creative effects (TUBE, SNAP, GATE, ECHO, SPRING, VERB, GRAIN, CRUSH, SWIRL). Header-only,
 // framework-free (compiles to wasm like the rest of common/dsp).
 //
 //   Rng            xorshift32 noise source (deterministic per seed: tests and renders repeat exactly)

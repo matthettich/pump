@@ -21,6 +21,7 @@
 #include "../plugins/vox/VoxParams.hpp"
 #include "../plugins/tune/TuneParams.hpp"
 #include "../plugins/crush/CrushParams.hpp"
+#include "../plugins/swirl/SwirlParams.hpp"
 #include <cstdio>
 #include <cstring>
 #include <map>
@@ -107,6 +108,7 @@ int main()
         { "VOX", vox::params(), vox::presets() },
         { "TUNE", tune::params(), tune::presets() },
         { "CRUSH", crush::params(), crush::presets() },
+        { "SWIRL", swirl::params(), swirl::presets() },
     };
     std::map<std::string, int> sections;
     std::vector<std::vector<std::string>> chains;

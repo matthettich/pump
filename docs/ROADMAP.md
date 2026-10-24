@@ -9,8 +9,7 @@ finished. Voicings that recall classic hardware get names of their own (no produ
 
 Effects, in this order:
 - **CRUSH** lo-fi degrader — done (2026-10-24).
-- **Modulation**: chorus, flanger and phaser, with voicings after classic stereo ensemble choruses (four fixed
-  modes), bucket-brigade pedals and rack choruses, through-zero tape flanging and 4/6/8/12-stage phasers.
+- **SWIRL** chorus / flanger / phaser — done (2026-10-24).
 - **Stutter / beat repeat**: an original take on the tempo-synced repeat family: repeats and rolls with gating and
   decay, pitch and filter per repeat, slice shuffle and reverse, tape stop and start, buffer glitches; its own
   sequence of moves rather than a copy of any one unit.
