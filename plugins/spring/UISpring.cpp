@@ -94,9 +94,9 @@ protected:
         preDial->r = Rect(678, y0 + 104, 64, Dial::heightFor(Dial::Small));
 
         outPanel = Rect(768, y0, 218, 192);
-        widthRow->r = Rect(780, y0 + 34, 194, 24);
-        mixDial->r = Rect(786, y0 + 86, 72, Dial::heightFor(Dial::Medium));
-        outDial->r = Rect(890, y0 + 86, 72, Dial::heightFor(Dial::Medium));
+        widthRow->r = Rect(780, y0 + 36, 194, 24);
+        mixDial->r = Rect(786, y0 + 80, 72, Dial::heightFor(Dial::Medium));
+        outDial->r = Rect(890, y0 + 80, 72, Dial::heightFor(Dial::Medium));
     }
 
     int model() const { return pump::clampv((int)value(kModel), 0, kNumModels - 1); }
@@ -123,8 +123,6 @@ protected:
         const float d = plug->engine.driverLevel.exchange(0.0f);
         drvShow = std::max(d, drvShow * std::exp(-dt / 0.2f));
         kickAgeS = (float)(plug->engine.kickAge.load(std::memory_order_relaxed) / rate());
-        voiceModel = plug->engine.activeModel.load(std::memory_order_relaxed);
-        voiceLanes = pump::clampv(plug->engine.activeSprings.load(std::memory_order_relaxed), 1, kLanes);
         if (kickHeld) kickPress = 1.0f; else kickPress = std::max(0.0f, kickPress - dt * 8.0f);
     }
 
@@ -160,7 +158,7 @@ protected:
     {
         const Rect& r = tankR;
         screenBox(r);
-        const int m = voiceModel;
+        const int m = model();
         const bool digital = isDigital(m);
         caption(r.x + 10, r.y + 14, digital ? "CONVERTER" : "TANK");
         textAt(r.r() - 10, r.y + 14, kModelNames[m], kLabel, 11.0f, theme.ink2, ALIGN_RIGHT | ALIGN_MIDDLE, 1.0f);
@@ -185,7 +183,7 @@ protected:
         drawTransducer(inT, pump::clampv(shown(drvShow), 0.0f, 1.0f), digital ? "ADC" : "IN", digital);
         drawTransducer(outT, outE, digital ? "DAC" : "OUT", digital);
         // the springs
-        const int n = voiceLanes;
+        const int n = digital ? digitalModel(m).combs : tankModel(m).springs;
         const float x0 = inT.r() + 18.0f, x1 = outT.x - 18.0f;
         const float gap = std::min(78.0f, (pan.h - 46.0f) / std::max(1, n));
         const Design d = design(digital ? kTwoSpring : m, value(kTension), value(kDrip), sr);
@@ -207,7 +205,7 @@ protected:
             // the spring's name and length
             char t[24];
             std::snprintf(t, sizeof t, "%.1f ms", travel * 1000.0);
-            textAt(x1, yc - 19.0f, t, kMono, 9.0f, theme.ink2, ALIGN_RIGHT | ALIGN_MIDDLE);
+            textAt(x1, yc - 22.0f, t, kMono, 9.0f, theme.ink2, ALIGN_RIGHT | ALIGN_MIDDLE);
         }
         restore();
         // the read-out under the pan
@@ -244,7 +242,9 @@ protected:
             fillRect(mg, theme.ink);
             for (float yy = mg.y + 6; yy < mg.b() - 3; yy += 7) line(mg.x - 6, yy, mg.r() + 6, yy + 3, theme.ink2, 1.2f);
         }
-        textAt(b.cx(), b.b() - 13, name, kLabel, 10.0f, theme.neonInk, ALIGN_CENTER | ALIGN_MIDDLE, 1.0f);
+        // the label reads on whatever the fill is (dark ink on a lit transducer, the ink colour on an idle one)
+        const Color lc = theme.dark ? (e > 0.45f ? theme.neonInk : theme.ink) : theme.neonInk;
+        textAt(b.cx(), b.b() - 13, name, kLabel, 10.0f, lc, ALIGN_CENTER | ALIGN_MIDDLE, 1.0f);
     }
     // One spring as a helix seen from the side: the coils bunch and spread with the longitudinal wave and the axis
     // sways with it (back strands thin and faint, front strands in ink). Digital: the same, snapped to a pixel grid.
@@ -253,8 +253,11 @@ protected:
         const int M = std::max(32, coils * 12);
         const float R = 11.0f, len = x1 - x0;
         const float e = pump::clampv(shown(energy[l]), 0.0f, 1.0f);
-        // the glow of a ringing spring
-        fillRect(Rect(x0, yc - R - 5.0f, len, 2.0f * R + 10.0f), withAlpha2(theme.neon, (theme.dark ? 0.10f : 0.18f) + 0.55f * e));
+        // the spring's sleeve lights up as it rings
+        beginPath();
+        roundedRect(x0 - 4.0f, yc - R - 4.0f, len + 8.0f, 2.0f * R + 8.0f, R + 4.0f);
+        fillColor(withAlpha2(theme.neon, (theme.dark ? 0.05f : 0.10f) + (theme.dark ? 0.35f : 0.60f) * e));
+        fill();
         const float grid = digital ? (float)(2.0 + 5.0 * (1.0 - std::min(1.0, (clock - 6000.0) / 26000.0))) : 0.0f;
         auto wave = [&](float u) {
             const float pf = (float)(kWaveN - 1) - u * tS, pb = (float)(kWaveN - 1) - (1.0f - u) * tS;
@@ -274,8 +277,8 @@ protected:
             const float w = (i == 0 || i == pts) ? 0.0f : wave(u);
             const float th = (float)pump::kTwoPi * (float)coils * u;
             const float taper = std::min(1.0f, std::min(u, 1.0f - u) * 30.0f);
-            float x = x0 + (u + 0.010f * w * taper) * len + R * 0.45f * std::cos(th) * taper;
-            float y = yc + R * std::sin(th) * taper + 5.0f * w * taper;
+            float x = x0 + (u + 0.016f * w * taper) * len + R * 0.45f * std::cos(th) * taper;
+            float y = yc + R * (1.0f + 0.25f * std::fabs(w)) * std::sin(th) * taper + 4.0f * w * taper;
             if (grid > 0.0f) { x = std::round(x / grid) * grid; y = std::round(y / grid) * grid; }
             px[i] = x; py[i] = y;
             front[i] = std::cos(th) >= 0.0f;
@@ -303,16 +306,21 @@ protected:
     {
         const Rect& r = chirpR;
         screenBox(r);
-        const int m = voiceModel;
+        const int m = model();
         const bool digital = isDigital(m);
         caption(r.x + 10, r.y + 14, digital ? "ECHOES" : "CHIRPS");
-        textAt(r.r() - 10, r.y + 14, "0 - 200 ms", kMono, 9.5f, theme.ink2, ALIGN_RIGHT | ALIGN_MIDDLE);
-        const Rect p(r.x + 34, r.y + 28, r.w - 44, r.h - 52);
+        textAt(r.r() - 10, r.y + 14, "kHz / ms", kMono, 9.5f, theme.ink2, ALIGN_RIGHT | ALIGN_MIDDLE);
+        const Rect p(r.x + 34, r.y + 28, r.w - 44, r.h - 64);
         const double sr = rate();
         const double fTop = digital ? 16000.0 : 8000.0, tView = 0.200;
         auto X = [&](double t) { return p.x + (float)(t / tView) * p.w; };
         auto Y = [&](double f) { return p.b() - (float)(f / fTop) * p.h; };
-        for (int k = 1; k < 4; ++k) line(X(0.05 * k), p.y, X(0.05 * k), p.b(), theme.grid, 1.0f);
+        for (int k = 0; k <= 4; ++k)
+        {
+            if (k > 0 && k < 4) line(X(0.05 * k), p.y, X(0.05 * k), p.b(), theme.grid, 1.0f);
+            char b[8]; std::snprintf(b, sizeof b, "%d", 50 * k);
+            textAt(X(0.05 * k), p.b() + 8, b, kMono, 8.5f, theme.ink2, (k == 0 ? ALIGN_LEFT : (k == 4 ? ALIGN_RIGHT : ALIGN_CENTER)) | ALIGN_MIDDLE);
+        }
         const double step = digital ? 4000.0 : 2000.0;
         for (double f = step; f < fTop; f += step)
         {
@@ -569,7 +577,6 @@ private:
     float lvl[2] = { -120.0f, -120.0f }, hold[2] = { -120.0f, -120.0f }, holdT[2] = { 0.0f, 0.0f };
     float energy[kLanes] = {}, drvShow = 0.0f, kickAgeS = 100.0f, kickPress = 0.0f;
     float waveF[kLanes][kWaveN] = {}, waveB[kLanes][kWaveN] = {};
-    int voiceModel = kTwoSpring, voiceLanes = 2;
     bool kickHeld = false;
     Drag drag = DragNone;
     float dragX = 0, dragY = 0, dragA = 0, dragB = 0;

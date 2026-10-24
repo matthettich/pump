@@ -22,8 +22,9 @@
 //              then a delay line for the rest of the travel time. Below fc the group delay rises toward fc: every echo
 //              is a rising chirp (the drip), and echo n has travelled 2n + 1 lengths, so the chirps lengthen as the
 //              tail goes on. The output transducer also hears each wave ~1.1 ms early, quietly (the pre-echo ripple
-//              ahead of each chirp); the way back has the loop low-pass at fc (the highest chirps decay faster) and a
-//              20 Hz high-pass (DC); the loop gain sets the T60 (DECAY). Longer springs get a higher allpass
+//              ahead of each chirp); the way back has the loop low-pass at fc (the highest chirps decay faster), a
+//              high shelf above fc / 2 that DECAY sets (the chirping band's round trips are longer: it would outlast
+//              DECAY) and a 20 Hz high-pass (DC); the loop gain sets the T60 (DECAY). Longer springs get a higher allpass
 //              coefficient (longer chirps near fc); the springs' fc are detuned by about 2 %.
 //              The 8 cascades (forward and back of up to 4 springs) run side by side in two 4-float vectors, their
 //              state contiguous in one ring (rows x sections x lanes).
@@ -73,6 +74,8 @@ constexpr double kMaxPreDelay = 0.25;     // s
 constexpr double kMaxStretch = 1.17;      // the longest travel scaling TENSION reaches (x2^0.22), with margin
 constexpr double kMaxWobble = 0.0012;     // WOBBLE 100 %: +-1.2 ms on every travel
 constexpr double kJoltWobble = 0.0006;    // a kick's extra wobble (per unit of strength)
+constexpr double kDecayScale = 1.08;      // the loop low-pass and the chirps take a little energy each trip: made up
+constexpr double kMaxLoopGain = 0.9995;
 
 // ---- the tanks -------------------------------------------------------------------------------------------------------
 struct TankModel {
@@ -266,7 +269,7 @@ public:
         for (auto& s : hfState) s = splat(0.0f);
         for (auto& d : line) d.clear();
         for (auto& d : hfLine) d.clear();
-        for (int l = 0; l < kLanes; ++l) { loopLp[l].reset(); loopHp[l].reset(); hfDamp[l].reset(); }
+        for (int l = 0; l < kLanes; ++l) { loopLp[l].reset(); loopHp[l].reset(); loopShelf[l].reset(); hfDamp[l].reset(); }
         for (int c = 0; c < 2; ++c) { outHp[c].reset(); dripPk[c].reset(); }
         drvHp.reset(); feedLp.reset(); feedHp.reset();
         envF = envS = 0.0;
@@ -299,7 +302,13 @@ public:
             ctl.dA[l].target = std::max(6.0, trS - d.chainDc[l] - 1.0);
             ctl.dB[l].target = std::max(6.0, trS - d.chainDc[l] - lpDelay - 1.0);
             ctl.ripple[l].target = (0.0011 + 0.00023 * l) * sr * ls;
-            const double g = std::pow(10.0, -3.0 * 2.0 * d.travel[l] / t60);
+            // the loop gain for the T60 at the frequencies that carry the tail (a round trip there is ~2 x the
+            // travel); the shortest settings run a little long because the chirps near fc decay faster than the rest
+            const double g = std::min(kMaxLoopGain, std::pow(10.0, -3.0 * 2.0 * d.travel[l] / (t60 * kDecayScale)));
+            // the chirping band takes longer per round trip, so at the same loop gain it would ring on past DECAY: a
+            // high shelf in the loop (above fc / 2) takes it down by what its extra delay costs at this T60
+            const double extra = 2.0 * (d.travelDelay(l, 0.7 * d.fcl[l], sr) - d.travel[l]);
+            ctl.shelf[l].target = clampv(std::pow(10.0, -3.0 * extra / t60), 0.12, 1.0);
             ctl.g[l].target = on ? g : 0.0;
             ctl.norm[l].target = on ? std::pow(1.0 - g * g, 0.25) * norm : 0.0;
             const double hl = d.hfLoop(l);
@@ -364,7 +373,7 @@ public:
         envS += (ah - envS) * (ah > envS ? envSk : envSr);
         const double tr = clampv(envF / (envS + 1e-5) - 1.0, 0.0, 2.0);
         const double drv = ctl.drive.cur * (1.0 + 0.9 * ctl.drip.cur * tr);
-        const double d = ((double)fastTanh((float)(h * drv) + 0.2f) - kTanh02) * ctl.makeup.cur;
+        const double d = ((double)fastTanh((float)(h * drv) + 0.2f) - kDrvBias) * ctl.makeup.cur;
         const double lfIn = feedLp.lowpass(d);
         const double hfIn = feedHp.highpass(d) + 0.5 * kick;
         drvOut = (float)d;
@@ -393,7 +402,9 @@ public:
         for (int l = 0; l < springs; ++l)
         {
             line[l].push(xs[l]);
-            line[l + kLanes].push((float)loopHp[l].hp(loopLp[l].lowpass(xs[l + kLanes])));
+            const double y = loopLp[l].lowpass(xs[l + kLanes]);
+            const double lo = loopShelf[l].lp(y);
+            line[l + kLanes].push((float)loopHp[l].hp(lo + ctl.shelf[l].cur * (y - lo)));
         }
 
         // the high path
@@ -436,7 +447,6 @@ public:
         for (int k = 0; k < 4; ++k) s += v[k];
         return s;
     }
-    int springCount() const { return springs; }
 
     // what the UI draws: the wave entering each spring at both ends (forward lanes, then backward lanes), each
     // spring's output, the driver's output
@@ -445,11 +455,12 @@ public:
 private:
     static constexpr float kRipple = 0.16f, kTapNorm = 1.0f / 1.16f;
     static constexpr double kHfLevel = 0.35, kTankGain = 0.55;
-    static constexpr double kTanh02 = 0.19737532;   // tanh(0.2): silence stays 0 through the asymmetric drive
+    // the asymmetric drive's resting output, taken off again so silence stays exactly 0
+    const double kDrvBias = (double)fastTanh(0.2f);
 
     void designFilters()
     {
-        for (int l = 0; l < kLanes; ++l) loopLp[l].set(ctl.fc[l].cur, 0.70710678, sr);
+        for (int l = 0; l < kLanes; ++l) { loopLp[l].set(ctl.fc[l].cur, 0.70710678, sr); loopShelf[l].set(0.5 * ctl.fc[l].cur, sr); }
         const double fc0 = ctl.fc0.cur;
         feedLp.set(fc0, 0.70710678, sr);
         feedHp.set(fc0, 0.70710678, sr);
@@ -481,14 +492,14 @@ private:
 
     struct Ctl {
         Glided a[kLanes], eta[kLanes], fc[kLanes], dA[kLanes], dB[kLanes], dH[kLanes], ripple[kLanes];
-        Glided g[kLanes], gh[kLanes], norm[kLanes], normH[kLanes], panL[kLanes], panR[kLanes];
+        Glided g[kLanes], gh[kLanes], norm[kLanes], normH[kLanes], panL[kLanes], panR[kLanes], shelf[kLanes];
         Glided fc0, drive, makeup, drip, wobble;
         template <class F> void each(F f)
         {
             for (int l = 0; l < kLanes; ++l)
             {
                 f(a[l]); f(eta[l]); f(fc[l]); f(dA[l]); f(dB[l]); f(dH[l]); f(ripple[l]);
-                f(g[l]); f(gh[l]); f(norm[l]); f(normH[l]); f(panL[l]); f(panR[l]);
+                f(g[l]); f(gh[l]); f(norm[l]); f(normH[l]); f(panL[l]); f(panR[l]); f(shelf[l]);
             }
             f(fc0); f(drive); f(makeup); f(drip); f(wobble);
         }
@@ -513,7 +524,7 @@ private:
     double kickG[kLanes] = { 1, -1, 1, -1 };
     fx::FracDelay line[2 * kLanes], hfLine[kLanes];
     fx::Svf loopLp[kLanes], drvHp, feedLp, feedHp, outHp[2], dripPk[2];
-    fx::OnePole loopHp[kLanes], hfDamp[kLanes];
+    fx::OnePole loopHp[kLanes], loopShelf[kLanes], hfDamp[kLanes];
     fx::Wander wob[2 * kLanes];
     double wobFrom[2 * kLanes] = {}, wobTo[2 * kLanes] = {};
 };
@@ -549,7 +560,6 @@ public:
         primed = false;
     }
     void setModel(int m) { model = m == kLofi ? kLofi : kDigital; primed = false; }
-    int combCount() const { return digitalModel(model).combs; }
 
     void setTargets(const Settings& s)
     {
@@ -583,7 +593,7 @@ public:
         ctl.step(glideK);
         const DigitalModel& dm = digitalModel(model);
         const double fsC = ctl.clock.cur;
-        ratio = fsC / sr;
+        ratio = std::min(1.0, fsC / sr);
         stepQ = std::pow(2.0, 1.0 - ctl.bits.cur);           // one step of a signed word (the converters)
         loopQ = stepQ * std::pow(2.0, -ctl.loopBits.cur);   // the loops keep a few bits more
         for (int i = 0; i < 4; ++i) lenS[i] = clampv(ctl.len[i].cur * fsC, 2.0, (double)comb[i].maxDelay());
@@ -725,10 +735,8 @@ public:
     // combs' outputs (in both)
     pump::ScopeRing visF[kLanes] = { pump::ScopeRing(2048), pump::ScopeRing(2048), pump::ScopeRing(2048), pump::ScopeRing(2048) };
     pump::ScopeRing visB[kLanes] = { pump::ScopeRing(2048), pump::ScopeRing(2048), pump::ScopeRing(2048), pump::ScopeRing(2048) };
-    pump::MeterValue laneLevel[kLanes], driverLevel;   // peaks since the UI last read them
+    pump::MeterValue laneLevel[kLanes], driverLevel;   // peaks since the UI last read them (driver: digital = input)
     std::atomic<int> kickAge { 1 << 30 };              // samples since the last kick
-    std::atomic<int> activeModel { kTwoSpring };       // the model the sounding voice plays
-    std::atomic<int> activeSprings { 2 };              // springs (or combs) in it
 
     void process(float* L, float* R, int n)
     {
@@ -769,7 +777,6 @@ private:
         void setTargets(const Settings& s) { if (isDigital(model)) dig.setTargets(s); else tank.setTargets(s); }
         void tick() { if (isDigital(model)) dig.tick(); else tank.tick(); }
         double finiteCheck() const { return isDigital(model) ? dig.finiteCheck() : tank.finiteCheck(); }
-        int lanes() const { return isDigital(model) ? dig.combCount() : tank.springCount(); }
     };
 
     void clearState()
@@ -786,17 +793,11 @@ private:
         voice[1].busy = false;
         activeV = 0;
         voice[0].start(set.model, set);
-        publishVoice();
         burst.reset();
         tickPos = 0;
         decimPos = 0;
         chk = 0.0;
         dirty = false;
-    }
-    void publishVoice()
-    {
-        activeModel.store(voice[activeV].model, std::memory_order_relaxed);
-        activeSprings.store(voice[activeV].lanes(), std::memory_order_relaxed);
     }
     // TONE: a low-pass at 9 kHz in the middle, 2 kHz fully dark, 20 kHz fully bright (plus the shelf)
     static double toneLpHz(double tone)
@@ -825,7 +826,6 @@ private:
             act.outG.setTarget(0.0);
             other.start(set.model, set);
             activeV = 1 - activeV;
-            publishVoice();
         }
         for (auto& v : voice)
         {
@@ -900,7 +900,7 @@ private:
                 }
             }
             for (int l = 0; l < kLanes; ++l) lv[l] = std::max(lv[l], std::fabs(digital ? a.dig.vis[l] : a.tank.laneOut[l]));
-            if (!digital) dv = std::max(dv, std::fabs(a.tank.drvOut));
+            dv = std::max(dv, digital ? (float)std::fabs(x) : std::fabs(a.tank.drvOut));
         }
         for (const auto& v : voice) if (v.busy) chk += v.finiteCheck();
         for (int l = 0; l < kLanes; ++l) laneLevel[l].setMax(lv[l]);
