@@ -27,6 +27,7 @@ offset block, Share Tech Mono, one light-neon colour per plugin, light or dark. 
 | **pump SPRING** Spring Reverb | gold | dispersive two-, three-, short and long spring tanks with dwell, drip, tension and wobble, plus cheap and lo-fi early-digital springs with grit; a KICK key crashes the tank |
 | **pump VERB** Reverb | periwinkle | twelve voices: studio hall/room/chamber/plate, late-70s and 80s digital halls and plates, a 90s rack, gated, reverse and shimmer; RT60-accurate decay with bass multiplier and damping, early reflections, age colour, duck, freeze |
 | **pump GRAIN** Granular | seafoam | real-time granular: position, size, density, spray, pitch with scale quantize, reverse, five envelopes, tempo-synced grains, feedback, freeze, filter and space; morph pad and motion |
+| **pump VOX** Vocoder | lilac | four modes: classic band vocoder (8-40 bands), spectral (FFT envelope), talkbox (an LPC model of the mouth, with driver and tube) and convolve; formant shift, carrier flatten, emphasis, sibilance, unvoiced noise, gate, freeze, ensemble; a built-in carrier synth that plays MIDI or follows your voice in key with chords; sidechain, voice-on-sidechain or split L/R routing |
 
 ## Download
 
@@ -66,6 +67,9 @@ Every plugin shares the same mouse and key conventions. Press **?** in a plugin 
 - EQ dynamic bands: select a band, turn on DYNAMIC, set RANGE and THRESH; Alt+double-click on the
   curve makes a dynamic band directly
 - COMP has a stereo sidechain input: set SC to External and route a track to the plugin's sidechain in your host
+- VOX goes on your vocal: its built-in synth sings along (FOLLOW) or plays the MIDI you send it (in Live: a MIDI track's
+  *MIDI To* set to the vocal track, VOX). For your own synth as the carrier, set ROUTE to *Sidechain carrier* and send
+  the synth to VOX's sidechain; *Split L/R* takes one stereo track with the carrier left and the voice right
 
 ## Presets
 
