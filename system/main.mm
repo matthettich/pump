@@ -116,6 +116,8 @@ struct Engine
     AudioObjectID output = kAudioObjectUnknown;
     AudioDeviceIOProcID ioProc = nullptr;
     UInt32 outLeft = 0, outRight = 1;     // 0-based output channels (the device's preferred stereo pair)
+    UInt32 tapBuffer = 0;                 // index of the tap's buffer in the aggregate's input list
+    double outputRate = 0.0;              // the output device's rate when we started
 
     // audio-thread buffers (allocated once)
     std::vector<float> inL, inR, outL, outR;
@@ -150,17 +152,22 @@ struct Engine
     {
         Engine* e = static_cast<Engine*>(ctx);
 
-        // silence every output channel first; only the stereo pair is written below
+        // silence every output channel first
         for (UInt32 b = 0; b < outOutput->mNumberBuffers; ++b)
             if (outOutput->mBuffers[b].mData != nullptr)
                 std::memset(outOutput->mBuffers[b].mData, 0, outOutput->mBuffers[b].mDataByteSize);
 
-        UInt32 total = framesIn(outOutput);
+        const UInt32 total = framesIn(outOutput);
         if (total == 0 || e->au == nullptr)
             return noErr;
 
-        // the tap arrives as one stereo mixdown (interleaved or not: readSlice handles both)
-        const UInt32 inFrames = framesIn(inInput);
+        // only the tap's buffer: the output device's own inputs (if it has any) are switched off and never read
+        const AudioBuffer* tapBuf = (e->tapBuffer < inInput->mNumberBuffers) ? &inInput->mBuffers[e->tapBuffer]
+                                                                              : nullptr;
+        const UInt32 tapCh = (tapBuf != nullptr && tapBuf->mData != nullptr) ? tapBuf->mNumberChannels : 0;
+        const UInt32 tapFrames = tapCh > 0 ? tapBuf->mDataByteSize / (sizeof(float) * tapCh) : 0;
+        const UInt32 left = e->outLeft < tapCh ? e->outLeft : 0;
+        const UInt32 right = e->outRight < tapCh ? e->outRight : (tapCh > 1 ? 1 : 0);
 
         // after 2 s of digital silence (EQ tails long gone) skip the EQ entirely: an app holding its output open
         // without playing costs almost nothing. The first non-silent slice brings it straight back.
@@ -170,12 +177,24 @@ struct Engine
         while (done < total)
         {
             const UInt32 n = (total - done) < kMaxFrames ? (total - done) : kMaxFrames;
+            const bool have = tapCh > 0 && tapFrames >= done + n;
 
-            if (inFrames >= done + n)
+            if (have)
             {
-                // read the slice [done, done+n) of the tap
-                readSlice(inInput, 0, e->inL.data(), done, n);
-                readSlice(inInput, 1, e->inR.data(), done, n);
+                const float* src = static_cast<const float*>(tapBuf->mData) + done * tapCh;
+                for (UInt32 i = 0; i < n; ++i)
+                {
+                    e->inL[i] = src[i * tapCh + left];
+                    e->inR[i] = src[i * tapCh + right];
+                }
+                // channels other than the stereo pair (multichannel interfaces) pass through untouched
+                for (UInt32 c = 0; c < tapCh; ++c)
+                    if (c != left && c != right)
+                    {
+                        for (UInt32 i = 0; i < n; ++i)
+                            e->outL[i] = src[i * tapCh + c];
+                        writeChannel(outOutput, c, e->outL.data(), n, done);
+                    }
             }
             else
             {
@@ -191,7 +210,7 @@ struct Engine
             if (silent > dozeAfter)
             {
                 e->sampleTime += n;
-                done += n;   // output already zeroed
+                done += n;   // the pair is already zeroed
                 continue;
             }
 
@@ -210,6 +229,8 @@ struct Engine
                 // pass the input through rather than dropping out
                 std::memcpy(e->outL.data(), e->inL.data(), n * sizeof(float));
                 std::memcpy(e->outR.data(), e->inR.data(), n * sizeof(float));
+                out.list.mBuffers[0].mData = e->outL.data();
+                out.second.mData = e->outR.data();
             }
             e->sampleTime += n;
 
@@ -218,29 +239,6 @@ struct Engine
             done += n;
         }
         return noErr;
-    }
-
-    static void readSlice(const AudioBufferList* list, UInt32 ch, float* dst, UInt32 offset, UInt32 frames)
-    {
-        UInt32 first = 0;
-        for (UInt32 b = 0; b < list->mNumberBuffers; ++b)
-        {
-            const AudioBuffer& buf = list->mBuffers[b];
-            const UInt32 nc = buf.mNumberChannels;
-            if (ch < first + nc && buf.mData != nullptr && nc > 0)
-            {
-                const float* src = static_cast<const float*>(buf.mData) + (ch - first) + offset * nc;
-                for (UInt32 i = 0; i < frames; ++i)
-                    dst[i] = src[i * nc];
-                return;
-            }
-            first += nc;
-        }
-        // a mono tap: duplicate channel 0
-        if (ch == 1 && list->mNumberBuffers > 0 && list->mBuffers[0].mNumberChannels == 1)
-            readSlice(list, 0, dst, offset, frames);
-        else
-            std::memset(dst, 0, frames * sizeof(float));
     }
 
     // --- set the AudioUnit up for a sample rate (main thread, engine stopped)
@@ -310,15 +308,18 @@ struct Engine
 
         Float64 rate = 48000.0;
         getProp(output, kAudioDevicePropertyNominalSampleRate, rate);
+        outputRate = rate;
 
-        // every process except this one, mixed to stereo, muted for as long as the tap exists (also while paused,
-        // so nothing ever plays unprocessed; destroying the tap gives the Mac its own output back)
-        NSMutableArray<NSNumber*>* exclude = [NSMutableArray array];
-        const AudioObjectID self = ownProcessObject();
-        if (self != kAudioObjectUnknown)
-            [exclude addObject:@(self)];
+        // what every process except this one plays to this output (apps playing to other devices, e.g. a DAW on an
+        // audio interface, are left alone), muted for as long as the tap exists (also while paused, so nothing ever
+        // plays unprocessed; destroying the tap gives the Mac its own output back)
+        const AudioObjectID me = ownProcessObject();
+        if (me == kAudioObjectUnknown)
+            return @"Couldn't identify this app to Core Audio.";   // never tap without excluding ourselves
 
-        CATapDescription* desc = [[CATapDescription alloc] initStereoGlobalTapButExcludeProcesses:exclude];
+        CATapDescription* desc = [[CATapDescription alloc] initExcludingProcesses:@[ @(me) ]
+                                                                     andDeviceUID:outputUID
+                                                                       withStream:0];
         desc.name = kAppName;
         desc.privateTap = YES;
         desc.muteBehavior = CATapMuted;
@@ -357,7 +358,6 @@ struct Engine
         {
             AudioObjectPropertyAddress a = addr(kAudioDevicePropertyNominalSampleRate);
             AudioObjectSetPropertyData(aggregate, &a, 0, nullptr, sizeof(aggRate), &aggRate);
-            getProp(aggregate, kAudioDevicePropertyNominalSampleRate, aggRate);
         }
 
         // keep IO slices within what the EQ was told to expect
@@ -367,13 +367,15 @@ struct Engine
             AudioObjectSetPropertyData(aggregate, &a, 0, nullptr, sizeof(frames), &frames);
         }
 
-        if (!prepareUnit(aggRate))
+        if (!prepareUnit(rate))
         {
             stop();
             return @"The EQ could not start.";
         }
 
         err = AudioDeviceCreateIOProcID(aggregate, ioProcFn, this, &ioProc);
+        if (err == noErr)
+            useOnlyTapInput();
         if (err == noErr)
             err = AudioDeviceStart(aggregate, ioProc);
         if (err != noErr)
@@ -386,6 +388,31 @@ struct Engine
         paused = false;
         silentFrames = 0;
         return nil;
+    }
+
+    // The aggregate's inputs are the output device's own inputs (a microphone, an interface's inputs) followed by
+    // the tap. Switch everything but the tap off: reading a real input would ask for microphone access and would put
+    // Bluetooth headphones into their low-quality call mode.
+    void useOnlyTapInput()
+    {
+        AudioObjectPropertyAddress streamsAddr = addr(kAudioDevicePropertyStreams, kAudioObjectPropertyScopeInput);
+        UInt32 size = 0;
+        AudioObjectGetPropertyDataSize(aggregate, &streamsAddr, 0, nullptr, &size);
+        const UInt32 streams = size / sizeof(AudioStreamID);
+        tapBuffer = streams > 0 ? streams - 1 : 0;   // the tap comes last
+
+        AudioObjectPropertyAddress a = addr(kAudioDevicePropertyIOProcStreamUsage, kAudioObjectPropertyScopeInput);
+        size = 0;
+        if (AudioObjectGetPropertyDataSize(aggregate, &a, 0, nullptr, &size) != noErr || size == 0)
+            return;
+        std::vector<uint8_t> mem(size);
+        auto* usage = reinterpret_cast<AudioHardwareIOProcStreamUsage*>(mem.data());
+        usage->mIOProc = reinterpret_cast<void*>(ioProc);
+        if (AudioObjectGetPropertyData(aggregate, &a, 0, nullptr, &size, usage) != noErr)
+            return;
+        for (UInt32 i = 0; i < usage->mNumberStreams; ++i)
+            usage->mStreamIsOn[i] = (i == tapBuffer) ? 1 : 0;
+        AudioObjectSetPropertyData(aggregate, &a, 0, nullptr, size, usage);
     }
 
     // stop the device while nothing plays (the tap stays, still muting), and start it again
@@ -483,6 +510,8 @@ static AudioComponent registerBundledEQ()
 // the app: status item, EQ window, state
 
 @interface AppDelegate : NSObject <NSApplicationDelegate, NSWindowDelegate, NSMenuDelegate>
+- (void)devicesChanged:(BOOL)force;
+- (void)processesChanged;
 @end
 
 @implementation AppDelegate
@@ -496,6 +525,9 @@ static AudioComponent registerBundledEQ()
     BOOL wantOn;
     NSString* stateKey;                  // whose settings the EQ holds: an output's UID, or nil for "every output"
     std::vector<AudioObjectID> watchedProcesses;
+    AudioObjectID listenedOutput;        // the output whose rate / alive flag we listen to
+    AudioObjectID failedOutput;          // last start that failed: don't retry until something changes
+    Float64 failedRate;
 }
 
 static NSUserDefaults* prefs() { return NSUserDefaults.standardUserDefaults; }
@@ -510,7 +542,10 @@ static NSURL* stateDir()
     return dir;
 }
 
-// one file per output (named from its UID), plus eq-state.plist for "same EQ on every output"
+// one file per output (named from its UID), eq-state.plist for "same EQ on every output", and eq-last.plist (the
+// latest settings of any output: where an output seen for the first time starts)
+static NSURL* lastStateURL() { return [stateDir() URLByAppendingPathComponent:@"eq-last.plist"]; }
+
 static NSURL* stateURL(NSString* key)
 {
     if (key == nil)
@@ -544,7 +579,7 @@ static NSString* currentOutputKey()
         engine.prepareUnit(rate);
         stateKey = currentOutputKey();
         if (![self loadStateFor:stateKey] && stateKey != nil)
-            [self loadStateFor:nil];   // a new output starts from the last shared settings, if any
+            [self loadStateFrom:lastStateURL()];   // a new output starts from the latest settings, if any
     }
 
     statusItem = [NSStatusBar.systemStatusBar statusItemWithLength:NSVariableStatusItemLength];
@@ -564,8 +599,11 @@ static NSString* currentOutputKey()
         [self startEngine];
 
     // save now and then; check once a second whether the Mac has gone quiet
-    [NSTimer scheduledTimerWithTimeInterval:30 repeats:YES block:^(NSTimer*) { [self saveState]; }];
-    [NSTimer scheduledTimerWithTimeInterval:1 repeats:YES block:^(NSTimer*) { [self idleCheck]; }];
+    // (common modes: they keep running while the status menu is open)
+    NSTimer* save = [NSTimer timerWithTimeInterval:30 repeats:YES block:^(NSTimer*) { [self saveState]; }];
+    NSTimer* idle = [NSTimer timerWithTimeInterval:1 repeats:YES block:^(NSTimer*) { [self idleCheck]; }];
+    [NSRunLoop.mainRunLoop addTimer:save forMode:NSRunLoopCommonModes];
+    [NSRunLoop.mainRunLoop addTimer:idle forMode:NSRunLoopCommonModes];
 
     if (![prefs() boolForKey:@"launchedBefore"])
     {
@@ -600,8 +638,36 @@ static NSString* currentOutputKey()
 
     problem = engine.start();
     if (problem != nil)
+    {
         NSLog(@"%@: %@", kAppName, problem);
+        failedOutput = defaultOutputDevice();
+        failedRate = 0.0;
+        getProp(failedOutput, kAudioDevicePropertyNominalSampleRate, failedRate);
+    }
+    else
+        failedOutput = kAudioObjectUnknown;
+    [self listenToOutput:engine.running ? engine.output : kAudioObjectUnknown];
     [self updateStatus];
+}
+
+// the output's sample rate and alive flag
+- (void)listenToOutput:(AudioObjectID)dev
+{
+    if (dev == listenedOutput)
+        return;
+    AudioObjectPropertyAddress rate = addr(kAudioDevicePropertyNominalSampleRate);
+    AudioObjectPropertyAddress alive = addr(kAudioDevicePropertyDeviceIsAlive);
+    if (listenedOutput != kAudioObjectUnknown)
+    {
+        AudioObjectRemovePropertyListener(listenedOutput, &rate, deviceListener, (__bridge void*)self);
+        AudioObjectRemovePropertyListener(listenedOutput, &alive, deviceListener, (__bridge void*)self);
+    }
+    listenedOutput = dev;
+    if (dev != kAudioObjectUnknown)
+    {
+        AudioObjectAddPropertyListener(dev, &rate, deviceListener, (__bridge void*)self);
+        AudioObjectAddPropertyListener(dev, &alive, deviceListener, (__bridge void*)self);
+    }
 }
 
 - (void)toggle:(id)sender
@@ -614,6 +680,7 @@ static NSString* currentOutputKey()
     {
         engine.stop();
         problem = nil;
+        [self listenToOutput:kAudioObjectUnknown];
         [self updateStatus];
     }
 }
@@ -632,10 +699,15 @@ static NSString* currentOutputKey()
 }
 
 // restart on a new default output, a sample-rate change or a device going away
-static OSStatus deviceListener(AudioObjectID, UInt32, const AudioObjectPropertyAddress*, void* ctx)
+static OSStatus deviceListener(AudioObjectID obj, UInt32 count, const AudioObjectPropertyAddress* addrs, void* ctx)
 {
     AppDelegate* app = (__bridge AppDelegate*)ctx;
-    dispatch_async(dispatch_get_main_queue(), ^{ [app devicesChanged]; });
+    bool force = false;   // the audio service restarted or the output died: our tap and device are gone
+    for (UInt32 i = 0; i < count; ++i)
+        if (addrs[i].mSelector == kAudioHardwarePropertyServiceRestarted ||
+            addrs[i].mSelector == kAudioDevicePropertyDeviceIsAlive)
+            force = true;
+    dispatch_async(dispatch_get_main_queue(), ^{ [app devicesChanged:force]; });
     return noErr;
 }
 
@@ -645,9 +717,11 @@ static OSStatus deviceListener(AudioObjectID, UInt32, const AudioObjectPropertyA
     AudioObjectAddPropertyListener(kAudioObjectSystemObject, &a, deviceListener, (__bridge void*)self);
     AudioObjectPropertyAddress d = addr(kAudioHardwarePropertyDevices);
     AudioObjectAddPropertyListener(kAudioObjectSystemObject, &d, deviceListener, (__bridge void*)self);
+    AudioObjectPropertyAddress r = addr(kAudioHardwarePropertyServiceRestarted);
+    AudioObjectAddPropertyListener(kAudioObjectSystemObject, &r, deviceListener, (__bridge void*)self);
 }
 
-- (void)devicesChanged
+- (void)devicesChanged:(BOOL)force
 {
     if (!wantOn)
     {
@@ -658,10 +732,15 @@ static OSStatus deviceListener(AudioObjectID, UInt32, const AudioObjectPropertyA
     Float64 rate = 0.0;
     const AudioObjectID out = defaultOutputDevice();
     getProp(out, kAudioDevicePropertyNominalSampleRate, rate);
-    if (engine.running && out == engine.output && rate == engine.auRate)
-        return;
+    if (!force)
+    {
+        if (engine.running && out == engine.output && rate == engine.outputRate)
+            return;
+        if (!engine.running && out == failedOutput && rate == failedRate)
+            return;   // the same setup failed already: wait for something to change
+    }
     [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(startEngine) object:nil];
-    [self performSelector:@selector(startEngine) withObject:nil afterDelay:0.3];
+    [self performSelector:@selector(startEngine) withObject:nil afterDelay:0.3 inModes:@[ NSRunLoopCommonModes ]];
 }
 
 // --- idle: stop the audio device while nothing plays, start it the moment something does
@@ -703,6 +782,8 @@ static OSStatus processListener(AudioObjectID, UInt32, const AudioObjectProperty
 
 - (void)idleCheck
 {
+    if (engine.running && engine.paused && otherProcessPlaying())
+        engine.resume();   // fallback if a resume was missed or failed
     if (!engine.running || engine.paused || engine.auRate <= 0.0)
         return;
     // 5 s of silence and no app with its output running: nothing can start without us hearing about it
@@ -733,6 +814,9 @@ static OSStatus processListener(AudioObjectID, UInt32, const AudioObjectProperty
     [menu addItemWithTitle:info action:nil keyEquivalent:@""].enabled = NO;
     if (problem != nil)
         [menu addItemWithTitle:problem action:nil keyEquivalent:@""].enabled = NO;
+    else if (engine.running && !engine.paused && engine.auRate > 0.0 &&
+             engine.silentFrames.load() > (uint64_t)(10.0 * engine.auRate) && otherProcessPlaying())
+        [menu addItemWithTitle:@"Hearing nothing? Check the permission below" action:nil keyEquivalent:@""].enabled = NO;
 
     NSMenuItem* each = [menu addItemWithTitle:@"Separate EQ for Each Output" action:@selector(togglePerDevice:)
                                 keyEquivalent:@""];
@@ -761,14 +845,11 @@ static OSStatus processListener(AudioObjectID, UInt32, const AudioObjectProperty
     [prefs() setBool:perDevice() forKey:@"oneEQ"];   // flips it
     // the current settings carry over into the new mode when it has none saved yet
     NSString* key = currentOutputKey();
-    if (![self loadStateFor:key])
-        stateKey = key;
-    else
-    {
-        stateKey = key;
+    stateKey = key;
+    if ([self loadStateFor:key])
         [self reloadView];
-    }
-    [self saveState];
+    else
+        [self saveState];
     [self updateStatus];
 }
 
@@ -787,7 +868,7 @@ static OSStatus processListener(AudioObjectID, UInt32, const AudioObjectProperty
 - (void)openPrivacy:(id)sender
 {
     [NSWorkspace.sharedWorkspace openURL:[NSURL URLWithString:
-        @"x-apple.systempreferences:com.apple.preference.security?Privacy_AudioCapture"]];
+        @"x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"]];
 }
 
 // --- the EQ window (the plugin's own view)
@@ -815,9 +896,12 @@ static OSStatus processListener(AudioObjectID, UInt32, const AudioObjectProperty
         [NSNotificationCenter.defaultCenter removeObserver:frameObserver];
     frameObserver = nil;
 
+    // the plugin decides its size: setting the content view would stretch it to the window's old size
+    const NSSize want = view.frame.size;
     eqView = view;
     window.contentView = view;
-    [window setContentSize:view.frame.size];
+    [window setContentSize:want];
+    [view setFrameSize:want];
 
     // the plugin resizes its own view (corner drag, scale): follow it
     view.postsFrameChangedNotifications = YES;
@@ -843,7 +927,7 @@ static OSStatus processListener(AudioObjectID, UInt32, const AudioObjectProperty
 // the view reads its state when it opens: after loading other settings, open a fresh one
 - (void)reloadView
 {
-    if (window == nil)
+    if (window == nil || eqView == nil)
         return;
     NSView* view = [self makeView];
     if (view != nil)
@@ -857,24 +941,29 @@ static OSStatus processListener(AudioObjectID, UInt32, const AudioObjectProperty
 
     if (window == nil)
     {
-        NSView* view = [self makeView];
-        if (view == nil)
-            return;
-
-        window = [[NSWindow alloc] initWithContentRect:view.frame
+        window = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 1040, 660)
                                              styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
                                                        NSWindowStyleMaskMiniaturizable
                                                backing:NSBackingStoreBuffered
                                                  defer:NO];
         window.releasedWhenClosed = NO;
         window.delegate = self;
-        [self attachView:view];
-        [window setFrameAutosaveName:@"SystemEQ"];
         if (![window setFrameUsingName:@"SystemEQ"])
             [window center];
-        [window setContentSize:view.frame.size];
-        [self updateStatus];
+        [window setFrameAutosaveName:@"SystemEQ"];   // remembers where the window was (the size is the plugin's)
     }
+
+    // the view is released while the window is closed (so the plugin's UI isn't redrawing for nobody)
+    if (eqView == nil)
+    {
+        NSView* view = [self makeView];
+        if (view == nil)
+            return;
+        const NSPoint topLeft = NSMakePoint(NSMinX(window.frame), NSMaxY(window.frame));
+        [self attachView:view];
+        [window setFrameTopLeftPoint:topLeft];
+    }
+    [self updateStatus];
 
     [NSApp activateIgnoringOtherApps:YES];
     [window makeKeyAndOrderFront:nil];
@@ -884,6 +973,11 @@ static OSStatus processListener(AudioObjectID, UInt32, const AudioObjectProperty
 - (void)windowWillClose:(NSNotification*)note
 {
     [self saveState];
+    if (frameObserver != nil)
+        [NSNotificationCenter.defaultCenter removeObserver:frameObserver];
+    frameObserver = nil;
+    window.contentView = [[NSView alloc] initWithFrame:NSZeroRect];
+    eqView = nil;
 }
 
 // --- state: the EQ's full state per output (or one for every output), kept between launches
@@ -904,12 +998,17 @@ static OSStatus processListener(AudioObjectID, UInt32, const AudioObjectProperty
     CFRelease(plist);
     [data writeToURL:stateURL(stateKey) atomically:YES];
     if (stateKey != nil)
-        [data writeToURL:stateURL(nil) atomically:YES];   // also the starting point for outputs not seen yet
+        [data writeToURL:lastStateURL() atomically:YES];   // the starting point for outputs not seen yet
 }
 
 - (BOOL)loadStateFor:(NSString*)key
 {
-    NSData* data = [NSData dataWithContentsOfURL:stateURL(key)];
+    return [self loadStateFrom:stateURL(key)];
+}
+
+- (BOOL)loadStateFrom:(NSURL*)url
+{
+    NSData* data = [NSData dataWithContentsOfURL:url];
     if (data == nil)
         return NO;
     id plist = [NSPropertyListSerialization propertyListWithData:data options:0 format:nil error:nil];
