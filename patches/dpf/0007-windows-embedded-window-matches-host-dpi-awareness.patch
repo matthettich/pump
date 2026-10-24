@@ -1,0 +1,52 @@
+diff --git a/dgl/src/WindowPrivateData.cpp b/dgl/src/WindowPrivateData.cpp
+index d7a3c93..acbdc6c 100644
+--- a/dgl/src/WindowPrivateData.cpp
++++ b/dgl/src/WindowPrivateData.cpp
+@@ -312,8 +312,46 @@ bool Window::PrivateData::initPost()
+     if (view == nullptr)
+         return false;
+ 
++   #ifdef DISTRHO_OS_WINDOWS
++    // An embedded window takes its parent's DPI awareness. Created per-monitor aware inside a DPI-unaware (or
++    // system-aware) host window, as happens in a plugin process of a host that leaves scaling to the plugin, the
++    // child is in mixed mode: Windows draws it but routes no (or misplaced) mouse input to it. Matching the parent
++    // avoids that; an unaware parent then scales the window itself, so the plugin must draw at 1x.
++    typedef void* (WINAPI* GetWindowDpiCtx)(HWND);
++    typedef void* (WINAPI* SetThreadDpiCtx)(void*);
++    typedef int (WINAPI* AwarenessFromCtx)(void*);
++    typedef UINT (WINAPI* DpiForWindow)(HWND);
++    const HMODULE user32 = GetModuleHandleW(L"user32.dll");
++    const GetWindowDpiCtx getWindowDpiCtx = user32 ? (GetWindowDpiCtx)GetProcAddress(user32, "GetWindowDpiAwarenessContext") : nullptr;
++    const SetThreadDpiCtx setThreadDpiCtx = user32 ? (SetThreadDpiCtx)GetProcAddress(user32, "SetThreadDpiAwarenessContext") : nullptr;
++    const AwarenessFromCtx awarenessFromCtx = user32 ? (AwarenessFromCtx)GetProcAddress(user32, "GetAwarenessFromDpiAwarenessContext") : nullptr;
++    const DpiForWindow dpiForWindow = user32 ? (DpiForWindow)GetProcAddress(user32, "GetDpiForWindow") : nullptr;
++    void* previousDpiCtx = nullptr;
++    if (isEmbed && getWindowDpiCtx != nullptr && setThreadDpiCtx != nullptr)
++        if (const HWND parent = (HWND)puglGetParent(view))
++            if (void* const parentCtx = getWindowDpiCtx(parent))
++                previousDpiCtx = setThreadDpiCtx(parentCtx);
++   #endif
++
+     // create view now, as a few methods we allow devs to use require it
+-    if (puglRealize(view) != PUGL_SUCCESS)
++    const PuglStatus realized = puglRealize(view);
++
++   #ifdef DISTRHO_OS_WINDOWS
++    if (previousDpiCtx != nullptr)
++        setThreadDpiCtx(previousDpiCtx);
++    if (realized == PUGL_SUCCESS && isEmbed && getWindowDpiCtx != nullptr && awarenessFromCtx != nullptr)
++    {
++        const HWND hwnd = (HWND)puglGetNativeView(view);
++        const int awareness = hwnd ? awarenessFromCtx(getWindowDpiCtx(hwnd)) : -1;
++        if (awareness == 0)   // DPI_AWARENESS_UNAWARE: Windows scales the window, draw at 1x
++            scaleFactor = 1.0;
++        else if (awareness > 0 && dpiForWindow != nullptr && std::getenv("DPF_SCALE_FACTOR") == nullptr)
++            if (const UINT dpi = dpiForWindow(hwnd))
++                scaleFactor = dpi / 96.0;
++    }
++   #endif
++
++    if (realized != PUGL_SUCCESS)
+     {
+         view = nullptr;
+         d_stderr2("Failed to realize Pugl view, everything will fail!");
