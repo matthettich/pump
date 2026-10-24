@@ -116,6 +116,94 @@ int main()
                       kModeNames[mode], peak, tail);
             }
         }
+        // ---- pitch: +12 climbing doubles the frequency every repeat; once: every repeat an octave up
+        {
+            for (int pm : { kShiftClimb, kShiftOnce })
+            {
+                Settings s = wet(kModePitch, 400, 70); s.pitch = 12; s.pitchMode = pm;
+                Engine e; e.setSettings(s); e.prepare(sr, 512);
+                const int T = (int)std::lround(0.4 * sr), burst = (int)(0.2 * sr), edge = (int)(0.05 * sr);
+                std::vector<float> L((size_t)(T * 4 + burst), 0.0f), R;
+                for (int i = 0; i < burst; ++i)
+                {
+                    const double w = std::min(1.0, std::min(i, burst - i) / (0.01 * sr));
+                    L[(size_t)i] = (float)(0.3 * w * std::sin(kTwoPi * 220.0 * i / sr));
+                }
+                R = L;
+                run(e, L, R);
+                double f[3];
+                for (int k = 1; k <= 3; ++k) f[k - 1] = zcFreq(L, (size_t)(k * T + edge), (size_t)(k * T + burst - edge), sr);
+                if (pm == kShiftClimb)
+                    CHECK(std::fabs(f[0] / 440.0 - 1) < 0.02 && std::fabs(f[1] / 880.0 - 1) < 0.02 && std::fabs(f[2] / 1760.0 - 1) < 0.02,
+                          "pitch +12 climb: a 220 Hz burst repeats at %.1f, %.1f, %.1f Hz", f[0], f[1], f[2]);
+                else
+                    CHECK(std::fabs(f[0] / 440.0 - 1) < 0.02 && std::fabs(f[1] / 440.0 - 1) < 0.02 && std::fabs(f[2] / 440.0 - 1) < 0.02,
+                          "pitch +12 once: every repeat at 440 Hz (%.1f, %.1f, %.1f Hz)", f[0], f[1], f[2]);
+            }
+            Settings s = wet(kModePitch, 400, 0); s.pitch = -7; s.fine = -30;
+            Engine e; e.setSettings(s); e.prepare(sr, 512);
+            const int T = (int)std::lround(0.4 * sr), burst = (int)(0.2 * sr), edge = (int)(0.05 * sr);
+            std::vector<float> L((size_t)(2 * T), 0.0f), R;
+            for (int i = 0; i < burst; ++i) L[(size_t)i] = (float)(0.3 * std::min(1.0, std::min(i, burst - i) / (0.01 * sr)) * std::sin(kTwoPi * 440.0 * i / sr));
+            R = L;
+            run(e, L, R);
+            const double f = zcFreq(L, (size_t)(T + edge), (size_t)(T + burst - edge), sr), want = 440.0 * std::pow(2.0, -7.3 / 12.0);
+            CHECK(std::fabs(f / want - 1) < 0.01, "pitch -7 st -30 cents: 440 Hz echoes at %.1f Hz (want %.1f)", f, want);
+        }
+        // ---- reverse: the echo of a rising ramp falls
+        {
+            auto slope = [&](int mode) {
+                Settings s = wet(mode, 300, 0);
+                Engine e; e.setSettings(s); e.prepare(sr, 512);
+                std::vector<float> L((size_t)sr, 0.0f), R;
+                const int len = (int)(0.1 * sr);   // 100 ms from -0.4 to +0.4
+                for (int i = 0; i < len; ++i) L[(size_t)i] = (float)(0.8 * i / len - 0.4);
+                R = L;
+                run(e, L, R);
+                // the echo: the loudest 100 ms of the output; least-squares slope over its middle 60 %
+                size_t a = 0; double en = 0, best = -1;
+                for (size_t i = 0; i < L.size(); ++i)
+                {
+                    en += (double)L[i] * L[i];
+                    if (i >= (size_t)len) en -= (double)L[i - len] * L[i - len];
+                    if (i + 1 >= (size_t)len && en > best) { best = en; a = i + 1 - len; }
+                }
+                const size_t m0 = a + len / 5, m1 = a + 4 * len / 5;
+                double sx = 0, sy = 0, sxx = 0, sxy = 0; const double cnt = (double)(m1 - m0);
+                for (size_t i = m0; i < m1; ++i) { const double x = (double)(i - m0), y = L[i]; sx += x; sy += y; sxx += x * x; sxy += x * y; }
+                const double sl = (cnt * sxy - sx * sy) / (cnt * sxx - sx * sx);
+                return sl * len / 0.8;   // relative to the input ramp's slope
+            };
+            const double sd = slope(kModeDigital), sv = slope(kModeReverse);
+            // (both a little under 1: the loop's 2 Hz DC blocker tilts a 100 ms ramp)
+            CHECK(sd > 0.8 && sv < -0.8, "a rising ramp echoes rising in Digital (slope %+.2f x the input) and falling in Reverse (%+.2f)", sd, sv);
+        }
+        // ---- bucket-brigade: long times are darker (energy above 3 kHz, relative to the whole echo)
+        {
+            auto hfShare = [&](double ms) {
+                Settings s = wet(kModeBbd, ms, 0);
+                Engine e; e.setSettings(s); e.prepare(sr, 512);
+                const int T = (int)(ms * 0.001 * sr), N = sr > 50000.0 ? 16384 : 8192, pad = (int)(0.1 * sr);
+                std::vector<float> L((size_t)(T + N + 2 * pad), 0.0f), R;
+                fx::Rng rng(7);
+                for (int i = 0; i < N + 2 * pad; ++i) L[(size_t)i] = (float)(0.2 * rng.bi());
+                R = L;
+                run(e, L, R);
+                RealFFT fft; fft.setup(N);
+                AlignedBuffer in((size_t)N), out((size_t)N);
+                for (int i = 0; i < N; ++i) in[(size_t)i] = L[(size_t)(T + pad + i)] * (float)(0.5 - 0.5 * std::cos(kTwoPi * i / N));
+                fft.forward(in.data(), out.data());
+                double hi = 0, all = 0;
+                for (int k = 1; k < N / 2; ++k)
+                {
+                    const double p = (double)out[(size_t)(2 * k)] * out[(size_t)(2 * k)] + (double)out[(size_t)(2 * k + 1)] * out[(size_t)(2 * k + 1)];
+                    all += p; if (k * sr / N > 5000.0) hi += p;
+                }
+                return 10 * std::log10(hi / all + 1e-30);
+            };
+            const double s50 = hfShare(50), s300 = hfShare(300), s1500 = hfShare(1500);
+            CHECK(s300 < s50 - 6.0 && s1500 < s300 - 6.0, "bucket-brigade: energy above 5 kHz %.1f dB (50 ms), %.1f dB (300 ms), %.1f dB (1.5 s)", s50, s300, s1500);
+        }
         if (sr != 48000.0) continue;
 
         // ---- ping-pong: the mono input goes left first, then the repeats alternate sides
@@ -171,88 +259,6 @@ int main()
             run(e, L2, R2);
             const size_t k = argmax(L2, 1, L2.size());
             CHECK(std::abs((long)k - 28800) <= 1, "tempo 120 -> 100 BPM: a 1/4 echo moves to %zu samples (want 28800)", k);
-        }
-        // ---- pitch: +12 climbing doubles the frequency every repeat; once: every repeat an octave up
-        {
-            for (int pm : { kShiftClimb, kShiftOnce })
-            {
-                Settings s = wet(kModePitch, 400, 70); s.pitch = 12; s.pitchMode = pm;
-                Engine e; e.setSettings(s); e.prepare(sr, 512);
-                const int T = 19200, burst = 9600;
-                std::vector<float> L((size_t)(T * 4 + 4800), 0.0f), R;
-                for (int i = 0; i < burst; ++i)
-                {
-                    const double w = std::min(1.0, std::min(i, burst - i) / 480.0);
-                    L[(size_t)i] = (float)(0.3 * w * std::sin(kTwoPi * 220.0 * i / sr));
-                }
-                R = L;
-                run(e, L, R);
-                double f[3];
-                for (int k = 1; k <= 3; ++k) f[k - 1] = zcFreq(L, (size_t)(k * T + 2400), (size_t)(k * T + burst - 2400), sr);
-                if (pm == kShiftClimb)
-                    CHECK(std::fabs(f[0] / 440.0 - 1) < 0.02 && std::fabs(f[1] / 880.0 - 1) < 0.02 && std::fabs(f[2] / 1760.0 - 1) < 0.02,
-                          "pitch +12 climb: a 220 Hz burst repeats at %.1f, %.1f, %.1f Hz", f[0], f[1], f[2]);
-                else
-                    CHECK(std::fabs(f[0] / 440.0 - 1) < 0.02 && std::fabs(f[1] / 440.0 - 1) < 0.02 && std::fabs(f[2] / 440.0 - 1) < 0.02,
-                          "pitch +12 once: every repeat at 440 Hz (%.1f, %.1f, %.1f Hz)", f[0], f[1], f[2]);
-            }
-            Settings s = wet(kModePitch, 400, 0); s.pitch = -7; s.fine = -30;
-            Engine e; e.setSettings(s); e.prepare(sr, 512);
-            std::vector<float> L(48000, 0.0f), R;
-            for (int i = 0; i < 9600; ++i) L[(size_t)i] = (float)(0.3 * std::min(1.0, std::min(i, 9600 - i) / 480.0) * std::sin(kTwoPi * 440.0 * i / sr));
-            R = L;
-            run(e, L, R);
-            const double f = zcFreq(L, 19200 + 2400, 19200 + 7200, sr), want = 440.0 * std::pow(2.0, -7.3 / 12.0);
-            CHECK(std::fabs(f / want - 1) < 0.01, "pitch -7 st -30 cents: 440 Hz echoes at %.1f Hz (want %.1f)", f, want);
-        }
-        // ---- reverse: the echo of a rising ramp falls
-        {
-            auto slope = [&](int mode) {
-                Settings s = wet(mode, 300, 0);
-                Engine e; e.setSettings(s); e.prepare(sr, 512);
-                std::vector<float> L(48000, 0.0f), R;
-                const int len = 4800;
-                for (int i = 0; i < len; ++i) L[(size_t)i] = (float)(0.5 * i / len);
-                R = L;
-                run(e, L, R);
-                // the echo: the stretch where it is loudest, least squares slope over its middle
-                size_t a = 0, b = 0;
-                for (size_t i = 1; i < L.size(); ++i) if (std::fabs(L[i]) > 0.05f) { if (!a) a = i; b = i; }
-                const size_t m0 = a + (b - a) / 5, m1 = b - (b - a) / 5;
-                double sx = 0, sy = 0, sxx = 0, sxy = 0; const double cnt = (double)(m1 - m0);
-                for (size_t i = m0; i < m1; ++i) { const double x = (double)i, y = L[i]; sx += x; sy += y; sxx += x * x; sxy += x * y; }
-                const double sl = (cnt * sxy - sx * sy) / (cnt * sxx - sx * sx);
-                printf("    %s: echo from %.1f to %.1f ms\n", kModeNames[mode], 1000.0 * a / sr, 1000.0 * b / sr);
-                return sl * len / 0.5;   // relative to the input ramp's slope
-            };
-            const double sd = slope(kModeDigital), sv = slope(kModeReverse);
-            CHECK(sd > 0.95 && sv < -0.95, "a rising ramp echoes rising in Digital (slope %+.2f x the input) and falling in Reverse (%+.2f)", sd, sv);
-        }
-        // ---- bucket-brigade: long times are darker (energy above 3 kHz, relative to the whole echo)
-        {
-            auto hfShare = [&](double ms) {
-                Settings s = wet(kModeBbd, ms, 0);
-                Engine e; e.setSettings(s); e.prepare(sr, 512);
-                const int T = (int)(ms * 0.001 * sr), N = 8192;
-                std::vector<float> L((size_t)(T + N + 9600), 0.0f), R;
-                fx::Rng rng(7);
-                for (int i = 0; i < N + 9600; ++i) L[(size_t)i] = (float)(0.2 * rng.bi());
-                R = L;
-                run(e, L, R);
-                RealFFT fft; fft.setup(N);
-                AlignedBuffer in((size_t)N), out((size_t)N);
-                for (int i = 0; i < N; ++i) in[(size_t)i] = L[(size_t)(T + 4800 + i)] * (float)(0.5 - 0.5 * std::cos(kTwoPi * i / N));
-                fft.forward(in.data(), out.data());
-                double hi = 0, all = 0;
-                for (int k = 1; k < N / 2; ++k)
-                {
-                    const double p = (double)out[(size_t)(2 * k)] * out[(size_t)(2 * k)] + (double)out[(size_t)(2 * k + 1)] * out[(size_t)(2 * k + 1)];
-                    all += p; if (k * sr / N > 3000.0) hi += p;
-                }
-                return 10 * std::log10(hi / all + 1e-30);
-            };
-            const double s50 = hfShare(50), s300 = hfShare(300), s1500 = hfShare(1500);
-            CHECK(s300 < s50 - 6.0 && s1500 < s300 - 6.0, "bucket-brigade: energy above 3 kHz %.1f dB (50 ms), %.1f dB (300 ms), %.1f dB (1.5 s)", s50, s300, s1500);
         }
         // ---- tape wow and flutter: the echo's pitch wanders (Digital: steady)
         {

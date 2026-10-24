@@ -38,11 +38,11 @@ inline const std::vector<ParamSpec>& params()
     // every control glides or crossfades (modes, routings and pitch modes crossfade; times move by crossfading read
     // heads or by a tape-like glide), so all of them stay automatable
     v.push_back({ "mode", "Mode", "Mode", 0, kNumModes - 1, kModeDigital, PUnit::None, PScale::Linear, A | kPInteger, kModeNames, 1 });
-    v.push_back({ "time_l", "Time L", "Time L", kTimeMinMs, kTimeMaxMs, 375, PUnit::ms, PScale::Log, A, nullptr, 1 });
-    v.push_back({ "time_r", "Time R", "Time R", kTimeMinMs, kTimeMaxMs, 500, PUnit::ms, PScale::Log, A, nullptr, 1 });
+    v.push_back({ "time_l", "Time L", "Time L", kTimeMinMs, kTimeMaxMs, 500, PUnit::ms, PScale::Log, A, nullptr, 1 });
+    v.push_back({ "time_r", "Time R", "Time R", kTimeMinMs, kTimeMaxMs, 750, PUnit::ms, PScale::Log, A, nullptr, 1 });
     v.push_back({ "sync", "Sync", "Sync", 0, 1, 1, PUnit::None, PScale::Linear, A | kPBoolean, nullptr, 1 });
-    v.push_back({ "note_l", "Note L", "Note L", 0, kNumNotes - 1, kNote8D, PUnit::None, PScale::Linear, A | kPInteger, kNoteNames, 1 });
-    v.push_back({ "note_r", "Note R", "Note R", 0, kNumNotes - 1, kNote4, PUnit::None, PScale::Linear, A | kPInteger, kNoteNames, 1 });
+    v.push_back({ "note_l", "Note L", "Note L", 0, kNumNotes - 1, kNote4, PUnit::None, PScale::Linear, A | kPInteger, kNoteNames, 1 });
+    v.push_back({ "note_r", "Note R", "Note R", 0, kNumNotes - 1, kNote4D, PUnit::None, PScale::Linear, A | kPInteger, kNoteNames, 1 });
     v.push_back({ "link", "Link", "Link", 0, 1, 0, PUnit::None, PScale::Linear, A | kPBoolean, nullptr, 1 });
     v.push_back({ "feedback", "Feedback", "Feedback", 0, 120, 35, PUnit::Percent, PScale::Linear, A, nullptr, 1 });
     v.push_back({ "stereo", "Stereo Mode", "Stereo", 0, kNumRoutes - 1, kRouteStereo, PUnit::None, PScale::Linear, A | kPInteger, kRouteNames, 1 });

@@ -5,7 +5,8 @@
 //
 // Signal path (the tank is mono in, stereo out, like the hardware):
 //   (L + R) / 2 -> pre-delay (0..250 ms, glided) -> the voice playing the current model -> low cut (12 dB/oct) ->
-//   tone (a low-pass from 2 kHz to open, plus up to +6 dB of high shelf on the bright side) -> width (M/S) ->
+//   tone (a low-pass: 2 kHz dark, 9 kHz in the middle, 20 kHz bright, plus up to +6 dB of high shelf above 2.5 kHz on
+//   the bright side) -> width (M/S) ->
 //   mix (the dry stays at full level up to 50 %, the wet reaches full level at 50 %) -> output
 // Two voices: a model change starts the new model in the idle voice while the old one stops taking input (5 ms) and
 // rings out under a 150 ms fade (a change that arrives during that fade waits for it).
@@ -21,23 +22,25 @@
 //              then a delay line for the rest of the travel time. Below fc the group delay rises toward fc: every echo
 //              is a rising chirp (the drip), and echo n has travelled 2n + 1 lengths, so the chirps lengthen as the
 //              tail goes on. The output transducer also picks up a small pre-echo (the ripple ahead of each chirp);
-//              the way back has the loop low-pass at fc and a 70 Hz high-pass (lows and highs decay faster); the loop
+//              the way back has the loop low-pass at fc (the highest chirps decay faster); the loop
 //              gain sets the T60 (DECAY). Longer springs disperse more; the springs' fc are detuned by about 2 %.
-//   wobble     each travel's delay drifts with slow random motion (WOBBLE: up to +-0.5 ms, a tank being nudged)
+//              (The loop's high-pass is at 20 Hz: it only keeps DC out; the transducers do the rest.)
+//   wobble     each travel's delay drifts with slow random motion (WOBBLE: up to +-1.2 ms, a tank being nudged)
 //   high path  above fc: a loop of 0.62 x the round trip through 32 plain allpasses with a negative coefficient (the
 //              weak, splashy chirps in which high frequencies arrive first), decaying 2.5x faster
 //   transducer 70 Hz high-pass and a peak in the chirp band (DRIP: up to +7 dB at fc / 2); springs panned L, R (and C)
 //   TENSION    tight..loose: fc 5.3..3.6 kHz, travel times x0.86..x1.16, less..more dispersion
 //   KICK       a shaped burst (a noise crack and a low thump, different every time, hitting each spring with its own
-//              sign) into the springs, and a jolt to the wobble that settles over a second: the tank crashes
+//              sign) into the springs, and a jolt (up to ~0.9 ms of extra, faster wobble) that settles over a second
 // Digital models (Digital, Lo-fi digital): everything runs at one crude converter clock (GRIT 0..100: Digital 32 ->
 // 8 kHz and 16 -> 8 bits, Lo-fi 20 -> 6 kHz and 12 -> 6 bits). The input is sampled at that clock with no anti-
 // aliasing filter (aliasing: a sine comes out with non-harmonic partners) and clips hard at full scale (DWELL drives
-// it); two short allpasses, a token chirp (6 allpasses stretched to a quarter of the clock), 4 (Lo-fi: 3) short
-// parallel combs whose loops truncate to the word length (the tails grind down and stop), a ringing flutter comb whose
-// tap moves in whole clock periods (WOBBLE: zipper noise) and two boxy resonances, then a quantised output held
-// between clock ticks through a crude one-pole reconstruction filter. TENSION scales the combs, DRIP the flutter and
-// the chirp, the clock glides (sweeping GRIT bends the tail's pitch instead of clicking).
+// it); two short allpasses, a token chirp (6 allpasses on a 2-tick delay: a few short chirps at a quarter of the
+// clock), 4 (Lo-fi: 3) short parallel combs whose loops truncate toward zero (8 bits finer than the converters at
+// GRIT 0, 3 at 100: the tails grind down and stop), a ringing flutter comb whose tap moves in whole clock periods
+// (WOBBLE: zipper noise) and two boxy resonances, then a quantised output held between clock ticks through a crude
+// one-pole reconstruction filter. TENSION scales the combs, DRIP the flutter and the chirp; the clock glides (sweeping
+// GRIT bends the tail's pitch instead of clicking).
 //
 // Everything is smoothed: per-sample ramps for mix, output, width and the voice fades; 16-sample control ticks with
 // ~50 ms glides for the tank (coefficients, delay times, gains), the converter clock and the filters. No latency.
@@ -63,6 +66,8 @@ constexpr double kHfCoef = -0.55;         // the high path's allpass coefficient
 constexpr double kHfRatio = 0.62;         // high path loop time / spring round trip
 constexpr double kMaxPreDelay = 0.25;     // s
 constexpr double kMaxStretch = 1.17;      // the longest travel scaling TENSION reaches (x2^0.22), with margin
+constexpr double kMaxWobble = 0.0012;     // WOBBLE 100 %: +-1.2 ms on every travel
+constexpr double kJoltWobble = 0.0006;    // a kick's extra wobble (per unit of strength)
 
 // ---- the tanks -------------------------------------------------------------------------------------------------------
 struct TankModel {
@@ -236,10 +241,12 @@ public:
         vprev.assign((size_t)(kSections * kW), 0.0f);
         hfState.assign((size_t)(kHfSections * kLanes), 0.0f);
         const double longest = 0.0311 * kMaxStretch;
-        for (auto& d : line) d.setMax((int)(sr * longest) + 64);
+        for (auto& d : line) d.setMax((int)(sr * (longest + kMaxWobble + kJoltWobble * 1.5)) + 64);
         for (auto& d : hfLine) d.setMax((int)(sr * kHfRatio * 2.0 * longest) + 64);
         glideK = 1.0 - std::exp(-kTick / (0.05 * sr));
+        joltDecay = std::exp(-kTick / (0.6 * sr));
         for (int k = 0; k < kW; ++k) wob[k].setup(sr / kTick, 0x2F00u + 977u * (uint32_t)k);
+        for (int l = 0; l < kLanes; ++l) { loopHp[l].set(20.0, sr); hfDamp[l].set(std::min(16000.0, 0.45 * sr), sr); }
         envFk = 1.0 - std::exp(-1.0 / (0.001 * sr)); envFr = 1.0 - std::exp(-1.0 / (0.015 * sr));
         envSk = 1.0 - std::exp(-1.0 / (0.030 * sr)); envSr = 1.0 - std::exp(-1.0 / (0.150 * sr));
         reset();
@@ -298,9 +305,9 @@ public:
         ctl.fc0.target = d.fc;
         const double drv = dbToGain(-10.0 + 0.32 * clampv(s.dwell, 0.0, 100.0));
         ctl.drive.target = drv;
-        ctl.makeup.target = std::pow(drv, -0.55);
+        ctl.makeup.target = std::pow(drv, -0.7);
         ctl.drip.target = clampv(s.drip, 0.0, 100.0) * 0.01;
-        ctl.wobble.target = clampv(s.wobble, 0.0, 100.0) * 0.01 * 0.0005 * sr;
+        ctl.wobble.target = clampv(s.wobble, 0.0, 100.0) * 0.01 * kMaxWobble * sr;
         if (!primed) { ctl.snap(); primed = true; filtersSet = false; }
     }
 
@@ -315,12 +322,7 @@ public:
         }
         if (moved > 1e-7 || !filtersSet)
         {
-            for (int l = 0; l < kLanes; ++l)
-            {
-                loopLp[l].set(ctl.fc[l].cur, 0.70710678, sr);
-                loopHp[l].set(70.0, sr);
-                hfDamp[l].set(std::min(9000.0, 0.45 * sr), sr);
-            }
+            for (int l = 0; l < kLanes; ++l) loopLp[l].set(ctl.fc[l].cur, 0.70710678, sr);
             const double fc0 = ctl.fc0.cur;
             feedLp.set(fc0, 0.70710678, sr);
             feedHp.set(fc0, 0.70710678, sr);
@@ -331,7 +333,7 @@ public:
         }
         // wobble: every travel's delay drifts on its own; a kick multiplies the depth and the rate for a moment
         const double j = std::min(jolt, 1.5);
-        const double depth = ctl.wobble.cur * (1.0 + 6.0 * j) + 0.0004 * sr * j;
+        const double depth = ctl.wobble.cur + kJoltWobble * sr * j;
         for (int k = 0; k < kW; ++k)
         {
             wob[k].setRate((0.35 + 0.17 * (k % kLanes)) * (1.0 + 2.0 * std::min(j, 1.0)));
@@ -346,7 +348,6 @@ public:
     {
         for (int l = 0; l < kLanes; ++l) kickG[l] = (rng.uni() < 0.5 ? -1.0 : 1.0) * (0.7 + 0.3 * rng.uni());
         jolt += strength;
-        joltDecay = std::exp(-kTick / (0.6 * sr));
     }
 
     // one sample: x = driver input, kick = burst sample, frac = position in the control tick (0..1)
@@ -373,8 +374,10 @@ public:
         {
             const double dA = ctl.dA[l].cur + wobFrom[l] + (wobTo[l] - wobFrom[l]) * frac;
             const double dB = ctl.dB[l].cur + wobFrom[l + kLanes] + (wobTo[l + kLanes] - wobFrom[l + kLanes]) * frac;
-            const float t = (line[l].read(dA) + kRipple * line[l].read(std::max(1.0, dA - ctl.ripple[l].cur))) * kTapNorm;
-            tap[l] = t;
+            const float t = line[l].read(dA);
+            // the output transducer also hears the wave a little before it arrives (the pre-echo ripple); the loop
+            // carries the wave itself
+            tap[l] = (t + kRipple * line[l].read(std::max(1.0, dA - ctl.ripple[l].cur))) * kTapNorm;
             xs[l] = (float)((lfIn + kick * kickG[l]) * ctl.in[l].cur + ctl.g[l].cur * line[l + kLanes].read(dB));
             xs[l + kLanes] = t;
         }
@@ -535,7 +538,10 @@ public:
         const double t60 = clampv(s.decay, 0.1, 20.0), ts = digitalScale(s.tension);
         ctl.clock.target = clockHz(model, s.grit);
         ctl.bits.target = wordBits(model, s.grit);
-        ctl.drive.target = dbToGain(-6.0 + 0.24 * clampv(s.dwell, 0.0, 100.0));
+        ctl.loopBits.target = 8.0 - 5.0 * clampv(s.grit, 0.0, 100.0) * 0.01;
+        const double drv = dbToGain(-12.0 + 0.24 * clampv(s.dwell, 0.0, 100.0));
+        ctl.drive.target = drv;
+        ctl.makeup.target = std::pow(drv, -0.8);
         for (int i = 0; i < 4; ++i)
         {
             const bool on = i < dm.combs;
@@ -559,7 +565,8 @@ public:
         const DigitalModel& dm = digitalModel(model);
         const double fsC = ctl.clock.cur;
         ratio = fsC / sr;
-        stepQ = std::ldexp(1.0, 1) / std::pow(2.0, ctl.bits.cur);   // 2^-(bits - 1)
+        stepQ = std::pow(2.0, 1.0 - ctl.bits.cur);   // one step of a signed word (the converters)
+        loopQ = stepQ * std::pow(2.0, -ctl.loopBits.cur);   // the loops keep a few bits more
         for (int i = 0; i < 4; ++i) lenS[i] = clampv(ctl.len[i].cur * fsC, 2.0, (double)comb[i].maxDelay());
         apS[0] = clampv(dm.ap[0] * fsC, 2.0, (double)ap[0].line().maxDelay() - 2.0);
         apS[1] = clampv(dm.ap[1] * fsC, 2.0, (double)ap[1].line().maxDelay() - 2.0);
@@ -575,8 +582,6 @@ public:
         }
     }
 
-    void kicked() {}
-
     inline void process(double x, double kick, double& oL, double& oR)
     {
         phase += ratio;
@@ -585,8 +590,9 @@ public:
             phase -= 1.0;
             clockStep(x, kick);
         }
-        oL += kDigitalGain * recon[0].lp(held[0]);
-        oR += kDigitalGain * recon[1].lp(held[1]);
+        const double g = kDigitalGain * ctl.makeup.cur;
+        oL += g * recon[0].lp(held[0]);
+        oR += g * recon[1].lp(held[1]);
     }
 
     double finiteCheck() const { return held[0] + held[1] + recon[0].s + recon[1].s + comb[0].at(0) + flut[0].at(0) + flut[1].at(0); }
@@ -610,7 +616,7 @@ private:
         const int p = chirpPos, p2 = chirpPos ^ 1;
         for (int k = 0; k < kChirp; ++k)
         {
-            const double w2 = chirpW[k][p2 == 0 ? 0 : 1] * 0.0 + chirpW[k][p];   // w[n - 2]
+            const double w2 = chirpW[k][p];   // w[n - 2] (two slots per section, alternating)
             const double w = v - ca * w2;
             v = ca * w + w2;
             chirpW[k][p] = w;
@@ -621,7 +627,7 @@ private:
         for (int i = 0; i < 4; ++i)
         {
             y[i] = comb[i].readLinear(lenS[i] - 1.0);
-            const double fb = truncate(v + ctl.g[i].cur * damp[i].lp(y[i]), q);
+            const double fb = truncate(v + ctl.g[i].cur * damp[i].lp(y[i]), loopQ);
             comb[i].push((float)fb);
             y[i] *= ctl.norm[i].cur;
             vis[i] = (float)y[i];
@@ -631,7 +637,7 @@ private:
         {
             const double f = flut[c].at(flS - 1 + c);
             const double fv = o[c] + ctl.flutterG.cur * f;
-            flut[c].push((float)truncate(fv, q));
+            flut[c].push((float)truncate(fv, loopQ));
             double r = 0.6 * o[c] + 0.4 * fv;
             r = res[c][0].peak(r, 2.8);
             r = res[c][1].peak(r, 2.2);
@@ -640,17 +646,17 @@ private:
     }
 
     struct Ctl {
-        Glided clock, bits, drive, len[4], g[4], norm[4], flutter, flutterG, chirpA, wobble;
+        Glided clock, bits, loopBits, drive, makeup, len[4], g[4], norm[4], flutter, flutterG, chirpA, wobble;
         template <class F> void each(F f)
         {
-            f(clock); f(bits); f(drive); f(flutter); f(flutterG); f(chirpA); f(wobble);
+            f(clock); f(bits); f(loopBits); f(drive); f(makeup); f(flutter); f(flutterG); f(chirpA); f(wobble);
             for (int i = 0; i < 4; ++i) { f(len[i]); f(g[i]); f(norm[i]); }
         }
         void snap() { each([](Glided& v) { v.cur = v.target; }); }
         void step(double k) { each([k](Glided& v) { v.step(k); }); }
     } ctl;
 
-    double sr = 48000.0, glideK = 0.01, ratio = 0.5, phase = 1.0, stepQ = 1.0 / 32768.0;
+    double sr = 48000.0, glideK = 0.01, ratio = 0.5, phase = 1.0, stepQ = 1.0 / 32768.0, loopQ = 1.0 / 524288.0;
     double lenS[4] = { 400, 500, 600, 700 }, apS[2] = { 100, 40 }, held[2] = { 0, 0 };
     double chirpW[kChirp][2] = {};
     int model = kDigital, flS = 200, chirpPos = 0;
@@ -678,8 +684,6 @@ public:
         filterK = 1.0 - std::exp(-kTick / (0.03 * sr));
         decim = std::max(1, (int)std::lround(sr / 12000.0));
         activeV = 0;
-        voice[0].model = set.model; voice[0].busy = true;
-        voice[1].model = set.model; voice[1].busy = false;
         for (auto& v : voice) { v.inG.setRamp(std::max(1, (int)(0.005 * sr))); v.outG.setRamp(std::max(1, (int)(0.15 * sr))); }
         clearState();
     }
@@ -747,7 +751,12 @@ private:
         burst.reset();
         dirty = false;
     }
-    static double toneLpHz(double tone) { return 2000.0 * std::pow(10.0, (clampv(tone, -100.0, 100.0) + 100.0) / 200.0); }
+    // TONE: a low-pass at 9 kHz in the middle, 2 kHz fully dark, 20 kHz fully bright (with the shelf)
+    static double toneLpHz(double tone)
+    {
+        const double t = clampv(tone, -100.0, 100.0) * 0.01;
+        return t < 0.0 ? 9000.0 * std::pow(2000.0 / 9000.0, -t) : 9000.0 * std::pow(20000.0 / 9000.0, t);
+    }
     static double toneShelf(double tone) { return dbToGain(0.06 * std::max(0.0, tone)); }
     void designWet()
     {

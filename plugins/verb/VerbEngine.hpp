@@ -31,8 +31,8 @@
 //   late-70s   ~11..7.5 kHz, 30..20 kHz hold, 14..9-bit gain-ranging converters (the grain and its dithered noise
 //              float with the level), 14..8-bit mantissa truncation inside the loop
 //   80s        ~18..12 kHz, 40..30 kHz hold, 18..12-bit gain-ranging, 18..11-bit mantissa in the loop
-//   90s rack   ~15..10 kHz, 44..24 kHz hold, 16..11-bit fixed point (no dither) in the converters and the loop,
-//              truncated toward zero, so tails end in grit
+//   90s rack   ~15..10 kHz, 44..24 kHz hold, 16..11-bit fixed-point converters (no dither), a 20..15-bit
+//              fixed-point loop truncated toward zero, so tails end in grit
 //   Truncation toward zero only ever removes energy, so the quantised loops stay stable.
 // Shimmer: two lines of the FDN pass through pitch shifters (two-head, 70 ms windows) inside the loop, crossfaded by
 //   AMOUNT; each pass shifts again, so the tail climbs (or falls) in steps of PITCH. Shifted samples are convex
@@ -90,34 +90,34 @@ inline Voice voice(int mode)
     {
     case kRoom:
         v.lenMin = 14; v.lenMax = 52; v.apMs = 3.5; v.apG = 0.5; v.diffMs = 6; v.diffG = 0.7; v.wanderMs = 0.12;
-        room(9.0, 7.0, 3.2, 0.82, 1.0, 9000); v.trim = 0.95; break;
+        room(9.0, 7.0, 3.2, 0.82, 0.85, 9000); v.trim = 0.62; break;
     case kChamber:
         v.lenMin = 24; v.lenMax = 80; v.apMs = 5; v.apG = 0.6; v.diffMs = 7; v.diffG = 0.75; v.wanderMs = 0.15;
-        room(7.0, 5.0, 4.0, 0.9, 0.8, 11000); v.trim = 0.95; break;
+        room(7.0, 5.0, 4.0, 0.9, 0.8, 11000); v.trim = 0.8; break;
     case kPlate:
         v.lenMin = 12; v.lenMax = 48; v.apMs = 4; v.apG = 0.65; v.diffMs = 5; v.diffG = 0.78; v.wanderMs = 0.15;
-        room(2.2, 1.4, 0.6, 0.92, 0.3, 14000); v.trim = 0.9; break;
+        room(2.2, 1.4, 0.6, 0.92, 0.3, 14000); v.trim = 0.73; break;
     case kVintageHall:
         v.lines = 8; v.lenMin = 40; v.lenMax = 120; v.diffMs = 9; v.diffG = 0.68; v.colour = kColour70s;
-        v.wanderMs = 1.1; v.wanderMul = 1.6; room(30.0, 20.0, 12.0, 0.7, 0.35, 6000); v.trim = 1.0; break;
+        v.wanderMs = 1.1; v.wanderMul = 1.6; room(30.0, 20.0, 12.0, 0.7, 0.35, 6000); v.trim = 0.77; break;
     case kVintagePlate:
         v.topo = kTopoPlate; v.diffMs = 12.7; v.diffG = 0.75; v.colour = kColour70s; v.wanderMs = 0.8; v.wanderMul = 1.6;
-        room(2.0, 1.3, 0.6, 0.9, 0.15, 9000); v.trim = 1.0; break;
+        room(2.0, 1.3, 0.6, 0.9, 0.15, 9000); v.trim = 1.36; break;
     case kClassicHall:
         v.lenMin = 45; v.lenMax = 150; v.apMs = 8; v.apG = 0.55; v.diffMs = 12; v.diffG = 0.72; v.colour = kColour80s;
-        v.wanderMs = 1.6; v.wanderMul = 0.45; v.spinMs = 0.5; v.spinMul = 1.0; room(40.0, 26.0, 15.0, 0.78, 0.4, 7000); v.trim = 1.0; break;
+        v.wanderMs = 1.6; v.wanderMul = 0.45; v.spinMs = 0.5; v.spinMul = 1.0; room(40.0, 26.0, 15.0, 0.78, 0.4, 7000); v.trim = 1.15; break;
     case kClassicPlate:
         v.topo = kTopoPlate; v.diffMs = 12.7; v.diffG = 0.75; v.colour = kColour80s; v.wanderMs = 1.0; v.wanderMul = 0.5;
-        v.spinMs = 0.4; v.spinMul = 1.0; room(2.0, 1.3, 0.6, 0.9, 0.15, 11000); v.trim = 1.0; break;
+        v.spinMs = 0.4; v.spinMul = 1.0; room(2.0, 1.3, 0.6, 0.9, 0.15, 11000); v.trim = 1.35; break;
     case kRack:
         v.lines = 8; v.householder = true; v.lenMin = 28; v.lenMax = 70; v.diffMs = 4; v.diffG = 0.6; v.colour = kColour90s;
-        v.wanderMs = 0.0; v.spinMs = 0.35; v.spinMul = 1.0; room(14.0, 10.0, 5.0, 0.7, 0.55, 9000); v.trim = 0.9; break;
+        v.wanderMs = 0.0; v.spinMs = 0.35; v.spinMul = 1.0; room(14.0, 10.0, 5.0, 0.7, 0.55, 9000); v.trim = 0.6; break;
     case kGated:
     case kReverse:
-        v.topo = kTopoBurst; v.diffMs = 3.0; v.diffG = 0.62; v.wanderMs = 0.0; room(1, 1, 1, 0.5, 0.0, 10000); v.trim = 1.0; break;
+        v.topo = kTopoBurst; v.diffMs = 2.0; v.diffG = 0.6; v.wanderMs = 0.0; room(1, 1, 1, 0.5, 0.0, 10000); v.trim = 1.0; break;
     case kShimmerMode:
         v.lenMin = 40; v.lenMax = 140; v.apMs = 8; v.apG = 0.55; v.diffMs = 11; v.diffG = 0.72; v.wanderMs = 0.3;
-        room(36.0, 24.0, 14.0, 0.75, 0.25, 7000); v.trim = 1.0; break;
+        room(36.0, 24.0, 14.0, 0.75, 0.25, 7000); v.trim = 1.2; break;
     case kHall:
     default:
         v.apMs = 7; v.apG = 0.5; room(36.0, 24.0, 14.0, 0.75, 0.5, 7000); break;
@@ -169,7 +169,7 @@ inline ColourParams colourFor(int colour, double age)
         c.loopBits = (int)std::lround(lerp(18, 11)); break;
     case kColour90s:
         c.bw = lerp(15000, 10000); c.rate = lerp(44000, 24000); c.convBits = lerp(16, 11); c.ranges = 0; c.dither = false;
-        c.loopBits = (int)std::lround(lerp(16, 11)); c.loopFixed = true; break;
+        c.loopBits = (int)std::lround(lerp(20, 15)); c.loopFixed = true; break;
     default: break;
     }
     return c;
@@ -196,7 +196,7 @@ inline double burstEnvelope(int mode, double u, double T, double d)
     const double t = u * T;
     double e;
     if (mode == kReverse) e = std::exp(-6.907755 * (1.0 - u) * T / std::max(0.05, d));
-    else e = std::exp(-6.907755 * t / std::max(0.05, d)) * (1.0 - std::exp(-t / 0.003));
+    else e = std::exp(-6.907755 * t / std::max(0.05, d));
     const double taper = std::min(0.010, 0.15 * T), left = T - t;   // a short raised-cosine cut
     if (left < taper) e *= 0.5 - 0.5 * std::cos(kPi * std::max(0.0, left) / taper);
     return e;
@@ -227,16 +227,17 @@ public:
         for (int k = 0; k < kMaxLines; ++k)
         {
             line[k].setMax((int)((maxLine * sMax + kMaxModMs) * ms) + 8);
-            dens[k].setMax((int)(maxAp * std::sqrt(sMax) * ms) + 8);
+            dens[k].setMax((int)(maxAp * ms) + 8);
         }
         for (int ch = 0; ch < 2; ++ch)
         {
-            for (auto& a : diff[ch]) a.setMax((int)(maxDiff * 1.3 * ms) + 8);
+            for (auto& a : diff[ch]) a.setMax((int)(maxDiff * ms) + 8);
             erLine[ch].setMax((int)(maxEr * sMax * sr) + 8);
             burst[ch].setMax((int)(1.6 * sr) + 8);
-            for (auto& a : post[ch]) a.setMax((int)(5.0 * ms) + 8);
+            for (auto& a : post[ch]) a.setMax((int)(2.0 * ms) + 8);
             shifter[ch].prepare(sr, 0.1);
             shifter[ch].setWindow(0.07);
+            shimLp[ch].set(std::min(9000.0, 0.2 * sr), sr);
         }
         for (int b = 0; b < 2; ++b)
         {
@@ -266,7 +267,7 @@ public:
         for (int ch = 0; ch < 2; ++ch)
             for (int k = 0; k < kBurstTaps; ++k)
             {
-                burstU[ch][k] = (float)((k + br.uni()) / kBurstTaps);
+                burstU[ch][k] = k == 0 ? 0.0f : (float)((k + br.uni()) / kBurstTaps);   // the first tap starts the burst
                 burstAmp[ch][k] = (float)((br.uni() < 0.5 ? -1.0 : 1.0) * (0.75 + 0.5 * br.uni()));
             }
         for (int ch = 0; ch < 2; ++ch) conv[ch][0].setup(sr), conv[ch][1].setup(sr);
@@ -292,8 +293,8 @@ public:
         lnScale = lnScaleTarget = std::log(sizeScale(set.size));
         rtS = std::max(0.1, set.decay); bassS = set.bassMult; hdS = set.highDamp;
         xoverS = set.crossover; dampS = set.dampFreq; ageS = set.age * 0.01; depthS = set.modDepth * 0.01;
-        rateS = set.modRate; shimS = shimmerAmount(); fz = freezeOn() ? 1.0 : 0.0; envTS = set.envTimeMs * 0.001;
-        duckEnv = 0.0; duckG = duckTarget = 1.0; wetPk = 0.0f; ctrlLeft = 0;
+        rateS = set.modRate; shimS = shimmerAmount(); diffS = set.diffusion * 0.01; lcS = set.lowCut; hcS = set.highCut; fz = freezeOn() ? 1.0 : 0.0; envTS = set.envTimeMs * 0.001;
+        duckEnv = 0.0; duckG = duckTarget = 1.0; wetE = 0.0; wetN = 0; ctrlLeft = 0;
         curMode = set.mode;
         pendingMode = false;
         applyStructural(true);
@@ -319,8 +320,8 @@ public:
     float duckDb() const { return duckFeed.load(std::memory_order_relaxed); }           // the wet gain from ducking
     float predelayNowMs() const { return preFeed.load(std::memory_order_relaxed); }     // the pre-delay in use
     float freezeNow() const { return fzFeed.load(std::memory_order_relaxed); }          // 0..1
-    // the wet signal's peak since the last call (audio thread: the plugin publishes it)
-    float takeWetPeak() { const float p = wetPk; wetPk = 0.0f; return p; }
+    // the wet signal's RMS (both channels) since the last call (audio thread: the plugin publishes it)
+    float takeWetRms() { const float r = wetN > 0 ? (float)std::sqrt(wetE / (2.0 * wetN)) : 0.0f; wetE = 0.0; wetN = 0; return r; }
 
     // Control-rate work (glides, absorption, modulation targets) runs every kChunk samples on a clock of its own, so
     // the host's block size never changes how the reverb sounds.
@@ -350,11 +351,11 @@ private:
     // the parts that change topology: applied while the wet path is faded out
     void applyStructural(bool clearAll)
     {
-        const bool modeChanged = clearAll || curMode != set.mode;
+        const bool modeChanged = clearAll || pendingJump || curMode != set.mode;
         curMode = set.mode;
         vc = voice(curMode);
         lnScale = lnScaleTarget;
-        const double s = std::exp(lnScale), ms = sr * 0.001;
+        const double ms = sr * 0.001;
         nLines = vc.topo == kTopoFdn ? vc.lines : 0;
         // FDN: primes spread geometrically, shuffled so neighbours (and the L / R inputs) mix short and long lines
         static const int order16[16] = { 0, 8, 4, 12, 2, 10, 6, 14, 1, 9, 5, 13, 3, 11, 7, 15 };
@@ -365,15 +366,15 @@ private:
             const double t = slot / (double)(nLines - 1);
             const double lenMs = vc.lenMin * std::pow(vc.lenMax / vc.lenMin, t) * (1.0 + 0.025 * jitter[k]);
             baseLen[k] = (double)nearestPrime((int)std::lround(lenMs * ms));
-            apLen[k] = vc.apMs > 0.0 ? nearestPrime((int)std::lround(vc.apMs * (0.6 + 0.8 * (k / (double)(nLines - 1))) * std::sqrt(s) * ms)) : 0;
+            apLen[k] = vc.apMs > 0.0 ? nearestPrime((int)std::lround(vc.apMs * (0.6 + 0.8 * (k / (double)(nLines - 1))) * ms)) : 0;
             if (apLen[k] > 0 && k % 2 == 1) apLen[k] = nearestPrime((int)std::lround(apLen[k] * 0.83));
         }
-        // input diffusers (lengths follow SIZE at the moment of the switch only: integer allpasses must not move)
+        // input diffusers (fixed per voice; L and R differ)
         static const double dr[2][4] = { { 0.376, 0.283, 1.0, 0.732 }, { 0.41, 0.31, 0.93, 0.69 } };
         for (int ch = 0; ch < 2; ++ch)
             for (int j = 0; j < 4; ++j)
-                diffLen[ch][j] = std::max(1, nearestPrime((int)std::lround(vc.diffMs * dr[ch][j] * (0.55 + 0.45 * s) * ms)));
-        static const double pr[2][2] = { { 2.1, 3.3 }, { 2.5, 3.0 } };
+                diffLen[ch][j] = std::max(1, nearestPrime((int)std::lround(vc.diffMs * dr[ch][j] * ms)));
+        static const double pr[2][2] = { { 1.3, 1.9 }, { 1.5, 1.7 } };
         for (int ch = 0; ch < 2; ++ch)
             for (int j = 0; j < 2; ++j) postLen[ch][j] = std::max(1, nearestPrime((int)std::lround(pr[ch][j] * ms)));
         er.build(vc.room[0], vc.room[1], vc.room[2], vc.refl, erSeed(curMode));
@@ -386,7 +387,7 @@ private:
             {
                 for (auto& a : diff[ch]) a.clear();
                 for (auto& a : post[ch]) a.clear();
-                burst[ch].clear(); shifter[ch].reset();
+                burst[ch].clear(); shifter[ch].reset(); shimLp[ch].reset();
                 bwIn[ch][0].reset(); bwIn[ch][1].reset(); bwOut[ch][0].reset(); bwOut[ch][1].reset();
                 crush[ch].reset(); conv[ch][0].reset(); conv[ch][1].reset(); erLp[ch].reset();
             }
@@ -402,7 +403,7 @@ private:
         {
             for (auto& a : diff[ch]) a.clear();
             for (auto& a : post[ch]) a.clear();
-            burst[ch].clear(); erLine[ch].clear(); shifter[ch].reset();
+            burst[ch].clear(); erLine[ch].clear(); shifter[ch].reset(); shimLp[ch].reset();
             bwIn[ch][0].reset(); bwIn[ch][1].reset(); bwOut[ch][0].reset(); bwOut[ch][1].reset();
             crush[ch].reset(); conv[ch][0].reset(); conv[ch][1].reset(); erLp[ch].reset(); lc[ch].reset(); hc[ch].reset();
         }
@@ -426,10 +427,14 @@ private:
         fz += ((freezeOn() ? 1.0 : 0.0) - fz) * kc30;
         if (std::fabs(fz - (freezeOn() ? 1.0 : 0.0)) < 1e-4) fz = freezeOn() ? 1.0 : 0.0;
         envTS = std::exp(std::log(envTS) + (std::log(clampv(set.envTimeMs, 50.0, 1500.0) * 0.001) - std::log(envTS)) * kc50);
-        // SIZE: a one-pole glide, rate-limited (the tail bends at most ~1 % in pitch while it moves)
+        diffS += (clampv(set.diffusion, 0.0, 100.0) * 0.01 - diffS) * kc50;
+        lcS = std::exp(std::log(lcS) + (std::log(clampv(set.lowCut, 10.0, 1000.0)) - std::log(lcS)) * kc50);
+        hcS = std::exp(std::log(hcS) + (std::log(clampv(set.highCut, 1000.0, 22000.0)) - std::log(hcS)) * kc50);
+        // SIZE: a one-pole glide, rate-limited to 0.3 per second in log (the longest lines bend at most ~7 % in pitch
+        // while it moves)
         {
             const double d = lnScaleTarget - lnScale;
-            const double lim = 0.6 * kChunk / sr;
+            const double lim = 0.3 * kChunk / sr;
             lnScale += clampv(d * kc200, -lim, lim);
             if (std::fabs(d) < 1e-6) lnScale = lnScaleTarget;
         }
@@ -461,8 +466,22 @@ private:
                 freezeIt(plate[b].ab);
             }
 
-        // modulation targets for the end of this chunk (per-sample linear steps toward them)
-        const double wDepth = vc.wanderMs * depthS * ms, sDepth = vc.spinMs * depthS * ms;
+        // read lengths for this tick. Frozen, they glide to whole samples (a cubic read between samples is a gentle
+        // low-pass: a frozen loop must be exactly lossless) and the modulation and shimmer fade out.
+        const double thaw = 1.0 - fz;
+        auto whole = [&](double len) { const double f = std::floor(len); return f + (len - f) * thaw; };
+        for (int k = 0; k < nLines; ++k) readLen[k] = whole(baseLen[k] * s);
+        if (vc.topo == kTopoPlate)
+            for (int b = 0; b < 2; ++b)
+            {
+                const PlateGeom& g = plateGeom(b);
+                plateLen[b][0] = whole(g.ap1 * s * ms); plateLen[b][1] = whole(g.dA * s * ms);
+                plateLen[b][2] = whole(g.ap2 * s * ms); plateLen[b][3] = whole(g.dB * s * ms);
+            }
+        shimNow = shimS * thaw;
+
+        // modulation targets for the end of this tick (per-sample linear steps toward them)
+        const double wDepth = vc.wanderMs * depthS * ms * thaw, sDepth = vc.spinMs * depthS * ms * thaw;
         const int nMod = vc.topo == kTopoPlate ? 2 : nLines;
         for (int k = 0; k < nMod; ++k)
         {
@@ -488,7 +507,7 @@ private:
         }
 
         // diffusion
-        const double d = clampv(set.diffusion, 0.0, 100.0) * 0.01;
+        const double d = diffS;
         diffG = (float)(vc.diffG * (0.45 + 0.55 * d));
         densG = (float)(vc.apG * d);
         plateG1 = (float)(0.7 * (0.4 + 0.6 * d));
@@ -518,8 +537,8 @@ private:
         preFeed.store((float)pd, std::memory_order_relaxed);
         for (int ch = 0; ch < 2; ++ch)
         {
-            lc[ch].set(std::max(10.0, set.lowCut), 0.70710678, sr);
-            hc[ch].set(std::min(set.highCut, 0.45 * sr), 0.70710678, sr);
+            lc[ch].set(lcS, 0.70710678, sr);
+            hc[ch].set(std::min(hcS, 0.45 * sr), 0.70710678, sr);
         }
         shifter[0].setRatio(fx::semitonesToRatio(set.pitch));
         shifter[1].setRatio(fx::semitonesToRatio(set.pitch));
@@ -565,11 +584,11 @@ private:
 
     void processRun(float* L, float* R, int n)
     {
-        const double s = scaleNow, ms = sr * 0.001;
+        const double s = scaleNow;
         const bool colour = vc.colour != kColourClean;
         const bool holdOn = colour && col.rate < sr * 0.999;
         const float dg = diffG;
-        float pk = 0.0f;
+        double e = 0.0;
         for (int i = 0; i < n; ++i)
         {
             const float dl = L[i], dr = R[i];
@@ -586,7 +605,7 @@ private:
             {
                 pl = (float)bwIn[0][1].lowpass(bwIn[0][0].lowpass(pl));
                 pr = (float)bwIn[1][1].lowpass(bwIn[1][0].lowpass(pr));
-                pl = convert(conv[0][0], pl); pr = convert(conv[1][0], pr);
+                pl = convert(conv[0][0], pl, ig); pr = convert(conv[1][0], pr, ig);
             }
 
             // early reflections (alternate taps hear the opposite side: both side walls)
@@ -610,8 +629,8 @@ private:
 
             // late tank
             float ll = 0.0f, lr = 0.0f;
-            if (vc.topo == kTopoFdn) fdn(xl, xr, s, ll, lr);
-            else if (vc.topo == kTopoPlate) plateTank(0.5f * (xl + xr), s, ms, ll, lr);
+            if (vc.topo == kTopoFdn) fdn(xl, xr, ll, lr);
+            else if (vc.topo == kTopoPlate) plateTank(0.5f * (xl + xr), ll, lr);
             else burstTank(xl, xr, ll, lr);
 
             const float eG = (float)earlyS.next(), lG = (float)lateS.next(), tr = (float)trans.next();
@@ -621,7 +640,7 @@ private:
             if (colour)
             {
                 if (holdOn) { wl = (float)crush[0].process(wl); wr = (float)crush[1].process(wr); }
-                wl = convert(conv[0][1], wl); wr = convert(conv[1][1], wr);
+                wl = convert(conv[0][1], wl, 1.0f); wr = convert(conv[1][1], wr, 1.0f);
                 wl = (float)bwOut[0][1].lowpass(bwOut[0][0].lowpass(wl));
                 wr = (float)bwOut[1][1].lowpass(bwOut[1][0].lowpass(wr));
             }
@@ -642,37 +661,40 @@ private:
                 ol += (tl - ol) * hcm; orr += (tr2 - orr) * hcm;
             }
             ol *= duckG; orr *= duckG;
-            pk = std::max(pk, (float)std::max(std::fabs(ol), std::fabs(orr)));
+            e += ol * ol + orr * orr;
 
             const double dG = dryS.next(), wG = wetS.next(), og = outS.next();
             L[i] = (float)((dl * dG + ol * wG) * og);
             R[i] = (float)((dr * dG + orr * wG) * og);
         }
-        if (!std::isfinite(pk))
+        if (!std::isfinite(e))
         {
             clearState();
             for (int i = 0; i < n; ++i) { if (!std::isfinite(L[i])) L[i] = 0.0f; if (!std::isfinite(R[i])) R[i] = 0.0f; }
-            pk = 0.0f;
+            e = 0.0;
         }
-        wetPk = std::max(wetPk, pk);
+        wetE += e;
+        wetN += n;
     }
 
-    inline float convert(Converter& c, float x)
+    // a converter of the voice's colour; `dith` scales its dither (0 while frozen: a lossless tank must not
+    // integrate noise)
+    inline float convert(Converter& c, float x, float dith)
     {
         float y = c.process(x, (float)convQ, col.ranges);
-        if (col.dither)
+        if (col.dither && dith > 0.0f)
         {
             // TPDF dither at the current range's step: the noise floats with the level
             int e = 0;
             std::frexp(std::max(c.env, 1e-9f), &e);
             const float step = 1.0f / ((float)convQ * (float)(1 << clampv(-e, 0, col.ranges)));
-            y += step * (float)(noise.uni() - noise.uni());
+            y += dith * step * (float)(noise.uni() - noise.uni());
         }
         return y;
     }
 
     // ---- FDN ----
-    inline void fdn(float xl, float xr, double s, float& outL, float& outR)
+    inline void fdn(float xl, float xr, float& outL, float& outR)
     {
         float y[kMaxLines];
         const int N = nLines;
@@ -680,16 +702,16 @@ private:
         for (int k = 0; k < N; ++k)
         {
             modNow[k] += modStep[k];
-            float v = line[k].read(baseLen[k] * s + modNow[k]);
+            float v = line[k].read(readLen[k] + modNow[k]);
             if (apLen[k] > 0) v = dens[k].processInt(v, apLen[k], densG);
             v = ab[k].process(v, absC);
             y[k] = quant ? quantLoop(v) : v;
         }
-        if (shimS > 1e-4)
+        if (shimNow > 1e-4)
         {
-            const float a = (float)shimS;
-            y[0] += a * (shifter[0].process(y[0]) - y[0]);
-            y[1] += a * (shifter[1].process(y[1]) - y[1]);
+            const float a = (float)shimNow;
+            y[0] += a * (shifter[0].process((float)shimLp[0].lp(y[0])) - y[0]);
+            y[1] += a * (shifter[1].process((float)shimLp[1].lp(y[1])) - y[1]);
         }
         if (vc.householder) householder(y, N); else hadamard(y, N);
         const float bi = N == 16 ? 0.5f : 0.70710678f;
@@ -697,9 +719,8 @@ private:
         float ol = 0.0f, orr = 0.0f;
         for (int k = 0; k < N; ++k)
         {
-            const double len = baseLen[k] * s;
-            ol += outSign[0][k] * line[k].readLinear(tapPos[0][k] * len);
-            orr += outSign[1][k] * line[k].readLinear(tapPos[1][k] * len);
+            ol += outSign[0][k] * line[k].readLinear(tapPos[0][k] * readLen[k]);
+            orr += outSign[1][k] * line[k].readLinear(tapPos[1][k] * readLen[k]);
         }
         const float og = N == 16 ? 0.25f : 0.35355339f;
         outL = ol * og; outR = orr * og;
@@ -707,22 +728,21 @@ private:
 
     // ---- figure-eight plate ----
     struct PlateBranch { fx::Allpass ap1, ap2; fx::FracDelay dA, dB; Absorber ab; };
-    inline void plateTank(float x, double s, double ms, float& outL, float& outR)
+    inline void plateTank(float x, float& outL, float& outR)
     {
         const bool quant = vc.colour != kColourClean;
         float end[2];
-        for (int b = 0; b < 2; ++b) end[b] = plate[b].dB.read(plateGeom(b).dB * s * ms);
+        for (int b = 0; b < 2; ++b) end[b] = plate[b].dB.read(plateLen[b][3]);
         for (int b = 0; b < 2; ++b)
         {
             PlateBranch& p = plate[b];
-            const PlateGeom& g = plateGeom(b);
             modNow[b] += modStep[b];
-            float v = p.ap1.process(x + end[b ^ 1], g.ap1 * s * ms + modNow[b], -plateG1);
+            float v = p.ap1.process(x + end[b ^ 1], plateLen[b][0] + modNow[b], -plateG1);
             p.dA.push(v);
-            v = p.dA.read(g.dA * s * ms);
+            v = p.dA.read(plateLen[b][1]);
             v = p.ab.process(v, absC);
             if (quant) v = quantLoop(v);
-            v = p.ap2.process(v, g.ap2 * s * ms, plateG2);
+            v = p.ap2.process(v, plateLen[b][2], plateG2);
             p.dB.push(v);
         }
         float o[2] = { 0.0f, 0.0f };
@@ -730,11 +750,11 @@ private:
             for (const PlateTap& t : kPlateTaps[side])
             {
                 const PlateBranch& p = plate[t.branch];
-                const PlateGeom& g = plateGeom(t.branch);
+                const double* len = plateLen[t.branch];
                 float v;
-                if (t.seg == 0) v = p.dA.readLinear(t.pos * g.dA * s * ms);
-                else if (t.seg == 1) v = p.ap2.line().readLinear(t.pos * g.ap2 * s * ms);
-                else v = p.dB.readLinear(t.pos * g.dB * s * ms);
+                if (t.seg == 0) v = p.dA.readLinear(t.pos * len[1]);
+                else if (t.seg == 1) v = p.ap2.line().readLinear(t.pos * len[2]);
+                else v = p.dB.readLinear(t.pos * len[3]);
                 o[side] += t.sign * v;
             }
         outL = 0.42f * o[0]; outR = 0.42f * o[1];
@@ -769,7 +789,7 @@ private:
     fx::Allpass dens[kMaxLines];
     Absorber ab[kMaxLines];
     AbsorberCoefs absC;
-    double baseLen[kMaxLines] = {};
+    double baseLen[kMaxLines] = {}, readLen[kMaxLines] = {}, plateLen[2][4] = {};
     int apLen[kMaxLines] = {};
     float inSign[kMaxLines] = {}, outSign[2][kMaxLines] = {}, tapPos[2][kMaxLines] = {};
     double jitter[kMaxLines] = {};
@@ -777,6 +797,7 @@ private:
     fx::Lfo spin[kMaxLines];
     float modNow[kMaxLines] = {}, modStep[kMaxLines] = {};
     fx::PitchShifter shifter[2];
+    fx::OnePole shimLp[2];
     // plate
     PlateBranch plate[2];
     float plateG1 = 0.5f, plateG2 = 0.4f;
@@ -810,11 +831,12 @@ private:
     // control state
     double lnScale = 0.0, lnScaleTarget = 0.0, scaleNow = 1.0;
     double rtS = 2.2, bassS = 1.2, hdS = 0.55, xoverS = 600.0, dampS = 6000.0, ageS = 0.35, depthS = 0.4, rateS = 0.7;
-    double shimS = 0.0, fz = 0.0, envTS = 0.32, lateNorm = 1.0;
+    double shimS = 0.0, shimNow = 0.0, fz = 0.0, envTS = 0.32, lateNorm = 1.0, diffS = 0.8, lcS = 10.0, hcS = 22000.0;
     double kc50 = 0.03, kc30 = 0.05, kc200 = 0.01;
     double duckEnv = 0.0, duckG = 1.0, duckAtt = 0.01, duckRel = 1e-4;
     double duckTarget = 1.0, duckGlide = 0.02;
-    float wetPk = 0.0f;
+    double wetE = 0.0;
+    int wetN = 0;
     int ctrlLeft = 0;
     std::atomic<float> duckFeed { 0.0f }, preFeed { 20.0f }, fzFeed { 0.0f };
 };

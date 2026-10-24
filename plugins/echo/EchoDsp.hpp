@@ -1,13 +1,12 @@
 // pump ECHO: a pitch shifter for the echoes (a candidate for common/dsp/Fx.hpp).
 //
 // AlignedPitchShifter: a delay-line pitch shifter with one sounding read head that sweeps through the line at the
-// pitch ratio. When the head nears the end of its range it hands over to a second head one "jump" (about 40 ms)
-// away, over a raised-cosine crossfade of up to 15 ms. The jump is not fixed: it is chosen within +-12 ms (periods
-// down to ~42 Hz) to maximise the correlation of the line around the two heads, so the heads are in phase when they
-// cross. A fixed-window two-head shifter cancels whenever its heads happen to be half a period apart (a 220 Hz tone
-// with 50 ms windows comes out of an octave shift as 430 + 450 Hz with nothing at 440); aligned splices keep tones
-// whole, and noisy material still gets a smooth crossfade. The search runs once per splice (coarse on every 4th
-// sample and every 2nd lag, then refined), a few hundred microseconds a second at most.
+// pitch ratio. When the head nears the end of its range it hands over to a second head about 40 ms away, over a
+// sin^2 crossfade of up to 15 ms. The jump is not fixed: it is chosen within +-12 ms (periods down to ~42 Hz) to
+// maximise the correlation of the line around the two heads, so they are in phase when they cross. (A fixed-window
+// two-head shifter cancels whenever its heads happen to be half a period apart: a 220 Hz tone shifted up an octave
+// with 50 ms windows comes out as 430 + 450 Hz with a hole at 440.) Tones stay whole; noisy material still gets a
+// smooth crossfade. The search runs once per splice (coarse, then refined around the best lag). Mono.
 #pragma once
 
 #include "dsp/Fx.hpp"
@@ -19,13 +18,15 @@ public:
     void prepare(double sampleRate)
     {
         sr = sampleRate;
-        J = 0.040 * sr;
+        J = std::floor(0.040 * sr);
         S = std::floor(0.012 * sr);
-        Xmax = 0.015 * sr;
+        Xmax = std::floor(0.015 * sr);
         Lc = std::max(32, (int)(0.010 * sr));
-        const int need = (int)(kMin + 2.0 * S + 1.5 * J + Xmax) + Lc + 16;
-        line.setMax(need);
-        maxD = need - 4;
+        const double k = sr / 48000.0;
+        lagStride = std::max(2, (int)std::lround(2.0 * k));
+        sampleStride = std::max(4, (int)std::lround(4.0 * k));
+        maxD = kMin + 2.0 * S + 2.0 * J + 2.0 * Xmax + Lc + 16.0;
+        line.setMax((int)maxD + 8);
         reset();
     }
     void reset()
@@ -36,8 +37,11 @@ public:
         xf = xfLen = 1;
     }
     void setRatio(double r) { ratio = clampv(r, 0.25, 4.0); }
-    // the head's mean delay (for timing compensation): it moves by +-J/2 around this
+    // the sounding head's mean delay (for timing compensation)
     double averageDelay() const { return kMin + S + 0.5 * J + std::min(Xmax * std::fabs(ratio - 1.0), 0.5 * J); }
+
+    // while the shifter isn't heard: keep its line current (the heads hold their delays), so it can fade in at once
+    inline void write(float x) { line.push(x); }
 
     inline float process(float x)
     {
@@ -79,14 +83,14 @@ private:
         const int lo = (int)(J - S), hi = (int)(J + S);
         int best = (int)J;
         double bestC = -1e30;
-        for (int lag = lo; lag <= hi; lag += 2)
+        for (int lag = lo; lag <= hi; lag += lagStride)
         {
-            const double c = corr(lag, 4);
+            const double c = corr(lag, sampleStride);
             if (c > bestC) { bestC = c; best = lag; }
         }
         const int c0 = best;
         bestC = -1e30;
-        for (int lag = std::max(lo, c0 - 2); lag <= std::min(hi, c0 + 2); ++lag)
+        for (int lag = std::max(lo, c0 - lagStride); lag <= std::min(hi, c0 + lagStride); ++lag)
         {
             const double c = corr(lag, 1);
             if (c > bestC) { bestC = c; best = lag; }
@@ -102,7 +106,7 @@ private:
     fx::FracDelay line;
     double sr = 48000.0, J = 1920.0, S = 576.0, Xmax = 720.0, ratio = 1.0, maxD = 8192.0;
     double d[2] = { 1000.0, 1000.0 };
-    int m = 0, xf = 1, xfLen = 1, Lc = 480;
+    int m = 0, xf = 1, xfLen = 1, Lc = 480, lagStride = 2, sampleStride = 4;
 };
 
 }} // namespace pump::echo

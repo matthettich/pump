@@ -1,10 +1,10 @@
 // pump ECHO engine: a multi-mode stereo delay. Framework-free.
 //
 // Two delay lines, up to 8 s each (free times go to 4 s; a synced 2/1 at 60 BPM needs 8). Per line:
-//   write  the routed input + FEEDBACK x the loop signal -> LOW CUT -> HIGH CUT -> DIFFUSE (four allpasses, 4-14 ms,
-//          always in line: at 0 % they are plain delays, and the read heads move earlier by their length so the echo
-//          stays on time; below 80 ms the chain shortens with the time) -> the mode's record stage (saturation,
-//          wear) -> DC blocker -> line
+//   write  the routed input (delayed by D) + FEEDBACK x the loop signal through DIFFUSE (four allpasses, 4-14 ms,
+//          D in all; at 0 % they are a plain delay of D) -> LOW CUT -> HIGH CUT -> the mode's record stage
+//          (saturation, wear) -> DC blocker -> line. The heads read at TIME - D, so the first echo and every repeat
+//          land exactly on TIME, and only the repeats are smeared. Below 50 ms D is 0 (no diffusion there).
 //   read   the mode's read head(s) -> the mode's playback stage -> the echo, and the loop signal
 //   out    echoes -> DUCK -> WIDTH (M/S) -> mixed with the dry input (the dry stays at unity up to MIX 50 %, the echo
 //          reaches unity at 50 %) -> OUTPUT. No latency: the dry signal is the input itself.
@@ -21,18 +21,19 @@
 //            0.6-1.1 Hz) and flutter (7.1 + 9.4 Hz) move the head, the same on both channels as on one tape. Record:
 //            a soft tape curve (gentle compression from low levels, a touch of 2nd harmonic) and an HF loss from
 //            15 kHz down to 3.75 kHz with AGE. Playback: a head bump (95 Hz, +1.5..+3.5 dB), a 30 Hz roll-off and
-//            hiss (-90..-64 dBFS). AGE also deepens the wow and flutter.
-//   BBD      bucket-brigade: the clock follows the delay time (an 8192-stage line), so the anti-alias and
-//            reconstruction low-passes (12 dB/oct each, both in the loop) sit at 1740 Hz x s / T: bright at short
-//            times, dark at long ones (800 Hz floor). Companding: the signal is compressed (square-root law, peak
+//            hiss (-90..-64 dBFS). AGE also deepens the wow (0.35 -> 2.55 ms) and flutter (0.02 -> 0.08 ms).
+//   BBD      bucket-brigade: the clock follows the delay time (an 8192-stage line: 13.7 kHz at 300 ms), so the
+//            anti-alias and reconstruction low-passes (12 dB/oct each, both in the loop) sit at 0.3 x the clock,
+//            1230 Hz x s / T: bright at short times, dark at long ones (4.1 kHz at 300 ms, 600 Hz floor). Companding: the signal is compressed (square-root law, peak
 //            detector, 30 ms release) into the buckets, where noise is added and the bucket clips, and expanded out
 //            by the same gain: the noise breathes with the music and silence stays quiet. The head glides (120 ms);
 //            a slow triangle (0.45 Hz) adds a gentle chorus. AGE raises the noise, opens the anti-alias filter, adds
 //            sample-and-hold aliasing at the clock rate (above 50 %) and clock whine (above 60 %).
-//   Pitch    a two-head pitch shifter (50 ms sin^2 windows, anti-aliased) on the read: Once = every repeat shifted by
-//            PITCH + FINE; Climb = the shifted echo is what feeds back, so each repeat steps further (+12 = shimmer
-//            stairs, -12 = falling octaves). The shifter reads earlier by its own delay (25 ms), so the repeats stay
-//            on time above that. Times crossfade as in Digital, and AGE is the same converter grit.
+//   Pitch    a pitch shifter on the read (EchoDsp.hpp: one sweeping head, phase-aligned splices, anti-aliased going
+//            up): Once = every repeat shifted by PITCH + FINE; Climb = the shifted echo is what feeds back, so each
+//            repeat steps further (+12 = shimmer stairs, -12 = falling octaves). The shifter reads earlier by its own
+//            mean delay (32-52 ms), so the repeats stay on time above that. Times crossfade as in Digital, and AGE is
+//            the same converter grit.
 //   Reverse  the loop is a forward delay; the echo is read backwards in windows as long as the delay time (centred on
 //            it), by two readers that take turns and crossfade (up to 15 ms) at the window edges: every repeat plays
 //            backwards, without clicks. Times crossfade, AGE as in Digital.
@@ -46,14 +47,15 @@
 #include "dsp/Fx.hpp"
 #include "dsp/Tempo.hpp"
 #include "EchoParams.hpp"
+#include "EchoDsp.hpp"
 
 namespace pump { namespace echo {
 
 struct Settings {
     int mode = kModeDigital;
-    double timeL = 375.0, timeR = 500.0;    // ms (free running)
+    double timeL = 500.0, timeR = 750.0;    // ms (free running)
     bool sync = true;
-    int noteL = kNote8D, noteR = kNote4;
+    int noteL = kNote4, noteR = kNote4D;
     bool link = false;
     double feedback = 35.0;                 // %
     int route = kRouteStereo;
@@ -102,14 +104,14 @@ inline float clipBucket(float x) { return 0.7f * fastTanh(x * (1.0f / 0.7f)); }
 
 constexpr double kHeadXfSeconds = 0.050;     // Digital / Pitch / Reverse: read-head crossfade on a time change
 constexpr double kModeXfSeconds = 0.040;
-constexpr double kShiftWindow = 0.050;       // pitch shifter window
 constexpr double kLineSeconds = 10.5;        // the delay lines (8 s of delay + the reverse readers' reach)
 constexpr double kRevFadeSeconds = 0.015;    // reverse: the crossfade between windows (at most)
 constexpr int kAp = 4;
 constexpr double kApMs[2][kAp] = { { 4.1, 6.3, 9.7, 14.3 }, { 4.6, 6.9, 10.4, 13.1 } };
 constexpr double kBbdRef = 0.25;             // compander reference level
-constexpr double kBbdBandwidth = 1740.0;     // Hz x s: the bucket-brigade's bandwidth at a delay of T s is this / T
-constexpr double kBbdClockPerBand = 1.0 / 0.425;   // clock = bandwidth / 0.425 (8192 stages, 2 phases)
+constexpr double kBbdBandwidth = 1230.0;     // Hz x s: the bucket-brigade's bandwidth at a delay of T s is this / T
+constexpr double kBbdClockPerBand = 1.0 / 0.3;     // its clock: 8192 stages, two per clock period
+constexpr double kDiffuseMinSeconds = 0.050; // diffusion needs times from here up (the diffusers delay the repeats)
 
 // What a mode does on the write side (the record stage) and the read side (the head).
 enum Kind : int { kClean = 0, kTapeKind, kBbdKind };
@@ -131,14 +133,19 @@ public:
         {
             Chan& ch = chans[c];
             ch.line.setMax(maxD + 8);
+            ch.apSum = 0;
             for (int k = 0; k < kAp; ++k)
             {
-                ch.apLen[k] = (double)std::lround(kApMs[c][k] * 0.001 * sr);
-                ch.ap[k].setMax((int)ch.apLen[k] + 8);
+                ch.apLen[k] = std::max(2, (int)std::lround(kApMs[c][k] * 0.001 * sr));
+                ch.ap[k].setMax(ch.apLen[k] + 4);
+                ch.apSum += ch.apLen[k];
             }
-            ch.shifter.prepare(sr, kShiftWindow);
+            ch.inDelay.setMaxDelay(ch.apSum + 4);
+            ch.inDelay.setDelay(ch.apSum);
+            ch.diffOn.setRamp(std::max(1, (int)(0.020 * sr)));
+            ch.shifter.prepare(sr);
             ch.rng.seed(0x2545F491u + 0x9E3779B9u * (uint32_t)c);
-            ch.dc.set(5.0, sr);
+            ch.dc.set(2.0, sr);
             ch.lfo.reset(c ? 0.25 : 0.0);
             ch.bbdLfo.reset(c ? 0.5 : 0.0);
             ch.bbdLfo.setRate(0.45, sr);
@@ -197,7 +204,7 @@ public:
     }
 
     // ---- feeds (UI) ----
-    float timeMs(int c) const { return timeFeed[c].load(std::memory_order_relaxed); }      // where the echo is now
+    float lagMs(int c) const { return lagFeed[c].load(std::memory_order_relaxed); }        // a gliding head's distance to its time
     float tempo() const { return tempoFeed.load(std::memory_order_relaxed); }
     float wobbleMs() const { return wobbleFeed.load(std::memory_order_relaxed); }          // tape wow + flutter now
     float duckDb() const { return duckFeed.load(std::memory_order_relaxed); }              // the echoes' dip now
@@ -216,9 +223,9 @@ private:
         fx::Svf lc, hc;
         fx::DcBlocker dc;
         fx::Allpass ap[kAp];
-        double apLen[kAp] = {}, apD[kAp] = {};   // the diffusers' full lengths and their lengths now (samples)
-        double apScale = 1.0;
-        bool apInt = true;   // settled: whole-sample lengths (the cheaper, exact integer allpasses)
+        int apLen[kAp] = {}, apSum = 0;   // the diffusers (samples) and their total, D
+        DelayLine inDelay;                // the input, delayed by D
+        LinearSmoother diffOn;            // 1 = the diffusers are in the loop (times from 50 ms)
         fx::Crusher crush;
         fx::Svf tapeHf, tapeBump, tapeRoll;
         fx::OnePole hissHp;
@@ -226,11 +233,11 @@ private:
         fx::Crusher bbdZoh;
         double bbdEnv = 0.0, bbdOutEnv = 0.0, whinePh = 0.0, whineInc = 0.0;
         fx::Lfo lfo, bbdLfo;
-        fx::PitchShifter shifter;
+        AlignedPitchShifter shifter;
         fx::Svf pitchAa;
         double revAge[2] = { 0.0, 0.0 }, revW[2] = { 1024.0, 1024.0 }, revB[2] = { 0.0, 0.0 }, revFade = 1.0, revFadeStep = 0.01;
         int revCur = 0;
-        double comp = 0.0;   // how much earlier the heads read: the diffuser chain's delay
+        double comp = 0.0;   // how much earlier the heads read: D, or 0 below 50 ms
         fx::Rng rng;
     };
 
@@ -368,7 +375,6 @@ private:
             {
             case kModeTape: ch.tapeHf.reset(); ch.tapeBump.reset(); ch.tapeRoll.reset(); ch.hissHp.reset(); break;
             case kModeBbd: ch.bbdAa.reset(); ch.bbdRec.reset(); ch.bbdZoh.reset(); ch.bbdEnv = ch.bbdOutEnv = 0.0; break;
-            case kModePitch: ch.shifter.reset(); ch.pitchAa.reset(); break;
             case kModeReverse: resetReverse(ch); break;
             default: break;
             }
@@ -388,6 +394,7 @@ private:
             ch.line.clear();
             ch.lc.reset(); ch.hc.reset(); ch.dc.reset();
             for (auto& a : ch.ap) a.clear();
+            ch.inDelay.clear();
             ch.crush.reset();
             ch.tapeHf.reset(); ch.tapeBump.reset(); ch.tapeRoll.reset(); ch.hissHp.reset();
             ch.bbdAa.reset(); ch.bbdRec.reset(); ch.bbdZoh.reset(); ch.bbdEnv = ch.bbdOutEnv = 0.0;
@@ -398,10 +405,9 @@ private:
         level = 0.0; grDb = 0.0; duckGain = 1.0;
     }
 
-    // Read delays (samples) for the current times. The diffuser chain is always in the loop (at DIFFUSE 0 its
-    // allpasses are plain delays), so the heads read earlier by its length. Below 80 ms the chain shortens with the
-    // time (gliding by `k` per call), so short echoes stay possible; settled, its lengths are whole samples (exact).
-    void computeTargets(double k)
+    // Read delays (samples) for the current times: TIME - D (the input and the repeats both arrive D late), or TIME
+    // below 50 ms, where the diffusers and the input delay crossfade out of the path (20 ms).
+    void computeTargets()
     {
         double secs[2];
         delaySeconds(set, bpm, secs);
@@ -409,18 +415,9 @@ private:
         {
             Chan& ch = chans[c];
             const double T = secs[c] * sr;
-            const double want = clampv(secs[c] / 0.080, 0.0, 1.0);
-            ch.apScale += (want - ch.apScale) * k;
-            if (std::fabs(want - ch.apScale) < 1e-3) ch.apScale = want;
-            const bool settled = ch.apScale == want;
-            ch.apInt = settled;
-            ch.comp = 0.0;
-            for (int j = 0; j < kAp; ++j)
-            {
-                const double d = ch.apLen[j] * ch.apScale;
-                ch.apD[j] = std::max(2.0, settled ? std::round(d) : d);
-                ch.comp += ch.apD[j];
-            }
+            const bool on = secs[c] >= kDiffuseMinSeconds;
+            ch.diffOn.setTarget(on ? 1.0 : 0.0);
+            ch.comp = on ? (double)ch.apSum : 0.0;
             ch.tgt = clampv(T - ch.comp, 2.0, (double)maxD);
             ch.revWin = clampv(ch.tgt, 16.0, std::max(16.0, maxD - ch.tgt - 2.0 * kRevFadeSeconds * sr - 8.0));
             ch.revBase = std::max(0.0, ch.tgt - ch.revWin);
@@ -428,9 +425,10 @@ private:
     }
     void settle()
     {
-        computeTargets(1.0);
+        computeTargets();
         for (auto& ch : chans)
         {
+            ch.diffOn.reset(ch.diffOn.getTarget());
             ch.heads.a = ch.heads.b = (int)std::lround(ch.tgt); ch.heads.t = 1.0; ch.glide = ch.tgt;
             resetReverse(ch);
         }
@@ -448,8 +446,7 @@ private:
         {
             rFrom = rNow; rTo = routing(wantRoute); routeT = 0.0; curRoute = wantRoute;
         }
-        const double k = 1.0 - std::exp(-(double)kChunk / (0.04 * sr));   // control-rate glides (~40 ms)
-        computeTargets(k);
+        computeTargets();
         for (auto& ch : chans) ch.heads.follow((int)std::lround(ch.tgt));
         const double tau = curMode == kModeTape ? 0.25 : 0.12;
         glideK = 1.0 - std::exp(-1.0 / (tau * sr));
@@ -465,6 +462,7 @@ private:
         lcOn.setTarget(lowCutActive(set.lowCut) ? 1.0 : 0.0);
         hcOn.setTarget(highCutActive(set.highCut) ? 1.0 : 0.0);
 
+        const double k = 1.0 - std::exp(-(double)kChunk / (0.04 * sr));   // control-rate glides (~40 ms)
         lcHz *= std::pow(clampv(set.lowCut, (double)kLowCutOff, 2000.0) / lcHz, k);
         hcHz *= std::pow(clampv(set.highCut, 1000.0, (double)kHighCutOff) / hcHz, k);
         ageNow += (clampv(set.age, 0.0, 100.0) * 0.01 - ageNow) * k;
@@ -494,25 +492,22 @@ private:
             {
                 // the clock follows where the head is now
                 const double T = (ch.glide + ch.comp) / sr;
-                const double band = clampv(kBbdBandwidth / std::max(T, 1e-3), 800.0, 14000.0);
+                const double band = clampv(kBbdBandwidth / std::max(T, 1e-3), 600.0, 14000.0);
                 const double clock = band * kBbdClockPerBand;
                 ch.bbdRec.set(std::min(band, 0.45 * sr), 0.70710678, sr);
                 ch.bbdAa.set(std::min(band * (1.0 + 1.5 * age), 0.45 * sr), 0.70710678, sr);
                 ch.bbdZoh.set(clock / sr, 0.0);
                 ch.whineInc = clock < 0.42 * sr ? clock / sr : 0.0;
             }
-            if (on(kModePitch))
-            {
-                // anti-alias ahead of an upward shift
-                ch.shifter.setRatio(ratio);
-                ch.pitchAa.set(std::min(0.45 * sr, 0.45 * sr / std::max(1.0, ratio)), 0.70710678, sr);
-            }
+            // the shifter (its line runs in every mode, so Pitch can fade in at once); anti-alias ahead of an upward shift
+            ch.shifter.setRatio(ratio);
+            ch.pitchAa.set(std::min(0.45 * sr, 0.45 * sr / std::max(1.0, ratio)), 0.70710678, sr);
         }
         bumpGain = dbToGain(1.5 + 2.0 * age);
         hissLevel = dbToGain(-90.0 + 26.0 * age);
-        wowDepth = (0.35 + 1.4 * age) * 0.001 * sr;
-        flutterDepth = (0.02 + 0.05 * age) * 0.001 * sr;
-        bbdDepth = (0.8 + 0.6 * age) * 0.001 * sr;
+        wowDepth = (0.35 + 2.2 * age) * 0.001 * sr;
+        flutterDepth = (0.02 + 0.06 * age) * 0.001 * sr;
+        bbdDepth = (0.5 + 0.6 * age) * 0.001 * sr;
         bbdNoise = 0.0003 + 0.004 * age;
         zohMix = 0.6 * clampv((age - 0.5) * 2.0, 0.0, 1.0);
         whineLevel = 0.004 * clampv((age - 0.6) / 0.4, 0.0, 1.0);
@@ -593,6 +588,8 @@ private:
                     out[c] = o0 + (out[c] - o0) * mt;
                     loop[c] = l0 + (loop[c] - l0) * mt;
                 }
+                if (curMode != kModePitch && fromMode != kModePitch)   // the shifter's line stays current
+                    ch.shifter.write((float)ch.pitchAa.lowpass(headsRead(ch, ms - ch.shifter.averageDelay())));
                 if (ch.heads.t < 1.0)
                 {
                     ch.heads.t += xfStep;
@@ -605,15 +602,14 @@ private:
             {
                 Chan& ch = chans[c];
                 const double in = (rNow.G[c][0] * x[0] + rNow.G[c][1] * x[1] + (c ? 2.0 * rNow.H * late : 0.0)) * feed;
-                double v = in + fb * (rNow.M[c][0] * loop[0] + rNow.M[c][1] * loop[1]);
+                const double inD = ch.inDelay.process((float)in);
+                const double fbs = fb * (rNow.M[c][0] * loop[0] + rNow.M[c][1] * loop[1]);
+                float df = (float)fbs;
+                for (int k = 0; k < kAp; ++k) df = ch.ap[k].processInt(df, ch.apLen[k], (float)apG);
+                const double u = ch.diffOn.next();
+                double v = u >= 1.0 ? inD + df : (in + (inD - in) * u) + (fbs + (df - fbs) * u);
                 { const double h = ch.lc.highpass(v); v += (h - v) * lcm; }
                 { const double l = ch.hc.lowpass(v); v += (l - v) * hcm; }
-                {
-                    float d = (float)v;
-                    if (ch.apInt) for (int k = 0; k < kAp; ++k) d = ch.ap[k].processInt(d, (int)ch.apD[k], (float)apG);
-                    else for (int k = 0; k < kAp; ++k) d = ch.ap[k].process(d, ch.apD[k], (float)apG);
-                    v = d;
-                }
                 double w = recordStage(kCur, ch, v, g);
                 if (mt < 1.0 && kFrom != kCur) { const double w0 = recordStage(kFrom, ch, v, g); w = w0 + (w - w0) * mt; }
                 w = ch.dc.process(w);
@@ -649,9 +645,8 @@ private:
             inPeak[c].setMax((float)pin[c]);
             wetPeak[c].setMax((float)pw[c]);
             const Chan& ch = chans[c];
-            double head = modeKind(curMode) != kClean ? ch.glide : (double)(ch.heads.t < 1.0 ? ch.heads.b : ch.heads.a);
-            if (curMode == kModePitch) { const double sd = ch.shifter.averageDelay(); head = std::max(head - sd, 2.0) + sd; }
-            timeFeed[c].store((float)(1000.0 * (head + ch.comp) / sr), std::memory_order_relaxed);
+            const double lag = modeKind(curMode) != kClean ? ch.glide - ch.tgt : 0.0;
+            lagFeed[c].store((float)(1000.0 * lag / sr), std::memory_order_relaxed);
         }
         tempoFeed.store((float)bpm, std::memory_order_relaxed);
         wobbleFeed.store((float)(1000.0 * wobble / sr), std::memory_order_relaxed);
@@ -676,7 +671,7 @@ private:
     double envRel = 0.001, levelRel = 0.001;
     double level = 0.0, grDb = 0.0, duckGain = 1.0;
     LinearSmoother fbS, mixS, outS, widthS, driveS, depthS, freezeS, climbS, lcOn, hcOn;
-    std::atomic<float> timeFeed[2] { { 375.0f }, { 500.0f } }, tempoFeed { 120.0f }, wobbleFeed { 0.0f }, duckFeed { 0.0f };
+    std::atomic<float> lagFeed[2] { { 0.0f }, { 0.0f } }, tempoFeed { 120.0f }, wobbleFeed { 0.0f }, duckFeed { 0.0f };
 };
 
 }} // namespace pump::echo
