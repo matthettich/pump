@@ -4,6 +4,7 @@
 #   make eq         build one plugin
 #   make tests      build and run the offline DSP tests
 #   make jack       standalone apps (local testing)
+#   make wasm       pump.wasm + pump-meta.js for Thunder Plus (WASI_SDK=...; wasm/build.sh)
 
 PLUGINS := $(patsubst plugins/%/Makefile,%,$(wildcard plugins/*/Makefile))
 
@@ -43,10 +44,24 @@ build/tests/%: tests/%.cpp build/tests/pffft.o $(wildcard common/*.hpp common/ds
 # the preset check reads every plugin's tables
 build/tests/test_presets: $(wildcard plugins/*/*.hpp)
 
-tests: $(TESTS)
-	@for t in $(TESTS); do echo "== $$t"; ./$$t || exit 1; done
+# The kernel-building engines again, built as for WebAssembly (PUMP_SYNC_KERNELS: no worker thread, see
+# common/dsp/Util.hpp), and the wasm wrapper itself (wasm/pump_wasm.cpp, natively: the effects through its C interface).
+SYNC_TESTS := $(patsubst %,build/tests/sync_test_%,eq band wide heat)
+build/tests/sync_test_%: tests/test_%.cpp build/tests/pffft.o $(wildcard common/*.hpp common/dsp/*.hpp tests/*.hpp) $$(wildcard plugins/$$*/*.hpp)
+	@mkdir -p build/tests
+	$(CXX) $(TEST_FLAGS) -DPUMP_SYNC_KERNELS=1 -Iplugins/$* $< build/tests/pffft.o -lpthread -o $@
+build/tests/wasm_wrapper: tests/wasm_wrapper.cpp wasm/pump_wasm.cpp build/tests/pffft.o $(wildcard common/*.hpp common/dsp/*.hpp plugins/*/*.hpp)
+	@mkdir -p build/tests
+	$(CXX) $(TEST_FLAGS) -DPUMP_SYNC_KERNELS=1 $< build/tests/pffft.o -o $@
+
+tests: $(TESTS) $(SYNC_TESTS) build/tests/wasm_wrapper
+	@for t in $(TESTS) $(SYNC_TESTS) build/tests/wasm_wrapper; do echo "== $$t"; ./$$t || exit 1; done
+
+# pump.wasm + pump-meta.js for Thunder Plus (WASI_SDK = a wasi-sdk 25 folder; see wasm/build.sh)
+wasm:
+	sh wasm/build.sh
 
 clean:
 	rm -rf bin build
 
-.PHONY: all dgl jack tests clean dpf-patches $(PLUGINS)
+.PHONY: all dgl jack tests clean dpf-patches wasm $(PLUGINS)

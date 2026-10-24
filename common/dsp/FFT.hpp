@@ -107,7 +107,11 @@ public:
     // Hand a new kernel to the audio thread (from a worker thread).
     void setKernel(std::shared_ptr<Kernel> k)
     {
+       #if PUMP_SYNC_KERNELS
+        incoming = std::move(k);   // no other thread: the caller is the audio thread
+       #else
         std::atomic_store(&incoming, std::move(k));
+       #endif
         pendingReady.store(true, std::memory_order_release);
     }
     // Immediately install (not from the audio thread while it runs).
@@ -172,7 +176,11 @@ private:
         std::shared_ptr<Kernel> fadeFrom;
         if (pendingReady.exchange(false, std::memory_order_acquire))
         {
+           #if PUMP_SYNC_KERNELS
+            std::shared_ptr<Kernel> k = std::move(incoming);
+           #else
             std::shared_ptr<Kernel> k = std::atomic_load(&incoming);
+           #endif
             if (k) { fadeFrom = cur; cur = k; }
         }
         // input spectra into the frequency-domain delay line

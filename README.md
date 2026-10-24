@@ -60,8 +60,8 @@ make tests      # offline DSP tests
 ```
 
 See [docs/DEVELOPING.md](docs/DEVELOPING.md) for the framework, the shared DSP library and how to add a plugin. The DSP
-in `common/dsp` and each plugin's `*Engine.hpp` has no framework code, so it can also be compiled to WebAssembly for
-Thunder Plus.
+in `common/dsp` and each plugin's `*Engine.hpp` has no framework code, so it also compiles to WebAssembly: `make wasm`
+builds `pump.wasm` for Thunder Plus, where the nine run as bus and master effects (`wasm/`).
 
 ## Licences
 

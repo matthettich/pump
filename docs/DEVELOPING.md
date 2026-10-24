@@ -40,6 +40,12 @@ plugins/<name>/          one folder per plugin (see plugins/eq for the complete 
   UI<Name>.cpp           PumpUI subclass: controls, layout(), drawBody(), graph interaction
   Makefile, pffft.c, fonts.cpp   (copy from plugins/eq; pffft.c goes in FILES_DSP only, fonts.cpp in FILES_UI only)
 tests/test_<name>.cpp    offline tests; `make tests` builds each with -Iplugins/<name>
+tests/wasm_wrapper.cpp   the WebAssembly wrapper built natively (every effect through its C interface)
+wasm/                    the nine engines for Thunder Plus (see "WebAssembly" below)
+  pump_wasm.cpp          one C interface over the engines; Host<Name> = each Plugin<Name>.hpp's DSP side without DPF
+  pump_meta.cpp          writes the parameter tables and factory presets as JSON (from the Params.hpp tables)
+  build.sh               pump.wasm + pump-meta.js (wasi-sdk 25)
+  compare.cpp/.mjs       the wasm against a native build of the same wrapper, on the test mix
 tools/shot.sh            headless screenshot of a standalone build
 tools/apply-dpf-patches.sh  applies patches/dpf/*.patch to DPF (run by make; see patches/dpf/README.md)
 patches/dpf/             fixes to DPF that pump carries until they're upstream
@@ -99,3 +105,31 @@ that isn't a git checkout (DPF_PATH=...) it uses patch(1).
 
 CI (`.github/workflows/build.yml`) cross-compiles Windows x64 with MinGW (posix threads), builds macOS universal,
 builds Linux, runs `make tests`, and refreshes the `latest` pre-release on every push to main.
+
+## WebAssembly (Thunder Plus's bus and master effects)
+
+`wasm/pump_wasm.cpp` puts the nine engines behind one C interface (`pump_new(type, sr)`, `pump_values` /
+`pump_commit`, `pump_process`, `pump_tel` for the meters, `pump_ring_*` for the UI feeds, `pump_hold` for Alt-listen;
+the list is at the top of the file). Each `Host<Name>` there is its plugin's DSP side with the DPF parts taken out:
+the same prepare / activate / sync / run code, chunk sizes, `BypassMixer`, sanitising, `ScopeRing`s and `MeterValue`s.
+`HostBase` stands in for `PumpPlugin` (values with change flags, `pv`, `takeAnyChanged`, `takeChanged`).
+**When a `Plugin<Name>.hpp` changes, change its `Host<Name>` the same way**, and rebuild.
+
+```
+WASI_SDK=/path/to/wasi-sdk-25.0-x86_64-linux make wasm     # = sh wasm/build.sh: build/wasm/pump.wasm, build/wasm/pump-meta.js
+c++ -O3 -ffast-math -fno-finite-math-only -std=c++17 -DPUMP_SYNC_KERNELS=1 -DPFFFT_STATIC_DEFINE -Icommon \
+    wasm/compare.cpp -x c common/pump_pffft.c -o build/pump_compare
+node wasm/compare.mjs build/wasm tests/data/mix.f32 10    # wasm vs native: difference, latency, CPU per effect and preset
+```
+
+Thunder Plus vendors `pump.wasm` and `pump-meta.js` in its `pump/` folder (bump their `?v=` there); its
+`docs/PUMP-FX.md` describes how it uses them. `pump-meta.js` is generated from the Params.hpp tables, so its parameter
+ranges and factory presets always match the plugins.
+
+An AudioWorklet has no threads, so the wasm build sets **`PUMP_SYNC_KERNELS=1`** (`common/dsp/Util.hpp`): the kernels
+the plugins design on a worker thread are designed on the calling thread instead, at the point the worker would have
+picked the request up (`Multiband::Splitter::designRequested`, the EQ's `pollLinear` / `requestKernel`; the EQ builds
+at most one linear-phase kernel every 80 ms of audio while settings move). No `std::thread`, mutex or atomic
+`shared_ptr` is used then. The plugins never set it; `make tests` also runs the EQ, BAND, WIDE and HEAT tests built
+that way (`build/tests/sync_test_*`) and the wrapper test.
+

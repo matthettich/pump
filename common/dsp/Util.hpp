@@ -10,6 +10,15 @@
 #include <new>
 #include <vector>
 
+// PUMP_SYNC_KERNELS (default 0): a build for a host with no threads, such as WebAssembly in Thunder Plus's audio
+// worklet. The kernels that the plugins design on a worker thread (EQ linear phase, the linear-phase crossovers of
+// BAND / WIDE / HEAT) are then designed on the calling thread, at the point where the worker would have been asked,
+// and nothing uses std::thread, mutexes or atomic shared_ptr. The plugins never set it, so their behaviour is
+// unchanged. Without exceptions (-fno-exceptions), a failed allocation aborts instead of throwing.
+#ifndef PUMP_SYNC_KERNELS
+ #define PUMP_SYNC_KERNELS 0
+#endif
+
 #if defined(__SSE__) || defined(_M_X64) || defined(_M_IX86) || defined(__x86_64__)
  #define PUMP_X86 1
  #include <xmmintrin.h>
@@ -92,7 +101,11 @@ public:
        #else
         if (posix_memalign(&raw, 64, count * sizeof(float)) != 0) raw = nullptr;
        #endif
+       #if defined(__cpp_exceptions) || defined(__EXCEPTIONS) || defined(_CPPUNWIND)
         if (raw == nullptr) throw std::bad_alloc();
+       #else
+        if (raw == nullptr) std::abort();
+       #endif
         p = static_cast<float*>(raw);
         n = count;
         clear();
