@@ -1,4 +1,4 @@
-// pump SYSTEM: pump EQ on everything the Mac plays.
+// System EQ: pump EQ on everything the Mac plays.
 //
 // A menu-bar app (macOS 14.2+). It taps the mix of every other app with a Core Audio process tap (muted while it is
 // being read, so the original sound stops), runs it through the pump EQ Audio Unit bundled inside the app
@@ -22,7 +22,7 @@
 #include <cstring>
 #include <vector>
 
-static NSString* const kAppName = @"pump SYSTEM";
+static NSString* const kAppName = @"System EQ";
 static const UInt32 kMaxFrames = 4096;
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -308,7 +308,7 @@ struct Engine
 
         NSDictionary* aggDesc = @{
             @kAudioAggregateDeviceNameKey: kAppName,
-            @kAudioAggregateDeviceUIDKey: [NSString stringWithFormat:@"com.wake.pump.system.%@", NSUUID.UUID.UUIDString],
+            @kAudioAggregateDeviceUIDKey: [NSString stringWithFormat:@"com.wake.pump.systemeq.%@", NSUUID.UUID.UUIDString],
             @kAudioAggregateDeviceMainSubDeviceKey: outputUID,
             @kAudioAggregateDeviceIsPrivateKey: @YES,
             @kAudioAggregateDeviceIsStackedKey: @NO,
@@ -426,7 +426,7 @@ static NSURL* stateURL()
 {
     NSURL* dir = [[NSFileManager.defaultManager URLsForDirectory:NSApplicationSupportDirectory
                                                        inDomains:NSUserDomainMask].firstObject
-                  URLByAppendingPathComponent:@"wake/pump SYSTEM" isDirectory:YES];
+                  URLByAppendingPathComponent:@"wake/System EQ" isDirectory:YES];
     [NSFileManager.defaultManager createDirectoryAtURL:dir withIntermediateDirectories:YES attributes:nil error:nil];
     return [dir URLByAppendingPathComponent:@"eq-state.plist"];
 }
@@ -510,7 +510,7 @@ static NSURL* stateURL()
 - (void)updateStatus
 {
     statusItem.button.appearsDisabled = !engine.running;
-    window.title = engine.running ? @"pump SYSTEM — EQ on" : @"pump SYSTEM — EQ off";
+    window.title = engine.running ? @"System EQ — on" : @"System EQ — off";
 }
 
 // restart on a new default output, a sample-rate change or a device going away
@@ -578,7 +578,7 @@ static OSStatus deviceListener(AudioObjectID, UInt32, const AudioObjectPropertyA
     privacy.target = self;
 
     [menu addItem:NSMenuItem.separatorItem];
-    NSMenuItem* quit = [menu addItemWithTitle:@"Quit pump SYSTEM" action:@selector(terminate:) keyEquivalent:@"q"];
+    NSMenuItem* quit = [menu addItemWithTitle:@"Quit System EQ" action:@selector(terminate:) keyEquivalent:@"q"];
     quit.target = NSApp;
 }
 
@@ -635,8 +635,8 @@ static OSStatus deviceListener(AudioObjectID, UInt32, const AudioObjectPropertyA
         window.releasedWhenClosed = NO;
         window.delegate = self;
         window.contentView = eqView;
-        [window setFrameAutosaveName:@"pumpSystemEQ"];
-        if (![window setFrameUsingName:@"pumpSystemEQ"])
+        [window setFrameAutosaveName:@"SystemEQ"];
+        if (![window setFrameUsingName:@"SystemEQ"])
             [window center];
 
         // the plugin resizes its own view (corner drag, scale): follow it

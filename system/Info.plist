@@ -5,15 +5,15 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleExecutable</key>
-	<string>pump-system</string>
+	<string>system-eq</string>
 	<key>CFBundleIdentifier</key>
-	<string>com.wake.pump.system</string>
+	<string>com.wake.pump.systemeq</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>pump SYSTEM</string>
+	<string>System EQ</string>
 	<key>CFBundleDisplayName</key>
-	<string>pump SYSTEM</string>
+	<string>System EQ</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -29,7 +29,7 @@
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSAudioCaptureUsageDescription</key>
-	<string>pump SYSTEM runs everything your Mac plays through pump EQ.</string>
+	<string>System EQ runs everything your Mac plays through pump EQ.</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>© wake</string>
 </dict>
