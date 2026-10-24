@@ -14,6 +14,7 @@
 #include "../plugins/tube/TubeParams.hpp"
 #include "../plugins/snap/SnapParams.hpp"
 #include "../plugins/grain/GrainParams.hpp"
+#include "../plugins/gate/GateParams.hpp"
 #include <cstdio>
 #include <cstring>
 #include <map>
@@ -93,6 +94,7 @@ int main()
         { "TUBE", tube::params(), tube::presets() },
         { "SNAP", snap::params(), snap::presets() },
         { "GRAIN", grain::params(), grain::presets() },
+        { "GATE", gate::params(), gate::presets() },
     };
     std::map<std::string, int> sections;
     std::vector<std::vector<std::string>> chains;
