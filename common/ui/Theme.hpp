@@ -37,6 +37,14 @@ namespace accents {
     inline Accent wide()  { return { "wide",  hexColor(0x73B4FF), hexColor(0x1443AC), hexColor(0xFF8A3D) }; }   // blue
     inline Accent heat()  { return { "heat",  hexColor(0xFF8676), hexColor(0xA21F12), hexColor(0x2A9BC9) }; }   // coral
     inline Accent meter() { return { "meter", hexColor(0xFFF04F), hexColor(0x625800), hexColor(0xB64DFF) }; }   // yellow
+    // the creative effects
+    inline Accent tube()   { return { "tube",   hexColor(0xFF5C7C), hexColor(0x8C0A2E), hexColor(0x1FB5A0) }; }   // cherry
+    inline Accent snap()   { return { "snap",   hexColor(0x8CFF5A), hexColor(0x235C00), hexColor(0xE0459B) }; }   // grass
+    inline Accent gate()   { return { "gate",   hexColor(0x5CCBFF), hexColor(0x00527A), hexColor(0xFF8F3D) }; }   // sky
+    inline Accent echo()   { return { "echo",   hexColor(0xDD77FF), hexColor(0x650C8A), hexColor(0x4FB33A) }; }   // fuchsia
+    inline Accent spring() { return { "spring", hexColor(0xFFD04A), hexColor(0x6B4700), hexColor(0x3D6BFF) }; }   // gold
+    inline Accent verb()   { return { "verb",   hexColor(0x949FFF), hexColor(0x262C99), hexColor(0xFFA84D) }; }   // periwinkle
+    inline Accent grain()  { return { "grain",  hexColor(0x3DF5D0), hexColor(0x006652), hexColor(0xFF6F91) }; }   // seafoam
 }
 
 struct Theme {

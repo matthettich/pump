@@ -1,6 +1,7 @@
 // Checks every factory preset of every pump plugin: each value names a real parameter and lies in its range, no
 // preset sets a momentary/output parameter, names are unique within a plugin, "Default" comes first, and the
-// CHAINS presets carry the same names in all nine plugins (so a chain can be loaded plugin by plugin).
+// CHAINS presets carry the same names in every mastering plugin that has them (so a chain can be loaded plugin by
+// plugin; the creative effects have none).
 #include "../plugins/eq/EQParams.hpp"
 #include "../plugins/comp/CompParams.hpp"
 #include "../plugins/limit/LimitParams.hpp"
@@ -10,6 +11,7 @@
 #include "../plugins/wide/WideParams.hpp"
 #include "../plugins/heat/HeatParams.hpp"
 #include "../plugins/meter/MeterParams.hpp"
+#include "../plugins/tube/TubeParams.hpp"
 #include <cstdio>
 #include <cstring>
 #include <map>
@@ -86,6 +88,7 @@ int main()
         { "WIDE", wide::params(), wide::presets() },
         { "HEAT", heat::params(), heat::presets() },
         { "METER", meter::params(), meter::presets() },
+        { "TUBE", tube::params(), tube::presets() },
     };
     std::map<std::string, int> sections;
     std::vector<std::vector<std::string>> chains;
@@ -97,14 +100,14 @@ int main()
     if (!ref.empty())
     {
         for (size_t i = 0; i < chains.size(); ++i)
-            if (chains[i] != ref)
+            if (!chains[i].empty() && chains[i] != ref)   // (the creative effects have no chains)
             {
                 std::string have, want;
                 for (const auto& s : chains[i]) have += "\"" + s + "\" ";
                 for (const auto& s : ref) want += "\"" + s + "\" ";
                 FAIL("%s: chains differ from the others (has %s; expected %s)", plugins[i].name, have.c_str(), want.c_str());
             }
-        std::printf("  %zu chains in every plugin\n", ref.size());
+        std::printf("  %zu chains in every mastering plugin\n", ref.size());
     }
 
     if (failures) { std::printf("%d failure(s)\n", failures); return 1; }

@@ -5,6 +5,7 @@
 #include "DistrhoPlugin.hpp"
 #include "PumpParams.hpp"
 #include "dsp/Util.hpp"
+#include "dsp/Tempo.hpp"
 #include <atomic>
 #include <string>
 #include <vector>
@@ -143,6 +144,26 @@ protected:
     bool takeChanged(uint32_t i) { return fChanged[i].exchange(false, std::memory_order_acq_rel); }
     // Output (meter) parameters
     void setOutput(uint32_t i, float v) { fValues[i].store(v, std::memory_order_relaxed); }
+
+   #if DISTRHO_PLUGIN_WANT_TIMEPOS
+    // On the audio thread, in run(): the host transport for this block (tempo, position in quarter notes, playing).
+    // Hosts that send no tempo read as 120 BPM; no musical position leaves `valid` false.
+    pump::Transport transport() const
+    {
+        const TimePosition& t = getTimePosition();
+        pump::Transport tr;
+        tr.playing = t.playing;
+        if (t.bbt.beatsPerMinute > 1.0 && std::isfinite(t.bbt.beatsPerMinute)) tr.bpm = t.bbt.beatsPerMinute;
+        if (t.bbt.valid && t.bbt.ticksPerBeat > 0.0 && t.bbt.beatType > 0.0f && t.bbt.beatsPerBar > 0.0f)
+        {
+            const double beats = (double)(t.bbt.bar - 1) * t.bbt.beatsPerBar + (double)(t.bbt.beat - 1) + t.bbt.tick / t.bbt.ticksPerBeat;
+            tr.ppq = beats * 4.0 / t.bbt.beatType;
+            tr.barQuarters = t.bbt.beatsPerBar * 4.0 / t.bbt.beatType;
+            tr.valid = std::isfinite(tr.ppq);
+        }
+        return tr;
+    }
+   #endif
 
     const ParamSpec* fSpecs;
     uint32_t fNumParams;
