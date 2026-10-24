@@ -145,7 +145,6 @@ public:
         routeStep = 1.0 / (0.040 * sr);
         envRel = 1.0 - std::exp(-1.0 / (0.030 * sr));
         levelRel = 1.0 - std::exp(-1.0 / (0.040 * sr));
-        envPeriod = std::max(1, (int)std::lround(sr / 1500.0));
         const int ramp = std::max(1, (int)(0.020 * sr));
         for (LinearSmoother* s : { &fbS, &mixS, &outS, &widthS, &driveS, &depthS })
             s->setRamp(ramp);
@@ -196,10 +195,7 @@ public:
     float tempo() const { return tempoFeed.load(std::memory_order_relaxed); }
     float wobbleMs() const { return wobbleFeed.load(std::memory_order_relaxed); }          // tape wow + flutter now
     float duckDb() const { return duckFeed.load(std::memory_order_relaxed); }              // the echoes' dip now
-    double envelopeRate() const { return sr / envPeriod; }
-    // input (max of both sides) and echo (per side) peaks, decimated to ~1500 Hz, pushed together (aligned)
-    ScopeRing envIn { 1 << 14 }, envWet[2] { ScopeRing(1 << 14), ScopeRing(1 << 14) };
-    MeterValue inPeak[2], wetPeak[2];
+    MeterValue inPeak[2], wetPeak[2];   // input and echo (after duck and width) peaks
 
 private:
     struct Heads {
@@ -292,17 +288,22 @@ private:
             }
             return;
         }
+        case kModePitch:
+        {
+            // the heads read early by the shifter's delay; the unshifted repeat is read on time (T)
+            const double sd = ch.shifter.averageDelay();
+            const double y = headsRead(ch, modSine);
+            const double yo = headsRead(ch, modSine + sd);
+            const double sh = ch.shifter.process((float)ch.pitchAa.lowpass(y));
+            raw = yo; out = sh;
+            loop = yo + (sh - yo) * climb;
+            return;
+        }
         default:
         {
             const double y = headsRead(ch, modSine);
-            raw = loop = out = y;
-            if (m == kModePitch)
-            {
-                const double s = ch.shifter.process((float)ch.pitchAa.lowpass(y));
-                out = s;
-                loop = y + (s - y) * climb;
-            }
-            else if (m == kModeReverse) out = reverseRead(ch);
+            raw = loop = y;
+            out = m == kModeReverse ? reverseRead(ch) : y;
             return;
         }
         }
@@ -577,15 +578,6 @@ private:
             R[i] = (float)((x[1] * dryG + wet[1] * wetG) * og);
             chk += wet[0] + wet[1];
             for (int c = 0; c < 2; ++c) { pin[c] = std::max(pin[c], std::fabs(x[c])); pw[c] = std::max(pw[c], std::fabs(wet[c])); }
-            envAccIn = std::max(envAccIn, ax);
-            envAccWet[0] = std::max(envAccWet[0], std::fabs(wet[0]));
-            envAccWet[1] = std::max(envAccWet[1], std::fabs(wet[1]));
-            if (++envCount >= envPeriod)
-            {
-                envIn.push((float)envAccIn); envWet[0].push((float)envAccWet[0]); envWet[1].push((float)envAccWet[1]);
-                envAccIn = envAccWet[0] = envAccWet[1] = 0.0;
-                envCount = 0;
-            }
         }
         duckGain = duckTo;
         chk += level + grDb;
@@ -630,8 +622,6 @@ private:
     double bbdNoise = 0.0, zohMix = 0.0, whineLevel = 0.0;
     double envRel = 0.001, levelRel = 0.001;
     double level = 0.0, grDb = 0.0, duckGain = 1.0;
-    int envPeriod = 32, envCount = 0;
-    double envAccIn = 0.0, envAccWet[2] = { 0.0, 0.0 };
     LinearSmoother fbS, mixS, outS, widthS, driveS, depthS, freezeS, climbS, diffS, lcOn, hcOn;
     std::atomic<float> timeFeed[2] { { 375.0f }, { 500.0f } }, tempoFeed { 120.0f }, wobbleFeed { 0.0f }, duckFeed { 0.0f };
 };
