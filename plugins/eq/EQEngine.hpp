@@ -6,11 +6,13 @@
 #include "dsp/FFT.hpp"
 #include "dsp/Dynamics.hpp"
 #include "EQParams.hpp"
-#include <chrono>
-#include <condition_variable>
 #include <memory>
-#include <mutex>
-#include <thread>
+#if !PUMP_SYNC_KERNELS
+ #include <chrono>
+ #include <condition_variable>
+ #include <mutex>
+ #include <thread>
+#endif
 
 namespace pump { namespace eq {
 
@@ -381,6 +383,9 @@ private:
     }
     void processLinear(float* L, float* R, int n)
     {
+       #if PUMP_SYNC_KERNELS
+        sinceBuild = sinceBuild > (1 << 28) ? sinceBuild : sinceBuild + n;
+       #endif
         if (linDirty) { linDirty = false; requestKernel(); }   // requestKernel re-arms linDirty if it can't hand off now
         for (int off = 0; off < n; off += kScratch)
         {
@@ -467,6 +472,14 @@ private:
         adopt(std::move(c), N);
         curGen = wReqGen = wantGen;
     }
+#if PUMP_SYNC_KERNELS
+    // No worker (PUMP_SYNC_KERNELS): the convolver of the new size is built here, on the calling thread, and taken at once.
+    void pollLinear()
+    {
+        buildLinearNow();
+        sinceBuild = 0;
+    }
+#else
     // audio thread: swap in a convolver the worker finished, or ask for one
     void pollLinear()
     {
@@ -492,6 +505,8 @@ private:
             wCv.notify_one();
         }
     }
+
+#endif
 
     void buildKernel(StereoConvolver& target, int N, const Snapshot& snap, bool now)
     {
@@ -562,6 +577,21 @@ private:
         if (now) target.setKernelNow(k); else target.setKernel(k);
     }
 
+#if PUMP_SYNC_KERNELS
+    // No worker: the current convolver gets its new kernel here (crossfaded in, as the worker's would be). A burst of
+    // changes (a drag) is built at most every kSyncEverySec of audio; linDirty stays set until then, and the last setting
+    // is always built.
+    static constexpr double kSyncEverySec = 0.08;
+    void requestKernel()
+    {
+        if (!conv) return;
+        if (sinceBuild < (int)(kSyncEverySec * sr)) { linDirty = true; return; }
+        buildKernel(*conv, convN, snapshot(), false);
+        sinceBuild = 0;
+    }
+    void startWorker() {}
+    void stopWorker() {}
+#else
     void requestKernel()
     {
         std::unique_lock<std::mutex> lk(wMutex, std::try_to_lock);
@@ -619,6 +649,8 @@ private:
         wThread.join();
     }
 
+#endif
+
     // ----- solo -----
     void applySolo(float* L, float* R, int n)
     {
@@ -673,6 +705,14 @@ private:
     DelayLine detDly[2];
     std::vector<float> scratchL, scratchR;
 
+#if PUMP_SYNC_KERNELS
+    int sinceBuild = 1 << 28;   // samples since the last kernel build (no worker: see requestKernel)
+    // the worker's fields that prepare() / finishPending() reset (unused without a worker)
+    bool wPending = false, wReconfPending = false, wNextReady = false;
+    int wReqGen = 0;
+    std::shared_ptr<StereoConvolver> wKernelTarget, wNext;
+    std::vector<std::shared_ptr<StereoConvolver>> wRetire;
+#else
     // worker (kernel builds, convolver builds, frees); everything below is guarded by wMutex
     std::thread wThread;
     std::mutex wMutex;
@@ -682,6 +722,7 @@ private:
     bool wReconfPending = false; int wReqN = 0, wReqGen = 0; Snapshot wReqSnap {};
     std::shared_ptr<StereoConvolver> wNext; bool wNextReady = false; int wNextN = 0, wNextGen = -1;
     std::vector<std::shared_ptr<StereoConvolver>> wRetire;
+#endif
 };
 
 }} // namespace pump::eq

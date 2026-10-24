@@ -21,8 +21,10 @@
 #include "dsp/Crossover.hpp"
 #include "dsp/FFT.hpp"
 #include <atomic>
-#include <chrono>
-#include <thread>
+#if !PUMP_SYNC_KERNELS
+ #include <chrono>
+ #include <thread>
+#endif
 
 namespace pump { namespace mb {
 
@@ -187,6 +189,9 @@ public:
     // Split n (<= maxBlock) samples into band(b, ch). Bands >= bandsInUse() come out as silence.
     void process(const float* L, const float* R, int n)
     {
+       #if PUMP_SYNC_KERNELS
+        designRequested();   // what the worker thread would have picked up by now
+       #endif
         if (mode == kLinear) processLinear(L, R, n);
         else processAnalog(L, R, n);
     }
@@ -461,6 +466,25 @@ private:
         }
         slotNb[slot] = bands;
     }
+    // The worker's job: design the newest request into the spare slot (unless a swap is still pending).
+    void designRequested()
+    {
+        const uint32_t seq = reqSeq.load(std::memory_order_acquire);
+        if (seq == builtSeq.load(std::memory_order_relaxed) || swapPending.load(std::memory_order_acquire)) return;
+        const int bands = reqNb.load(std::memory_order_relaxed);
+        double e[3];
+        for (int k = 0; k < 3; ++k) e[k] = reqF[k].load(std::memory_order_relaxed);
+        const int slot = 1 - active.load(std::memory_order_relaxed);
+        design(slot, bands, e);
+        pendingSlot.store(slot, std::memory_order_relaxed);
+        builtSeq.store(seq, std::memory_order_relaxed);
+        swapPending.store(true, std::memory_order_release);
+    }
+#if PUMP_SYNC_KERNELS
+    // no worker: process() calls designRequested() itself
+    void startWorker() {}
+    void stopWorker() {}
+#else
     void startWorker()
     {
         quit.store(false);
@@ -473,14 +497,7 @@ private:
                     std::this_thread::sleep_for(std::chrono::milliseconds(2));
                     continue;
                 }
-                const int bands = reqNb.load(std::memory_order_relaxed);
-                double e[3];
-                for (int k = 0; k < 3; ++k) e[k] = reqF[k].load(std::memory_order_relaxed);
-                const int slot = 1 - active.load(std::memory_order_relaxed);
-                design(slot, bands, e);
-                pendingSlot.store(slot, std::memory_order_relaxed);
-                builtSeq.store(seq, std::memory_order_relaxed);
-                swapPending.store(true, std::memory_order_release);
+                designRequested();
             }
         });
     }
@@ -490,6 +507,7 @@ private:
         quit.store(true, std::memory_order_release);
         worker.join();
     }
+#endif
 
     double sr = 48000.0, park = 22000.0;
     int maxBlk = 512, mode = kAnalog, nb = 3;
@@ -519,7 +537,9 @@ private:
     // worker-side buffers
     AlignedBuffer wSpec, wTmp, wPart;
     std::vector<float> wKernel, win;
+#if !PUMP_SYNC_KERNELS
     std::thread worker;
+#endif
     std::atomic<bool> quit { false }, swapPending { false };
     std::atomic<int> active { 0 }, pendingSlot { 0 }, reqNb { 3 };
     std::atomic<float> reqF[3];
