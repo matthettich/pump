@@ -1,6 +1,6 @@
 # …pump
 
-Mastering plugins by **wake**, in the look of Thunder Plus's *Simple* skins: flat and square, ink outlines with an
+Mastering plugins and creative effects by **wake**, in the look of Thunder Plus's *Simple* skins: flat and square, ink outlines with an
 offset block, Share Tech Mono, one light-neon colour per plugin, light or dark. VST3 and CLAP on Windows and macOS
 (plus Audio Units on macOS), built for Ableton Live and any other host.
 
@@ -15,6 +15,13 @@ offset block, Share Tech Mono, one light-neon colour per plugin, light or dark. 
 | **pump WIDE** Stereo Imager | blue | multiband width and stereoize, mono bass, vectorscope and correlation |
 | **pump HEAT** Saturator | coral | multiband warm/tape/tube/triode/retro/clip saturation, oversampled |
 | **pump METER** Loudness Meter | yellow | LUFS (momentary, short-term, integrated), LRA, true peak, PLR/PSR, history |
+
+### Creative effects
+
+| Plugin (name in your host) | Colour | What it does |
+|---|---|---|
+| **pump TUBE** Tube Distortion | cherry | six circuits (glow, triode, pentode, push-pull, starve, fuzz) with dynamic grid bias, supply sag, voltage and up to three stages; focus, tone, oversampling, auto gain; live curve, scope and harmonics |
+| **pump SNAP** Transient Shaper | grass | level-independent attack and sustain shaping; detector focus, band split, stereo link, lookahead, soft clip to a ceiling, delta listening |
 
 ## Download
 
@@ -62,7 +69,7 @@ Every plugin's preset menu has three groups of factory presets, plus your own:
 - **Factory**: general starting points.
 - **Sources**: for single tracks and buses (Vocals, Drums, Kick, Snare, Bass, Guitars, Keys, Synths, Pads, Bus). They
   are set for sources peaking around -6 dBFS; move THRESH or GAIN by the same amount for quieter or hotter tracks.
-- **Chains**: seven matching mastering chains (Pop, EDM, Hip-hop, Rock, Acoustic & jazz, Lo-fi, Streaming -14). Load
+- **Chains** (mastering plugins): seven matching mastering chains (Pop, EDM, Hip-hop, Rock, Acoustic & jazz, Lo-fi, Streaming -14). Load
   the same name in each plugin, in this order: EQ, CALM, COMP, BAND, HEAT, TONE, WIDE, LIMIT, METER. On dense mixes,
   lower LIMIT's GAIN by 1-3 dB to land on the target loudness.
 - **Your presets**: *Save preset…* at the end of the menu. They're stored as small text files (one folder per plugin)

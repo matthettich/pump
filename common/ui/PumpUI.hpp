@@ -389,8 +389,11 @@ public:
     std::string paramStatus(int i) const
     {
         if (i < 0) return "";
-        return std::string(fSpecs[i].name) + "  " + fSpecs[i].format(fValues[(size_t)i]);
+        return std::string(fSpecs[i].name) + "  " + formatParam(i, fValues[(size_t)i]);
     }
+    // Value text of a parameter on controls and in the status line. Override for plugin-specific text ("OFF" at a
+    // filter's end stop, note names); the default is the ParamSpec's own.
+    virtual std::string formatParam(int i, float v) const { return fSpecs[i].format(v); }
 
     // ---- drawing helpers (logical coordinates) --------------------------------------------------------------------
     enum Font { kLabel, kMono, kBold };
@@ -1587,7 +1590,7 @@ inline void Dial::draw(PumpUI& ui)
     ui.line(cx + std::cos(pa) * (rad - 14.0f) * 0.25f, cy + std::sin(pa) * (rad - 14.0f) * 0.25f,
             cx + std::cos(pa) * (rad - 6.5f), cy + std::sin(pa) * (rad - 6.5f), dis ? t.dim : t.ink, 2.2f);
     // value
-    ui.textAt(cx, cy + rad + 12.0f, ui.spec(param).format(ui.value(param)), PumpUI::kMono, size == Small ? 10.0f : 11.0f, dis ? t.dim : t.ink, NanoVG::ALIGN_CENTER | NanoVG::ALIGN_MIDDLE);
+    ui.textAt(cx, cy + rad + 12.0f, ui.formatParam(param, ui.value(param)), PumpUI::kMono, size == Small ? 10.0f : 11.0f, dis ? t.dim : t.ink, NanoVG::ALIGN_CENTER | NanoVG::ALIGN_MIDDLE);
 }
 inline bool Dial::mouseDown(PumpUI& ui, float x, float y, int button, uint)
 {
@@ -1627,7 +1630,7 @@ inline void SliderRow::draw(PumpUI& ui)
     ui.fillRect(Rect(std::min(x0, x1), bar.y, std::fabs(x1 - x0), bar.h), dis ? t.dim : t.neon);
     ui.strokeRect(bar, dis ? t.dim : t.ink, 1.2f);
     ui.fillRect(Rect(x1 - 1.5f, bar.y - 3.0f, 3.0f, bar.h + 6.0f), dis ? t.dim : t.ink);
-    ui.textAt(r.r(), r.cy(), ui.spec(param).format(ui.value(param)), PumpUI::kMono, 11.5f, dis ? t.dim : t.ink, NanoVG::ALIGN_RIGHT | NanoVG::ALIGN_MIDDLE);
+    ui.textAt(r.r(), r.cy(), ui.formatParam(param, ui.value(param)), PumpUI::kMono, 11.5f, dis ? t.dim : t.ink, NanoVG::ALIGN_RIGHT | NanoVG::ALIGN_MIDDLE);
 }
 inline bool SliderRow::mouseDown(PumpUI& ui, float x, float, int button, uint)
 {
@@ -1775,7 +1778,7 @@ inline void MenuButton::draw(PumpUI& ui)
 {
     const Theme& t = ui.theme;
     ui.keyBox(r, false, false, nullptr, 3.0f);
-    std::string s = textFn ? textFn() : (param >= 0 ? ui.spec(param).format(ui.value(param)) : label);
+    std::string s = textFn ? textFn() : (param >= 0 ? ui.formatParam(param, ui.value(param)) : label);
     const float pad = arrows ? 26.0f : 10.0f;
     if (!label.empty() && param >= 0)
         ui.textAt(r.x + pad, r.cy(), label, PumpUI::kLabel, 10.5f, t.ink2, NanoVG::ALIGN_LEFT | NanoVG::ALIGN_MIDDLE, 1.0f);
