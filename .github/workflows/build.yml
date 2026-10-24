@@ -16,7 +16,7 @@ permissions:
 jobs:
   tests:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v5
         with: { submodules: recursive }
@@ -31,7 +31,7 @@ jobs:
 
   windows:
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v5
         with: { submodules: recursive }
@@ -66,7 +66,7 @@ jobs:
 
   macos:
     runs-on: macos-14
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v5
         with: { submodules: recursive }
@@ -120,7 +120,7 @@ jobs:
 
   linux:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v5
         with: { submodules: recursive }
@@ -158,7 +158,7 @@ jobs:
         run: |
           files=$(find artifacts -type f \( -name '*.zip' -o -name '*.tar.gz' -o -name '*.pkg' \))
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
-            gh release create "$GITHUB_REF_NAME" $files --title "…pump $GITHUB_REF_NAME" --notes "Mastering plugins by wake. See INSTALL.txt in each zip."
+            gh release create "$GITHUB_REF_NAME" $files --title "…pump $GITHUB_REF_NAME" --notes "Mastering plugins and creative effects by wake. See INSTALL.txt in each zip."
           else
             gh release delete latest --yes --cleanup-tag 2>/dev/null || true
             gh release create latest $files --prerelease --title "…pump (latest build)" \

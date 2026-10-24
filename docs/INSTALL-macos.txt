@@ -1,5 +1,5 @@
-…pump mastering plugins — Mac install (Apple Silicon and Intel)
-================================================================
+…pump plugins — Mac install (Apple Silicon and Intel)
+=====================================================
 
 These builds are not notarized by Apple yet, so macOS blocks them the first time ("Apple could not verify…").
 Click Done (never Move to Trash) and use one of these:

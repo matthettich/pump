@@ -1,5 +1,5 @@
 #!/usr/bin/make -f
-# …pump: build every plugin (VST3 + CLAP, plus AU on macOS) and run the DSP tests.
+# …pump: build every plugin (mastering + effects; VST3 + CLAP, plus AU on macOS) and run the DSP tests.
 #   make            build all plugins into bin/
 #   make eq         build one plugin
 #   make tests      build and run the offline DSP tests
