@@ -261,9 +261,9 @@ int main()
                     for (size_t i = (size_t)(0.05 * sr); i < n; ++i)
                         worst = std::max(worst, (double)std::max(std::fabs(L[i] - L[i - 1]), std::fabs(R[i] - R[i - 1])));
                 }
-                // (0.035 of full scale per sample = a 0.6 ms ramp; Both mode at full resonance moves gain and the
-                // filter's passband level together)
-                CHECK(worst < 0.035, "constant input, attack/release %s, every mode, settings moving: largest step %.4f",
+                // (>= 1 ms: no faster than a 1 ms linear ramp, 0.021 per sample; 0 ms: the minimum ramp's 0.022 plus
+                // the filter's passband level moving with it in Both mode)
+                CHECK(worst < (fastest ? 0.03 : 0.021), "constant input, attack/release %s, every mode, settings moving: largest step %.4f",
                       fastest ? "0 (the minimum ramp)" : ">= 1 ms", worst);
             }
         }

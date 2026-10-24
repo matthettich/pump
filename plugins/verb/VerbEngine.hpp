@@ -272,7 +272,8 @@ public:
         for (int ch = 0; ch < 2; ++ch) conv[ch][0].setup(sr), conv[ch][1].setup(sr);
 
         const int ramp = std::max(1, (int)(0.020 * sr));
-        mixS.setRamp(ramp); mixS.reset(set.mix * 0.01);
+        dryS.setRamp(ramp); dryS.reset(std::cos(0.5 * kPi * clampv(set.mix, 0.0, 100.0) * 0.01));
+        wetS.setRamp(ramp); wetS.reset(std::sin(0.5 * kPi * clampv(set.mix, 0.0, 100.0) * 0.01));
         outS.setRamp(ramp); outS.reset(dbToGain(set.outDb));
         earlyS.setRamp(ramp); lateS.setRamp(ramp);
         double eg, lg; balanceGains(set.balance, eg, lg); earlyS.reset(eg); lateS.reset(lg);
@@ -283,6 +284,7 @@ public:
         trans.setRamp(std::max(1, (int)(0.012 * sr))); trans.reset(1.0);
         duckAtt = 1.0 - std::exp(-1.0 / (0.002 * sr));
         duckRel = 1.0 - std::exp(-1.0 / (0.25 * sr));
+        duckGlide = 1.0 - std::exp(-1.0 / (0.002 * sr));
         kc50 = 1.0 - std::exp(-kChunk / (0.05 * sr));
         kc30 = 1.0 - std::exp(-kChunk / (0.03 * sr));
         kc200 = 1.0 - std::exp(-kChunk / (0.2 * sr));
@@ -291,7 +293,7 @@ public:
         rtS = std::max(0.1, set.decay); bassS = set.bassMult; hdS = set.highDamp;
         xoverS = set.crossover; dampS = set.dampFreq; ageS = set.age * 0.01; depthS = set.modDepth * 0.01;
         rateS = set.modRate; shimS = shimmerAmount(); fz = freezeOn() ? 1.0 : 0.0; envTS = set.envTimeMs * 0.001;
-        duckEnv = 0.0; duckG = 1.0;
+        duckEnv = 0.0; duckG = duckTarget = 1.0; wetPk = 0.0f; ctrlLeft = 0;
         curMode = set.mode;
         pendingMode = false;
         applyStructural(true);
@@ -317,11 +319,22 @@ public:
     float duckDb() const { return duckFeed.load(std::memory_order_relaxed); }           // the wet gain from ducking
     float predelayNowMs() const { return preFeed.load(std::memory_order_relaxed); }     // the pre-delay in use
     float freezeNow() const { return fzFeed.load(std::memory_order_relaxed); }          // 0..1
-    double takeWetEnergy(int& count) { const double e = wetE; count = wetN; wetE = 0.0; wetN = 0; return e; }
+    // the wet signal's peak since the last call (audio thread: the plugin publishes it)
+    float takeWetPeak() { const float p = wetPk; wetPk = 0.0f; return p; }
 
+    // Control-rate work (glides, absorption, modulation targets) runs every kChunk samples on a clock of its own, so
+    // the host's block size never changes how the reverb sounds.
     void process(float* L, float* R, int n)
     {
-        for (int off = 0; off < n; off += kChunk) processChunk(L + off, R + off, std::min(kChunk, n - off));
+        int i = 0;
+        while (i < n)
+        {
+            if (ctrlLeft == 0) { beginControl(); ctrlLeft = kChunk; }
+            const int m = std::min(ctrlLeft, n - i);
+            processRun(L + i, R + i, m);
+            i += m;
+            ctrlLeft -= m;
+        }
     }
 
 private:
@@ -518,7 +531,8 @@ private:
         return truncMantissa(x, loopMask);
     }
 
-    void processChunk(float* L, float* R, int n)
+    // once per control tick: structural switches, glides, and the per-sample smoothers' targets
+    void beginControl()
     {
         if (pendingMode || pendingJump)
         {
@@ -527,8 +541,9 @@ private:
         }
         else trans.setTarget(1.0);
         control();
-
-        mixS.setTarget(set.mix * 0.01);
+        const double mx = clampv(set.mix, 0.0, 100.0) * 0.01;
+        dryS.setTarget(std::cos(0.5 * kPi * mx));   // equal power; mix 0 = exactly the dry signal
+        wetS.setTarget(std::sin(0.5 * kPi * mx));
         outS.setTarget(dbToGain(set.outDb));
         double eg, lg; balanceGains(set.balance, eg, lg);
         earlyS.setTarget(eg * vc.erLevel); lateS.setTarget(lg * lateNorm);
@@ -536,21 +551,32 @@ private:
         lcOn.setTarget(lowCutActive(set.lowCut) ? 1.0 : 0.0);
         hcOn.setTarget(highCutActive(set.highCut) ? 1.0 : 0.0);
         inGain.setTarget(freezeOn() ? 0.0 : 1.0);
-
-        // ducking: the gain at the end of this chunk from the detector, stepped linearly across it
+        // duck: up to -30 dB as the dry input's peak envelope goes from -45 to -10 dBFS
         const double duckAmt = clampv(set.duck, 0.0, 100.0) * 0.01;
+        duckTarget = duckAmt > 0.0 ? dbToGain(-30.0 * duckAmt * clampv((gainToDb(duckEnv + 1e-9) + 45.0) / 35.0, 0.0, 1.0)) : 1.0;
+        duckFeed.store((float)gainToDb(duckG), std::memory_order_relaxed);
+        fzFeed.store((float)fz, std::memory_order_relaxed);
+        // recover from non-finite state (clear the tank and keep going)
+        double chk = duckG + duckEnv;
+        for (int k = 0; k < nLines; ++k) chk += ab[k].s1 + ab[k].s2 + line[k].at(0);
+        for (const auto& b : plate) chk += b.ab.s1 + b.dB.at(0);
+        if (!std::isfinite(chk)) { clearState(); duckG = 1.0; }
+    }
 
+    void processRun(float* L, float* R, int n)
+    {
         const double s = scaleNow, ms = sr * 0.001;
         const bool colour = vc.colour != kColourClean;
         const bool holdOn = colour && col.rate < sr * 0.999;
         const float dg = diffG;
-        double chk = 0.0;
+        float pk = 0.0f;
         for (int i = 0; i < n; ++i)
         {
             const float dl = L[i], dr = R[i];
             // duck detector (dry)
             const double a = std::max(std::fabs(dl), std::fabs(dr));
             duckEnv += (a - duckEnv) * (a > duckEnv ? duckAtt : duckRel);
+            duckG += (duckTarget - duckG) * duckGlide;
 
             // pre-delay, colour in
             const float ig = (float)inGain.next();
@@ -563,7 +589,7 @@ private:
                 pl = convert(conv[0][0], pl); pr = convert(conv[1][0], pr);
             }
 
-            // early reflections (alternate taps come from the opposite side's input: both side walls)
+            // early reflections (alternate taps hear the opposite side: both side walls)
             float el = 0.0f, er_ = 0.0f;
             if (vc.erLevel > 0.0)
             {
@@ -599,46 +625,36 @@ private:
                 wl = (float)bwOut[0][1].lowpass(bwOut[0][0].lowpass(wl));
                 wr = (float)bwOut[1][1].lowpass(bwOut[1][0].lowpass(wr));
             }
-            // width
+            // width (mid / side)
             const float wd = (float)widthS.next();
             const float m = 0.5f * (wl + wr), sd = 0.5f * (wl - wr) * wd;
             double ol = m + sd, orr = m - sd;
-            // output filters (end stops are off: crossfaded in and out)
+            // output filters (their end stops are off: crossfaded in and out)
             const double lcm = lcOn.next(), hcm = hcOn.next();
+            if (lcm > 0.0)
             {
                 const double hl = lc[0].highpass(ol), hr = lc[1].highpass(orr);
                 ol += (hl - ol) * lcm; orr += (hr - orr) * lcm;
+            }
+            if (hcm > 0.0)
+            {
                 const double tl = hc[0].lowpass(ol), tr2 = hc[1].lowpass(orr);
                 ol += (tl - ol) * hcm; orr += (tr2 - orr) * hcm;
             }
-            // duck
-            if (duckAmt > 0.0)
-            {
-                const double envDb = gainToDb(duckEnv + 1e-9);
-                const double target = dbToGain(-30.0 * duckAmt * clampv((envDb + 45.0) / 35.0, 0.0, 1.0));
-                duckG += (target - duckG) * 0.02;
-            }
-            else duckG += (1.0 - duckG) * 0.02;
             ol *= duckG; orr *= duckG;
-            wetE += ol * ol + orr * orr;
-            chk += ol + orr;
+            pk = std::max(pk, (float)std::max(std::fabs(ol), std::fabs(orr)));
 
-            // mix (equal power; mix 0 is exactly the dry signal) and output
-            const double mx = mixS.next(), og = outS.next();
-            const double dry = std::cos(0.5 * kPi * mx), wet = std::sin(0.5 * kPi * mx);
-            L[i] = (float)((dl * dry + ol * wet) * og);
-            R[i] = (float)((dr * dry + orr * wet) * og);
+            const double dG = dryS.next(), wG = wetS.next(), og = outS.next();
+            L[i] = (float)((dl * dG + ol * wG) * og);
+            R[i] = (float)((dr * dG + orr * wG) * og);
         }
-        wetN += n;
-        for (int k = 0; k < nLines; ++k) chk += ab[k].s1 + ab[k].s2;
-        if (!std::isfinite(chk))
+        if (!std::isfinite(pk))
         {
             clearState();
-            wetE = 0.0;
             for (int i = 0; i < n; ++i) { if (!std::isfinite(L[i])) L[i] = 0.0f; if (!std::isfinite(R[i])) R[i] = 0.0f; }
+            pk = 0.0f;
         }
-        duckFeed.store((float)gainToDb(duckG), std::memory_order_relaxed);
-        fzFeed.store((float)fz, std::memory_order_relaxed);
+        wetPk = std::max(wetPk, pk);
     }
 
     inline float convert(Converter& c, float x)
@@ -790,15 +806,16 @@ private:
     uint32_t loopMask = 0xFFFFFFFFu;
     // output
     fx::Svf lc[2], hc[2];
-    LinearSmoother mixS, outS, earlyS, lateS, widthS, lcOn, hcOn, inGain, trans;
+    LinearSmoother dryS, wetS, outS, earlyS, lateS, widthS, lcOn, hcOn, inGain, trans;
     // control state
     double lnScale = 0.0, lnScaleTarget = 0.0, scaleNow = 1.0;
     double rtS = 2.2, bassS = 1.2, hdS = 0.55, xoverS = 600.0, dampS = 6000.0, ageS = 0.35, depthS = 0.4, rateS = 0.7;
     double shimS = 0.0, fz = 0.0, envTS = 0.32, lateNorm = 1.0;
     double kc50 = 0.03, kc30 = 0.05, kc200 = 0.01;
     double duckEnv = 0.0, duckG = 1.0, duckAtt = 0.01, duckRel = 1e-4;
-    double wetE = 0.0;
-    int wetN = 0;
+    double duckTarget = 1.0, duckGlide = 0.02;
+    float wetPk = 0.0f;
+    int ctrlLeft = 0;
     std::atomic<float> duckFeed { 0.0f }, preFeed { 20.0f }, fzFeed { 0.0f };
 };
 

@@ -507,7 +507,7 @@ protected:
     {
         hoverStep = editArea(x, y) ? stepAt(x) : -1;
         if (hoverStep >= 0)
-            setStatus(stepStatus(hoverStep) + "   click = on/off, drag up/down = level (Shift fine), drag across = paint, Alt/right-drag = draw");
+            setStatus(stepStatus(hoverStep) + "   (click on/off, drag level, Alt/right-drag draw)");
         else if (lane.contains(x, y)) setStatus("The output's level along the last cycle of the pattern");
         else if (gridR.contains(x, y)) setStatus("The pattern: bars = step levels, line = the gate's envelope, lit = the current step");
     }
