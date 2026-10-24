@@ -2,10 +2,9 @@
 
 Planned work that isn't scheduled yet. Newest decisions at the top of each item.
 
-## Instance List (FabFilter-style) — planned, nice to have
+## Instance List — planned, nice to have
 
-One window that shows every pump EQ in the session, like FabFilter's Instance List
-(https://fabfilter.com/help/pro-q/using/instance-list). Decided 2026-10-23: build it in tiers, after the EQ bug audit;
+One window that shows every pump EQ in the session. Decided 2026-10-23: build it in tiers, after the EQ bug audit;
 tier 1 first, tier 2 only once tier 1 is in use.
 
 All instances a host loads into one process share memory, so a process-wide registry can see them all. That covers
@@ -27,7 +26,7 @@ should say so rather than look empty or wrong.
 - UI: an INSTANCES button opens a panel listing each instance with a mini curve and spectrum; the current instance
   is marked. Selecting another instance overlays its spectrum on the main display ("external spectrum").
 - Collision view: shade frequencies where this instance's spectrum and the selected one are both loud and close in
-  level (Pro-Q 4 style), so masking between tracks is visible.
+  level, so masking between tracks is visible.
 - Names: DPF gives plugins no track name, so rows are "EQ 1", "EQ 2"… in creation order; a user label can be stored in
   the instance's own `ui` state (round-trips with the session).
 - Risks: thread lifetime (handled by the shared feed), CPU when many instances are open (analyse at the UI frame rate
@@ -46,7 +45,7 @@ should say so rather than look empty or wrong.
 ### Tier 3 — track names, colours and order (needs DPF changes)
 
 - DPF exposes none of this. Needed per format: VST3 `IInfoListener::setChannelContextInfos` (name, colour, index),
-  AU `kAudioUnitProperty_ContextName` (name only; FabFilter notes AU gives no colour or order), CLAP `track-info`
+  AU `kAudioUnitProperty_ContextName` (name only; AU gives no colour or order), CLAP `track-info`
   extension (host-dependent).
 - Carry it as a patch on DPF: either a fork of DPF as the submodule, or a patch file applied in CI before building.
   Upstreaming to DPF would remove the maintenance cost.
@@ -54,7 +53,7 @@ should say so rather than look empty or wrong.
 ### When other pump plugins exist
 
 Make the registry generic (plugin type + feed interface) so the compressor, limiter etc. can join the same list, as
-FabFilter's does across Pro-Q, Pro-C, Pro-DS and Pro-G.
+one list across the whole suite.
 
 ## Known issues deferred from the EQ audit (2026-10-23)
 
@@ -73,7 +72,7 @@ more design or DPF work; listed roughly by impact.
 - **Band order between modes** with mixed L/R and M/S bands differs (linear phase applies all L/R bands, then M/S).
 - **Auto gain ignores stereo placement** (side-only bands change the mono estimate; +1.5 dB with "Wide air").
 - **Solo of a Left/Right/Mid/Side band** plays that band's region of both channels: decide whether it should solo
-  only the band's own channel (Pro-Q does).
+  only the band's own channel.
 - The dynamic detector in zero latency listens to the band's input in the serial chain (after earlier bands), in
   linear phase to the plugin input; identical unless other bands overlap the detector region.
 

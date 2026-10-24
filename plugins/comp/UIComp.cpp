@@ -1,4 +1,4 @@
-// pump COMP: interface (Pro-C 2 style, in the Simple look). A scrolling level/gain-reduction history with a draggable
+// pump COMP: interface (in the Simple look). A scrolling level/gain-reduction history with a draggable
 // threshold line, a transfer-curve inset, In / Out / GR meters with peak hold, and the controls.
 #include "ui/PumpUI.hpp"
 #include "PluginComp.hpp"
@@ -97,7 +97,7 @@ public:
         scHpDial = dial(kScHpf, "HP", 3, "Sidechain high-pass: keeps lows from triggering compression (left end = off)", false, Dial::Small);
         scLpDial = dial(kScLpf, "LP", 3, "Sidechain low-pass (right end = off)", false, Dial::Small);
         scGainDial = dial(kScGain, "SC GAIN", 3, "Sidechain gain: drives the detector harder or softer", true, Dial::Small);
-        // listening is monitoring, not an edit: it stays out of the undo history (FabFilter convention)
+        // listening is monitoring, not an edit: it stays out of the undo history
         listenBtn = addButton("LISTEN", [this]() { setListen(value(kScListen) < 0.5f); }, [this]() { return value(kScListen) >= 0.5f; });
         listenBtn->holdMomentary = true;
         listenBtn->tip = "Hear the (filtered) sidechain: click toggles, click-and-hold listens while held";
@@ -572,7 +572,7 @@ protected:
     }
 
     // ---------------------------------------------------------------- mouse
-    // Pro-C 2 conventions:
+    // Conventions:
     //   graph: drag the threshold line (Shift: fine), double-click it to type; wheel: threshold
     //   transfer inset: drag = threshold, Ctrl/Cmd + drag up/down = ratio, wheel = knee (Shift: fine), double-click: type
     //   meters: click to reset the peak hold

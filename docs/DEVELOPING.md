@@ -29,7 +29,7 @@ common/
   ui/
     PumpUI.hpp          the window: header (brand, presets, A/B, theme, bypass), controls, status line, menus,
                         typed entry, scaling/resizing, SpectrumView analyzer, meters, drawing helpers
-    MultibandUI.hpp     Pro-MB style band regions, crossover handles, S/M/B keys and their shortcuts (BAND/WIDE/HEAT)
+    MultibandUI.hpp     Band regions, crossover handles, S/M/B keys and their shortcuts (BAND/WIDE/HEAT)
     Theme.hpp           accents (one per plugin) and the light/dark palettes
     FontData.*          embedded fonts (tools/embed_fonts.py)
 plugins/<name>/          one folder per plugin (see plugins/eq for the complete reference)
@@ -77,8 +77,8 @@ docs/ROADMAP.md          planned work and known issues deferred from audits
 - Look: use `theme.*` colours only. `keyBox()` for keys, `screenBox()` for graph areas, `caption()` for small-caps
   section labels, `kLabel` font for words, `kMono`/`kBold` for numbers. Neon = highlight fills/curves; ink = text,
   outlines, filled "on" keys; `second` = a contrasting curve (side channel, gain reduction).
-- Controls: `addDial` (FabFilter-style flat dial), `addRow` (Simple slider row), `addToggle`, `addButton`,
-  `addSegmented`, `addMenu`. FabFilter interaction rules are built in: drag (Shift fine), double-click or right-click
+- Controls: `addDial` (flat dial), `addRow` (Simple slider row), `addToggle`, `addButton`,
+  `addSegmented`, `addMenu`. The interaction rules are built in: drag (Shift fine), double-click or right-click
   to type, Ctrl/Cmd/Alt-click resets, wheel steps.
 - Every plugin has: factory presets (first one "Default"), A/B, light/dark, bypass, a status line, resizing.
 - Momentary controls (Alt-listen, band listen, meter reset) are `kPHidden` parameters: hidden from hosts and never

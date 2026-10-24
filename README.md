@@ -4,17 +4,17 @@ Mastering plugins by **wake**, in the look of Thunder Plus's *Simple* skins: fla
 offset block, Share Tech Mono, one light-neon colour per plugin, light or dark. VST3 and CLAP on Windows and macOS
 (plus Audio Units on macOS), built for Ableton Live and any other host.
 
-| Plugin (name in your host) | Colour | Inspired by | What it does |
-|---|---|---|---|
-| **pump EQ** Equalizer | aqua | FabFilter Pro-Q | 24 bands; analog-matched curves with no cramping; cuts to 96 dB/oct; dynamic bands; stereo/L/R/mid/side per band; zero latency or linear phase |
-| **pump COMP** Compressor | pink | FabFilter Pro-C | Clean, Glue, Opto, Punch, Vari-Mu and Pump styles; lookahead; external sidechain with sidechain EQ; stereo link and mid/side |
-| **pump LIMIT** Limiter | lime | FabFilter Pro-L, Ozone Maximizer | true-peak limiter with seven styles, up to 8x oversampling, dither, loudness metering and targets |
-| **pump CALM** Resonance Suppressor | violet | soothe | dynamic resonance suppressor with a sensitivity curve, mid/side and delta listening |
-| **pump TONE** Tonal Balance | mint | Gullfoss | automatic balance: Recover, Tame, Bias, Brighten, Body |
-| **pump BAND** Multiband Dynamics | orange | Pro-MB, Ozone Dynamics | multiband compression, expansion and upward compression; analog or linear-phase crossovers |
-| **pump WIDE** Stereo Imager | blue | Ozone Imager | multiband width and stereoize, mono bass, vectorscope and correlation |
-| **pump HEAT** Saturator | coral | Saturn, Ozone Exciter | multiband warm/tape/tube/triode/retro/clip saturation, oversampled |
-| **pump METER** Loudness Meter | yellow | Youlean, Ozone | LUFS (momentary, short-term, integrated), LRA, true peak, PLR/PSR, history |
+| Plugin (name in your host) | Colour | What it does |
+|---|---|---|
+| **pump EQ** Equalizer | aqua | 24 bands; analog-matched curves with no cramping; cuts to 96 dB/oct; dynamic bands; stereo/L/R/mid/side per band; zero latency or linear phase |
+| **pump COMP** Compressor | pink | Clean, Glue, Opto, Punch, Vari-Mu and Pump styles; lookahead; external sidechain with sidechain EQ; stereo link and mid/side |
+| **pump LIMIT** Limiter | lime | true-peak limiter with seven styles, up to 8x oversampling, dither, loudness metering and targets |
+| **pump CALM** Resonance Suppressor | violet | dynamic resonance suppressor with a sensitivity curve, mid/side and delta listening |
+| **pump TONE** Tonal Balance | mint | automatic balance: Recover, Tame, Bias, Brighten, Body |
+| **pump BAND** Multiband Dynamics | orange | multiband compression, expansion and upward compression; analog or linear-phase crossovers |
+| **pump WIDE** Stereo Imager | blue | multiband width and stereoize, mono bass, vectorscope and correlation |
+| **pump HEAT** Saturator | coral | multiband warm/tape/tube/triode/retro/clip saturation, oversampled |
+| **pump METER** Loudness Meter | yellow | LUFS (momentary, short-term, integrated), LRA, true peak, PLR/PSR, history |
 
 ## Download
 
@@ -24,7 +24,7 @@ The newest builds are always on the [latest release](https://github.com/matthett
 
 ## Using them
 
-Every plugin follows FabFilter's and iZotope's conventions. Press **?** in a plugin for its full list.
+Every plugin shares the same mouse and key conventions. Press **?** in a plugin for its full list.
 
 - drag a control (Shift = fine), mouse wheel steps it, Ctrl-click (Cmd-click on a Mac) resets it; on a Mac,
   Ctrl-click is a right-click, as everywhere else in macOS
@@ -33,7 +33,7 @@ Every plugin follows FabFilter's and iZotope's conventions. Press **?** in a plu
 - hold **Alt** on a band to solo it while held (EQ nodes, multiband regions); drag while soloed to move it (up = narrower,
   down = wider). On empty spectrum space, Alt-hold listens to the range under the mouse (drag to sweep; up/down or wheel = width)
 - DARK switches the look and is remembered for new instances
-- EQ dynamic bands (Pro-Q style): select a band, turn on DYNAMIC, set RANGE and THRESH; Alt+double-click on the
+- EQ dynamic bands: select a band, turn on DYNAMIC, set RANGE and THRESH; Alt+double-click on the
   curve makes a dynamic band directly
 - COMP has a stereo sidechain input: set SC to External and route a track to the plugin's sidechain in your host
 

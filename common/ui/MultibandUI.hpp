@@ -1,6 +1,6 @@
 // pump multiband UI: the display behaviour BAND, WIDE and HEAT share. Band regions between draggable crossover
 // handles, a strip of per-band S / M / B
-// keys across the top of the display, and the Pro-MB / Ozone interaction set:
+// keys across the top of the display, and the multiband interaction set:
 //   drag a crossover handle (Shift: fine), double-click it to type (Tab: next crossover), wheel on it: 1/12 octave
 //   Alt + click-and-hold a band: hear only that band while held (slide across to switch bands)
 //   click a band: select it; drag up/down in a band: its main amount; Ctrl/Cmd + drag up/down: its second amount

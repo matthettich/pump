@@ -1,4 +1,4 @@
-// pump CALM engine: a dynamic resonance suppressor (soothe2-style). Framework-free, header-only.
+// pump CALM engine: a dynamic resonance suppressor. Framework-free, header-only.
 //
 // Per STFT frame (sqrt-Hann, 75% overlap, latency exactly N) and per detection channel:
 //   1. power per bin, smoothed in time (a short one-pole across frames) and in frequency (an energy average over a

@@ -144,7 +144,7 @@ struct ParamSpec {
         }
     }
 
-    // Parse typed text, FabFilter style: "1.2k", "-3", "4:1", "inf"; frequencies also as note names ("A4" = 440 Hz,
+    // Parse typed text: "1.2k", "-3", "4:1", "inf"; frequencies also as note names ("A4" = 440 Hz,
     // "C#3+13" = 13 cents above C#3); dB also as a gain factor ("2x" = +6.02 dB); and "50%" on any non-percent
     // control puts it halfway along its range. Returns false if nothing usable was typed.
     bool parse(const char* text, float& out) const

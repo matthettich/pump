@@ -5,7 +5,7 @@
 // buttons, menus), lays them out in layout(), and draws its own screens in drawBody(). The base class handles the
 // header (brand, presets, A/B, theme, bypass), typed value entry, the status line, scaling and resizing.
 //
-// Interaction (FabFilter conventions): drag to change (Shift = fine), double-click or right-click to type a
+// Interaction: drag to change (Shift = fine), double-click or right-click to type a
 // value, Ctrl/Cmd/Alt-click to reset to default, mouse wheel steps.
 #pragma once
 
@@ -58,7 +58,7 @@ struct Rect {
 
 class PumpUI;
 
-// The "command" modifier of FabFilter-style shortcuts: Cmd on macOS (where Ctrl-click means right-click), Ctrl
+// The "command" modifier of the shortcuts: Cmd on macOS (where Ctrl-click means right-click), Ctrl
 // elsewhere (the Windows/Super key also counts there).
 inline bool cmdKey(uint mod)
 {
@@ -89,7 +89,7 @@ struct Control {
     virtual Rect valueRect() const { return r; }
 };
 
-// Round dial with label above and value below (FabFilter-style, drawn flat).
+// Round dial with label above and value below (drawn flat).
 struct Dial : Control {
     enum Size { Small, Medium, Large } size = Medium;
     bool bipolar = false;     // arc from the centre (gains)
@@ -127,7 +127,7 @@ struct Button : Control {
     bool small = false;
     bool pressed = false;
     bool holdMomentary = false;              // click toggles; click-and-hold (>300 ms) acts only while held
-    std::function<void()> onExclusive;       // Ctrl/Cmd-click (Pro-MB: solo/mute this one exclusively)
+    std::function<void()> onExclusive;       // Ctrl/Cmd-click (solo/mute this one exclusively)
     double pressTime = 0.0;
     bool exclusivePress = false;
     bool isOn(PumpUI& ui) const;
@@ -315,7 +315,7 @@ public:
         repaint();
     }
     void setParamNorm(int i, float n) { setParam(i, fSpecs[i].fromNorm(n)); }
-    // Gestures: every begin/end pair (and group) becomes one undo step (FabFilter style: automation doesn't).
+    // Gestures: every begin/end pair (and group) becomes one undo step (automation doesn't).
     void beginEdit(int i) { beginGroup(); if (i >= 0) editParameter((uint32_t)i, true); }
     void endEdit(int i) { if (i >= 0) editParameter((uint32_t)i, false); endGroup(); }
     void setParamGesture(int i, float v)
@@ -594,7 +594,7 @@ public:
         if (h > H - 8.0f && current >= 0) fMenu.scroll = std::max(0.0f, std::min(h - (H - 8.0f), current * itemH - (H - 8.0f) * 0.5f));
         repaint();
     }
-    // Typed value entry over a control. `ring` lists the fields Tab steps through (FabFilter: Freq -> Gain -> Q).
+    // Typed value entry over a control. `ring` lists the fields Tab steps through (e.g. Freq -> Gain -> Q).
     void openTextEntry(int param, const Rect& r, const std::vector<std::pair<int, Rect>>& ring = {})
     {
         fEdit.ring = ring;

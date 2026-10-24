@@ -1,4 +1,4 @@
-// pump LIMIT: interface (Pro-L 2 style in the Simple look): scrolling level / gain-reduction history with the
+// pump LIMIT: interface (in the Simple look): scrolling level / gain-reduction history with the
 // ceiling and loudness target, In / GR / Out meters, a loudness screen, and the controls below.
 #include "ui/PumpUI.hpp"
 #include "PluginLimit.hpp"
@@ -192,7 +192,7 @@ protected:
         rangeBtn->label = std::to_string((int)range) + " dB";
     }
 
-    // Meter scale (Pro-L style): the top 12 dB take half the height.
+    // Meter scale: the top 12 dB take half the height.
     static float meterT(float db)
     {
         if (db >= 0.0f) return 0.0f;
