@@ -208,11 +208,8 @@ protected:
         caption(modeP.x + 12, lowDial->r.y - 10, "FILTER", (int)value(kMode) == kVolume ? &theme.dim : nullptr);
         caption(outP.x + 12, outP.y + 16, "OUTPUT");
 
-        // the step and the time the gate stays open at this tempo
+        drawStepShape();
         char t[64];
-        const double stepMs = stepQ() * 60000.0 / std::max(20.0f, bpm);
-        std::snprintf(t, sizeof t, "STEP %s   OPEN %s", msText(stepMs).c_str(), msText(stepMs * value(kLength) * 0.01).c_str());
-        textAt(envP.x + 12, envP.b() - 16, t, kMono, 10.5f, theme.ink2, ALIGN_LEFT | ALIGN_MIDDLE);
 
         // what the gate does right now, per channel: its gain (Volume, Both) or the filter's cutoff (Filter)
         const int mode = (int)value(kMode);
@@ -235,6 +232,40 @@ protected:
             else std::snprintf(t, sizeof t, "%.1f", std::min(0.0f, pump::gainToDbF(o)));
             textAt(outP.r() - 12, b.cy(), t, kMono, 10.0f, theme.ink, ALIGN_RIGHT | ALIGN_MIDDLE);
         }
+    }
+    // One open step between closed ones, close up: the shape ATTACK, LENGTH, RELEASE and SMOOTH give a single hit
+    void drawStepShape()
+    {
+        const Rect r(envP.x + 12, envP.y + 142, envP.w - 24, 30);
+        fillRect(r, theme.screen);
+        const double sq = stepQ();
+        Settings s = uiSettings();
+        s.steps = 4; s.swing = 0; s.offset = 0; s.depth = 100;
+        for (int k = 0; k < kMaxSteps; ++k) s.level[k] = (k % 4) == 1 ? 100.0f : 0.0f;
+        const double q0 = 0.5 * sq, q1 = 3.0 * sq;   // half a closed step, the open step, a step and a half after it
+        const int pts = std::min(kEnvPoints, (int)r.w);
+        simulate(s, bpm, q0, q1, pts, false, envBuf);
+        auto xq = [&](double q) { return r.x + (float)((q - q0) / (q1 - q0)) * r.w; };
+        // the open step's slot and its gate length
+        const float xa = xq(sq), xb = xq(2.0 * sq), xl = xq(sq * (1.0 + value(kLength) * 0.01));
+        fillRect(Rect(xa, r.y, xl - xa, r.h), withAlpha2(theme.neon, theme.dark ? 0.18f : 0.30f));
+        line(xa, r.y, xa, r.b(), theme.grid, 1.0f);
+        line(xb, r.y, xb, r.b(), theme.grid, 1.0f);
+        beginPath();
+        for (int i = 0; i < pts; ++i)
+        {
+            const float x = r.x + r.w * (i + 0.5f) / pts, y = r.b() - 2.0f - pump::clampv(envBuf[i], 0.0f, 1.0f) * (r.h - 5.0f);
+            if (i == 0) moveTo(r.x, y);
+            lineTo(x, y);
+        }
+        strokeColor(theme.ink); strokeWidth(1.8f); lineJoin(ROUND); stroke();
+        strokeRect(r, theme.ink, 1.0f);
+        // the step and the time the gate stays open at this tempo
+        char t[64];
+        const double stepMs = sq * 60000.0 / std::max(20.0f, bpm);
+        std::snprintf(t, sizeof t, "STEP %s   OPEN %s", msText(stepMs).c_str(), msText(stepMs * value(kLength) * 0.01).c_str());
+        caption(r.x, r.y - 10, "ONE STEP");
+        textAt(r.r(), r.y - 10, t, kMono, 10.0f, theme.ink2, ALIGN_RIGHT | ALIGN_MIDDLE);
     }
     static std::string msText(double ms)
     {
@@ -361,7 +392,7 @@ protected:
         fillColor(pump::mixColor(theme.neon, theme.ink, theme.dark ? 0.15f : 0.45f));
         fill();
         line(lane.x, lane.cy(), lane.r(), lane.cy(), withAlpha2(theme.ink, 0.25f), 1.0f);
-        textAt(lane.x + 4, lane.y + 6, "OUT", kLabel, 8.5f, theme.ink2, ALIGN_LEFT | ALIGN_MIDDLE, 0.8f);
+        textAt(lane.x, lane.b() + 9, "OUTPUT LEVEL, LAST CYCLE", kLabel, 9.0f, theme.ink2, ALIGN_LEFT | ALIGN_MIDDLE, 0.8f);
 
         // the level of the step under the mouse (or being edited)
         const int shown = dragStep >= 0 ? dragStep : hoverStep;
