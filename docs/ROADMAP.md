@@ -14,7 +14,7 @@ Effects, in this order:
 - **AMP** neural amp models and cabinet IRs — done (2026-10-24).
 
 Instruments (MIDI in, stereo out):
-- **Wavetable** synth.
+- **TABLE** wavetable synth — done (2026-10-24).
 - **Drum machine port**: the voices of an open-sourced hardware drum machine's firmware (keep its licence and
   notices in THIRD_PARTY_NOTICES.md; voices first, no built-in sequencer).
 - **Additive bass**: the Thunder Plus-style additive bass voice.

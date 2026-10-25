@@ -51,6 +51,8 @@ namespace accents {
     inline Accent swirl()  { return { "swirl",  hexColor(0xFF92C2), hexColor(0x8A1450), hexColor(0x22A88E) }; }   // rose
     inline Accent stutter(){ return { "stutter",hexColor(0x8FE8FF), hexColor(0x064A63), hexColor(0xFF6A3D) }; }   // ice
     inline Accent amp()    { return { "amp",    hexColor(0xF5A672), hexColor(0x6E3410), hexColor(0x2C9FD0) }; }   // copper
+    // the instruments
+    inline Accent table()  { return { "table",  hexColor(0x7DF0A0), hexColor(0x0B5A2A), hexColor(0xE04FD0) }; }   // spring green
 }
 
 struct Theme {

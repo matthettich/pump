@@ -34,6 +34,12 @@ offset block, Share Tech Mono, one light-neon colour per plugin, light or dark. 
 | **pump STUTTER** Beat Repeat | ice | eight moves (repeat, roll, reverse, tape stop, half speed, shuffle, gate, glitch) from a dice roll on the song grid, from pads (or keys 1-8) or from MIDI notes; grid, gate, pitch, decay and filter per repeat, variation; timeline, pads and a bar clock |
 | **pump AMP** Amp Modeler | copper | loads neural amp models (.nam) and cabinet impulse responses (.wav), with previous / next file in the folder; input, gate, normalize to the model's loudness, mono or stereo, bass / mid / treble / presence, cab low and high cut; models run at their own rate (resampled when the host differs) |
 
+### Instruments
+
+| Plugin (name in your host) | Colour | What it does |
+|---|---|---|
+| **pump TABLE** Wavetable Synth | spring green | two wavetable oscillators (ten built-in tables plus your own .wav wavetables) with up to 7-voice unison, detune and stereo spread, sub and noise; ladder LP 24 / 12 and state-variable BP / HP filters with drive, envelope and key tracking; amp and mod envelopes, a per-voice and a shared (syncable) LFO, a 4-slot mod matrix; poly (16), mono or legato with glide; a keyboard to play |
+
 ## Download
 
 The newest builds are always on the [latest release](https://github.com/matthettich/pump/releases/tag/latest):
@@ -79,6 +85,9 @@ Every plugin shares the same mouse and key conventions. Press **?** in a plugin 
   Live: a MIDI track's *MIDI To* set to the track with STUTTER). The small AUTO box on a pad lets the dice pick that move
 - AMP: LOAD a `.nam` model (the free captures people share) and a cabinet `.wav`; `<` `>` step through the other files in
   the same folder. The paths are saved with the session
+- The instruments take MIDI from the host (in Live, put them on a MIDI track); the keyboard at the bottom of their window
+  plays too. TABLE: drag a table screen up / down to move its position, the wheel changes the table; LOAD reads a .wav
+  wavetable (frames of 2048 samples) into USER
 - TUNE goes on a solo voice. Live: set KEY and SCALE (or send it MIDI notes) and RETUNE. Graph: turn CAPTURE on and play
   the song once; the voice appears as notes on the host's timeline: drag them (Alt = free), double-click to snap,
   select several to STRAIGHTEN, change VIBRATO, FORMANT or GAIN. The edits are saved with the session
