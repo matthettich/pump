@@ -126,7 +126,12 @@ See [docs/DEVELOPING.md](docs/DEVELOPING.md) for the framework, the shared DSP l
 in `common/dsp` and each plugin's `*Engine.hpp` has no framework code, so it also compiles to WebAssembly: `make wasm`
 builds `pump.wasm` for Thunder Plus, where the nine run as bus and master effects (`wasm/`).
 
+Developer pick-up notes (state, verified vs unverified, open issues): [docs/HANDOVER.md](docs/HANDOVER.md).
+
 ## Licences
 
-© wake. Third-party components (DPF, pffft, NanoVG, pugl, fonts) are permissively licensed; see
-[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+pump is © wake, all rights reserved ([LICENSE](LICENSE)), with one exception: **pump MACHINE** is built on GPL-3.0
+drum machine firmware and is GPL-3.0-only together with the pump code compiled into it
+([plugins/machine/NOTICE.md](plugins/machine/NOTICE.md)). No other plugin uses it; CI enforces that
+(`tools/check-licence-boundary.sh`). Third-party components (DPF, pffft, NanoVG, pugl, fonts) are permissively
+licensed; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

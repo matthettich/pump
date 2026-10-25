@@ -60,7 +60,11 @@ EIGEN_PATH ?= $(NAM_DIR)/Dependencies/eigen
 NAM_FLAGS = -DNAM_SAMPLE_FLOAT -I$(NAM_DIR) -I$(EIGEN_PATH) -I$(NAM_DIR)/Dependencies/nlohmann
 build/tests/nam.o: plugins/amp/nam_unity.cpp $(wildcard $(NAM_DIR)/NAM/* $(NAM_DIR)/NAM/*/*)
 	@mkdir -p build/tests
-	$(CXX) -O2 $(NAM_FLAGS) -c $< -o $@
+	$(CXX) -O2 -std=c++17 $(NAM_FLAGS) -c $< -o $@
+# AMP's model pre-check test reads the NAM example models and needs only the JSON header, not NAM's code
+build/tests/test_modelguard: tests/test_modelguard.cpp plugins/amp/ModelGuard.hpp
+	@mkdir -p build/tests
+	$(CXX) $(TEST_FLAGS) -I$(NAM_DIR)/Dependencies/nlohmann -Iplugins/amp $< -o $@
 build/tests/test_amp: tests/test_amp.cpp build/tests/pffft.o build/tests/nam.o $(wildcard common/*.hpp common/dsp/*.hpp tests/*.hpp plugins/amp/*.hpp)
 	@mkdir -p build/tests
 	$(CXX) $(TEST_FLAGS) $(NAM_FLAGS) -Iplugins/amp $< build/tests/pffft.o build/tests/nam.o -lpthread -o $@
@@ -75,8 +79,39 @@ build/tests/test_machine: tests/test_machine.cpp build/tests/pffft.o build/tests
 	@mkdir -p build/tests
 	$(CXX) $(TEST_FLAGS) -Iplugins/machine $< build/tests/pffft.o build/tests/mfw_unity.o build/tests/mfw_unity2.o -lpthread -o $@
 
-tests: $(TESTS) $(SYNC_TESTS) build/tests/wasm_wrapper
+# MACHINE (GPL-3.0) must not leak into any other plugin or into common/ (see LICENSE)
+licence-check:
+	@sh tools/check-licence-boundary.sh
+
+tests: licence-check $(TESTS) $(SYNC_TESTS) build/tests/wasm_wrapper
 	@for t in $(TESTS) $(SYNC_TESTS) build/tests/wasm_wrapper; do echo "== $$t"; ./$$t || exit 1; done
+
+# --- sanitizer runs: the same DSP tests built with ASan+UBSan, or with TSan (the engines hand data to the UI through
+# atomic feeds and to a worker thread, which TSan checks). Sanitized builds go to build/asan, build/tsan, and the
+# tests that need submodules or the C firmware (amp, machine) are left to the normal run. Every other test runs:
+#   make tests-asan      memory errors and undefined behaviour
+#   make tests-tsan      data races
+# (SAN_TESTS names the quick, self-contained ones; add to it as more are checked.)
+SAN_TESTS ?= wav biquad dsp presets table eq band wide heat gate
+ASAN_FLAGS = -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=undefined
+TSAN_FLAGS = -O1 -g -fno-omit-frame-pointer -fsanitize=thread
+
+build/%/pffft.o: common/pump_pffft.c
+	@mkdir -p build/$*
+	$(CC) -O1 -g -c $< -o $@
+
+define SAN_RULE
+build/$(1)/test_%: tests/test_%.cpp build/$(1)/pffft.o $$(wildcard common/*.hpp common/dsp/*.hpp tests/*.hpp) $$$$(wildcard plugins/$$$$*/*.hpp)
+	@mkdir -p build/$(1)
+	$$(CXX) $$(TEST_FLAGS) $(2) -Iplugins/$$* $$< build/$(1)/pffft.o -lpthread -o $$@
+endef
+$(eval $(call SAN_RULE,asan,$(ASAN_FLAGS)))
+$(eval $(call SAN_RULE,tsan,$(TSAN_FLAGS)))
+
+tests-asan: $(patsubst %,build/asan/test_%,$(SAN_TESTS))
+	@for t in $(SAN_TESTS); do echo "== asan $$t"; ./build/asan/test_$$t || exit 1; done
+tests-tsan: $(patsubst %,build/tsan/test_%,$(SAN_TESTS))
+	@for t in $(SAN_TESTS); do echo "== tsan $$t"; ./build/tsan/test_$$t || exit 1; done
 
 # pump.wasm + pump-meta.js for Thunder Plus (WASI_SDK = a wasi-sdk 25 folder; see wasm/build.sh)
 wasm:

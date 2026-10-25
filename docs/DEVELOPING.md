@@ -1,5 +1,8 @@
 # Developing …pump
 
+**Picking this up? Read [HANDOVER.md](HANDOVER.md) first**: current state, what is verified, and the open items
+(including a NAM memory-safety finding).
+
 Mastering plugins and creative effects by wake, built on DPF (VST3 + CLAP everywhere, AU on macOS). Every plugin
 shares one DSP library, one UI kit and one look: Thunder Plus's **Simple** skins (flat, square, 1.5 px ink outlines, offset blocks behind
 keys and screens, Share Tech Mono labels) in one light-neon accent per plugin, light or dark.
@@ -115,7 +118,9 @@ docs/ROADMAP.md          planned work and known issues deferred from audits
 export PKG_CONFIG_PATH=/home/claude/sysroot/pkgconfig        # local GL headers for the Linux UI build
 make -C plugins/eq DPF_PATH=/home/claude/dpf jack vst3 clap  # /home/claude/dpf = DPF + a headless test audio backend
 make -j8        # every plugin (the shared DPF graphics library is built once first)
-make tests
+make tests                # DSP tests (also runs the licence-boundary check)
+make tests-asan           # the self-contained tests under ASan+UBSan
+make tests-tsan           # and under ThreadSanitizer (slow: heat takes several minutes)
 DISPLAY_NUM=:101 tools/shot.sh bin/pump-eq /tmp/eq.png 1 0 4  # preset 1, light, after 4 s of the test mix
 ```
 

@@ -20,6 +20,8 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with: { submodules: recursive }
+      - name: Licence boundary (MACHINE's GPL code stays in MACHINE)
+        run: sh tools/check-licence-boundary.sh
       - name: DSP tests
         run: |
           set -o pipefail
