@@ -19,17 +19,43 @@ struct WavData {
     bool ok() const { return error.empty() && !channels.empty() && !channels[0].empty(); }
 };
 
+// What the reader accepts. Both users (AMP's cabinet IRs, TABLE's wavetables) take at most two channels, and no
+// real audio file has a rate outside this range: anything else is a damaged or hostile header, so say so.
+static constexpr uint32_t kWavMaxChannels = 2;
+static constexpr uint32_t kWavMinRate = 1000, kWavMaxRate = 768000;
+static constexpr long kWavMaxFileBytes = 1L << 30;
+
+// Reads a whole file. Returns false with `why` set on any failure (missing, a directory, unreadable, empty, too big).
+inline bool readWholeFile(const std::string& path, std::vector<uint8_t>& d, std::string& why)
+{
+    d.clear();
+    FILE* f = std::fopen(path.c_str(), "rb");
+    if (!f) { why = "can't open the file"; return false; }
+    bool ok = false;
+    if (std::fseek(f, 0, SEEK_END) != 0) why = "can't read the file";
+    else
+    {
+        const long len = std::ftell(f);   // -1 for a directory or a pipe
+        if (len < 0 || std::fseek(f, 0, SEEK_SET) != 0) why = "not a regular file";
+        else if (len == 0) why = "empty file";
+        else if (len >= kWavMaxFileBytes) why = "file too large";
+        else
+        {
+            d.resize((size_t)len);
+            // (on some systems fopen succeeds on a directory and only the read fails: say what that means)
+            if (std::fread(d.data(), 1, d.size(), f) != d.size()) { d.clear(); why = std::ferror(f) ? "not a readable file" : "can't read the file"; }
+            else ok = true;
+        }
+    }
+    std::fclose(f);
+    return ok;
+}
+
 inline WavData readWav(const std::string& path, size_t maxFrames = (size_t)1 << 22)
 {
     WavData w;
-    FILE* f = std::fopen(path.c_str(), "rb");
-    if (!f) { w.error = "can't open the file"; return w; }
     std::vector<uint8_t> d;
-    std::fseek(f, 0, SEEK_END);
-    const long len = std::ftell(f);
-    std::fseek(f, 0, SEEK_SET);
-    if (len > 0 && len < (1L << 30)) { d.resize((size_t)len); if (std::fread(d.data(), 1, d.size(), f) != d.size()) d.clear(); }
-    std::fclose(f);
+    if (!readWholeFile(path, d, w.error)) return w;
     auto u16 = [&](size_t o) { return (uint32_t)d[o] | ((uint32_t)d[o + 1] << 8); };
     auto u32 = [&](size_t o) { return u16(o) | (u16(o + 2) << 16); };
     if (d.size() < 12 || std::memcmp(d.data(), "RIFF", 4) != 0 || std::memcmp(d.data() + 8, "WAVE", 4) != 0) { w.error = "not a WAV file"; return w; }
@@ -48,6 +74,8 @@ inline WavData readWav(const std::string& path, size_t maxFrames = (size_t)1 << 
         pos = body + sz + (sz & 1);
     }
     if (!dataAt || ch == 0 || w.sampleRate <= 0) { w.error = "no audio in the file"; return w; }
+    if (ch > kWavMaxChannels) { w.error = "more than two channels"; return w; }
+    if (w.sampleRate < kWavMinRate || w.sampleRate > kWavMaxRate) { w.error = "unsupported sample rate"; w.sampleRate = 0.0; return w; }
     if (!((fmt == 1 && (bits == 8 || bits == 16 || bits == 24 || bits == 32)) || (fmt == 3 && (bits == 32 || bits == 64))))
     { w.error = "unsupported WAV format"; return w; }
     const size_t bps = bits / 8, frames = std::min(maxFrames, dataLen / (bps * ch));
