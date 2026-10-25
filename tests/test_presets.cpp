@@ -25,6 +25,7 @@
 #include "../plugins/stutter/StutterParams.hpp"
 #include "../plugins/amp/AmpParams.hpp"
 #include "../plugins/table/TableParams.hpp"
+#include "../plugins/mono/MonoParams.hpp"
 #include <cstdio>
 #include <cstring>
 #include <map>
@@ -115,6 +116,7 @@ int main()
         { "STUTTER", stutter::params(), stutter::presets() },
         { "AMP", amp::params(), amp::presets() },
         { "TABLE", table::params(), table::presets() },
+        { "MONO", mono::params(), mono::presets() },
     };
     std::map<std::string, int> sections;
     std::vector<std::vector<std::string>> chains;

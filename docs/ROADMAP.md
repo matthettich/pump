@@ -19,7 +19,7 @@ Instruments (MIDI in, stereo out):
   notices in THIRD_PARTY_NOTICES.md; voices first, no built-in sequencer).
 - **Additive bass**: the Thunder Plus-style additive bass voice.
 - **Drum synth**: synthesized "new school" kits.
-- **Analog mono / bass synth**: 70s and 80s monosynth voicings; ladder and state-variable filters.
+- **MONO** analog mono / bass synth — done (2026-10-24).
 - **Vintage polysynth**: classic 70s/80s polysynth voicings (five-voice era and later).
 
 ## Instance List — planned, nice to have

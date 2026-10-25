@@ -39,6 +39,7 @@ offset block, Share Tech Mono, one light-neon colour per plugin, light or dark. 
 | Plugin (name in your host) | Colour | What it does |
 |---|---|---|
 | **pump TABLE** Wavetable Synth | spring green | two wavetable oscillators (ten built-in tables plus your own .wav wavetables) with up to 7-voice unison, detune and stereo spread, sub and noise; ladder LP 24 / 12 and state-variable BP / HP filters with drive, envelope and key tracking; amp and mod envelopes, a per-voice and a shared (syncable) LFO, a 4-slot mod matrix; poly (16), mono or legato with glide; a keyboard to play |
+| **pump MONO** Analog Mono Synth | blood orange | three oscillators (triangle, saw, square, pulse; 32' to 2') with hard sync and FM, noise, overdrive; four filter models: transistor ladder 24, state-variable 12 (low-pass to notch to high-pass), diode 18 and Sallen-Key 12, all self-oscillating but the SVF; filter and amp envelopes, LFO with wheel vibrato, glide, last / low / high note priority, legato, drift; runs 2x oversampled |
 
 ## Download
 

@@ -253,7 +253,7 @@ inline double blepTri(double p, double dt)
 }
 
 // ---- ladder filter -----------------------------------------------------------------------------------------------
-// Four TPT one-poles in series with feedback k (0..~4.2 = self-oscillation), solved with one tanh-linearised step.
+// Four TPT one-poles in series with feedback k (0..5.2; self-oscillation from 4), solved with one tanh-linearised step.
 // mode 0 = 24 dB/oct (4th pole), 1 = 12 dB/oct (2nd pole). Bass loss at high resonance is partly made up.
 class Ladder {
 public:
@@ -262,7 +262,7 @@ public:
     {
         const double g = std::tan(kPi * clampv(fc, 10.0, 0.47 * sampleRate) / sampleRate);
         G = g / (1.0 + g);
-        k = 4.2 * clampv(res, 0.0, 1.0);
+        k = 5.2 * clampv(res, 0.0, 1.0);   // oscillation starts near 77 %, strong and steady at 100 %
     }
     inline double process(double x, int mode = 0, double drive = 1.0)
     {

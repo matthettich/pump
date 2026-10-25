@@ -53,6 +53,7 @@ namespace accents {
     inline Accent amp()    { return { "amp",    hexColor(0xF5A672), hexColor(0x6E3410), hexColor(0x2C9FD0) }; }   // copper
     // the instruments
     inline Accent table()  { return { "table",  hexColor(0x7DF0A0), hexColor(0x0B5A2A), hexColor(0xE04FD0) }; }   // spring green
+    inline Accent mono()   { return { "mono",   hexColor(0xFF8A3D), hexColor(0x7A2E00), hexColor(0x2F8FE0) }; }   // blood orange
 }
 
 struct Theme {
