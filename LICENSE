@@ -1,0 +1,28 @@
+pump: licensing overview
+========================
+
+Unless a folder or file says otherwise, pump's source code and the plugins built from it are
+
+    Copyright (c) 2026 wake. All rights reserved.
+
+No licence to copy, modify or redistribute that code is granted by this repository being visible.
+
+
+Exception: pump MACHINE (plugins/machine/)
+------------------------------------------
+
+pump MACHINE is built on drum machine firmware that is licensed under the GNU General Public License version 3
+(GPL-3.0-only, with the additional permission and terms in plugins/machine/fw/firmware/NOTICE.md). It is therefore
+free software under those terms, together with the pump code that is compiled into it, which wake licenses under the
+same terms *as part of pump MACHINE*. The full text is in plugins/machine/fw/LICENSE; the details, the list of what
+is covered and the modified-version statement are in plugins/machine/NOTICE.md.
+
+That grant covers pump MACHINE and what is built into it. It does not extend to any other pump plugin: the other
+plugins do not use plugins/machine/, and tools/check-licence-boundary.sh (run in CI) fails the build if one does.
+
+
+Third-party components
+----------------------
+
+DPF, pffft, NanoVG, pugl, the NAM core, Eigen, the fonts and the firmware keep their own licences. See
+THIRD_PARTY_NOTICES.md.

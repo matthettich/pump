@@ -49,7 +49,10 @@ public:
 protected:
     const char* getMaker() const override { return "wake"; }
     const char* getHomePage() const override { return "https://github.com/matthettich/pump"; }
-    const char* getLicense() const override { return "Proprietary"; }
+    // Licence string the host shows. pump's own code is (c) wake, all rights reserved (see /LICENSE). A plugin that
+    // is under different terms MUST override this: pump MACHINE does ("GPL-3.0-only", see plugins/machine/NOTICE.md),
+    // because it is built on GPL firmware. tools/check-licence-boundary.sh keeps that GPL code out of every other plugin.
+    const char* getLicense() const override { return "All rights reserved (c) wake"; }
     uint32_t getVersion() const override { return d_version(0, 1, 0); }
 
     void initParameter(uint32_t index, Parameter& p) override
