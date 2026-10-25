@@ -18,6 +18,7 @@
 #include "dsp/Resampler.hpp"
 #include "dsp/Wav.hpp"
 #include "AmpParams.hpp"
+#include "ModelGuard.hpp"
 #include "NAM/dsp.h"
 #include "NAM/get_dsp.h"
 #include <filesystem>
@@ -130,6 +131,9 @@ public:
         ModelInfo info;
         info.path = path;
         info.name = std::filesystem::path(path).stem().string();
+        // NAM's core can read past its weights on a file whose architecture and weights disagree (memory corruption,
+        // not an exception): turn away what is plainly not a model before it gets that far (ModelGuard.hpp)
+        { const std::string bad = checkModelFile(path); if (!bad.empty()) { info.error = bad; return info; } }
         auto slot = std::make_unique<Slot>();
         try
         {

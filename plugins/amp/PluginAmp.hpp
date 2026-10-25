@@ -63,13 +63,29 @@ protected:
         return PumpPlugin::getState(key);
     }
 
+    // If the last attempt at this exact file never finished (the host went down inside NAM's core, which can happen on
+    // a damaged model: see ModelGuard.hpp), refuse it instead of taking the project down again. The marker stays until
+    // the file changes (a repaired or replaced file has a new size / time, so a new marker key) or the user clears the
+    // model; a project that points at the bad file therefore opens, with the model refused, every time after the first
+    // crash. Picking a different model replaces the path, and a refused file picked again by hand can be retried with
+    // CLEAR (which removes the marker), then picking it.
+    // (The host's restore and the user's own pick both arrive as setState("model", path): they can't be told apart.)
     void loadModel()
     {
         ModelInfo info;
-        if (modelPath.empty()) engine.clearModel();
+        if (modelPath.empty()) { if (!refusedPath.empty()) clearLoadMarker(refusedPath); refusedPath.clear(); engine.clearModel(); }
+        else if (previousLoadCrashed(modelPath))
+        {
+            refusedPath = modelPath;
+            info.path = modelPath;
+            info.name = std::filesystem::path(modelPath).stem().string();
+            info.error = "not loaded: this model crashed the plugin last time (CLEAR, then pick it again to retry)";
+        }
         else
         {
+            markLoadStart(modelPath);
             info = engine.loadModel(modelPath);
+            markLoadDone(modelPath);
             if (!info.loaded) { info.path = modelPath; }
         }
         std::lock_guard<std::mutex> g(infoLock);
@@ -160,6 +176,7 @@ private:
     pump::BypassMixer bypass;
     int lastLatency = -1;
     std::string modelPath, irPath;
+    std::string refusedPath;   // a model refused this session because its last load crashed (see loadModel)
     mutable std::mutex infoLock;
     ModelInfo mInfo;
     IrInfo iInfo;
