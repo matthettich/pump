@@ -13,6 +13,6 @@
 
 Mastering: pump EQ, pump COMP, pump LIMIT, pump CALM, pump TONE, pump BAND, pump WIDE, pump HEAT, pump METER.
 Effects:   pump TUBE, pump SNAP, pump GATE, pump ECHO, pump SPRING, pump VERB, pump GRAIN, pump VOX, pump TUNE, pump CRUSH, pump SWIRL, pump STUTTER, pump AMP.
-Instruments: pump TABLE, pump MONO.
+Instruments: pump TABLE, pump MONO, pump POLY.
 In every plugin: drag to change a control (Shift = fine), double-click or right-click to type a value,
 Ctrl-click to reset it. A/B compares two settings; DARK switches the look (remembered for new instances).

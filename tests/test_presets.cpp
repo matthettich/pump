@@ -26,6 +26,7 @@
 #include "../plugins/amp/AmpParams.hpp"
 #include "../plugins/table/TableParams.hpp"
 #include "../plugins/mono/MonoParams.hpp"
+#include "../plugins/poly/PolyParams.hpp"
 #include <cstdio>
 #include <cstring>
 #include <map>
@@ -117,6 +118,7 @@ int main()
         { "AMP", amp::params(), amp::presets() },
         { "TABLE", table::params(), table::presets() },
         { "MONO", mono::params(), mono::presets() },
+        { "POLY", poly::params(), poly::presets() },
     };
     std::map<std::string, int> sections;
     std::vector<std::vector<std::string>> chains;

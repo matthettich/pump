@@ -6,6 +6,7 @@
 //                  (last-note priority with a note stack), sustain pedal, pitch bend, mod wheel, aftertouch
 //   Adsr           exponential envelope (linear attack), retrigger from the current level, velocity amount
 //   blep           PolyBLEP / PolyBLAMP corrections for band-limited saw, pulse and triangle
+//   BandWaves      band-limited saw / triangle tables per octave (pulse from two saws): cleaner than PolyBLEP
 //   Ladder         four-pole transistor-ladder low-pass (TPT one-poles, tanh at the input and in the loop),
 //                  12 or 24 dB, resonance to self-oscillation, bass compensation
 //   midiToHz, ratioFromSemis
@@ -251,6 +252,70 @@ inline double blepTri(double p, double dt)
     y -= 4.0 * dt * blep::ramp(q, dt);
     return y;
 }
+
+// ---- band-limited saw and triangle tables ---------------------------------------------------------------------------
+// One table per octave of pitch ("mip"), each holding only the harmonics that stay below Nyquist for the pitches it
+// serves, built additively once per process and shared. Read with Hermite interpolation (at least 8 samples per
+// period of the top harmonic): far cleaner than PolyBLEP at high notes. Pulse = the difference of two saws, so pulse
+// width modulation stays band-limited too. Same shapes as blepSaw / blepTri (saw rises -1 -> 1; triangle -1 at 0).
+class BandWaves {
+public:
+    static constexpr int kMips = 11;
+    static const BandWaves& get() { static const BandWaves b; return b; }
+    static int mipFor(double inc)
+    {
+        const double maxH = 0.5 / std::max(1e-9, inc);
+        int m = 0;
+        while (m < kMips - 1 && harmonics(m) > maxH) ++m;
+        return m;
+    }
+    inline double saw(double p, int m) const { return read(sawT[m], p); }
+    inline double tri(double p, int m) const { return read(triT[m], p); }
+    inline double pulse(double p, double w, int m) const
+    {
+        double q = p - w; if (q < 0.0) q += 1.0;
+        return (saw(q, m) - saw(p, m)) + (2.0 * w - 1.0);
+    }
+private:
+    static int harmonics(int m) { return std::max(1, 1024 >> m); }
+    static int size(int m) { return std::min(2048, std::max(256, 8 * harmonics(m))); }
+    BandWaves()
+    {
+        for (int m = 0; m < kMips; ++m)
+        {
+            const int n = size(m), H = harmonics(m);
+            std::vector<double> s((size_t)n, 0.0), t((size_t)n, 0.0);
+            for (int h = 1; h <= H; ++h)
+            {
+                const double a = -2.0 / (kPi * h);                                  // 2p - 1 = -(2/pi) sum sin(2 pi h p) / h
+                const double b = (h % 2) ? -8.0 / (kPi * kPi * h * h) : 0.0;       // triangle: -(8/pi^2) sum_odd cos / h^2
+                for (int i = 0; i < n; ++i)
+                {
+                    const double x = kTwoPi * h * i / n;
+                    s[(size_t)i] += a * std::sin(x);
+                    if (b != 0.0) t[(size_t)i] += b * std::cos(x);
+                }
+            }
+            auto store = [&](std::vector<float>& d, const std::vector<double>& v) {
+                d.resize((size_t)n + 3);
+                for (int i = 0; i < n; ++i) d[(size_t)i + 1] = (float)v[(size_t)i];
+                d[0] = d[(size_t)n]; d[(size_t)n + 1] = d[1]; d[(size_t)n + 2] = d[2];
+            };
+            store(sawT[m], s); store(triT[m], t);
+        }
+    }
+    static inline double read(const std::vector<float>& d, double p)
+    {
+        const int n = (int)d.size() - 3;
+        const double x = p * n;
+        const int i = (int)x;
+        const float fr = (float)(x - i);
+        const float* y = d.data() + i;   // y[0..3] = x(i-1) .. x(i+2)
+        const float c1 = 0.5f * (y[2] - y[0]), c2 = y[0] - 2.5f * y[1] + 2.0f * y[2] - 0.5f * y[3], c3 = 0.5f * (y[3] - y[0]) + 1.5f * (y[1] - y[2]);
+        return ((c3 * fr + c2) * fr + c1) * fr + y[1];
+    }
+    std::vector<float> sawT[kMips], triT[kMips];
+};
 
 // ---- ladder filter -----------------------------------------------------------------------------------------------
 // Four TPT one-poles in series with feedback k (0..5.2; self-oscillation from 4), solved with one tanh-linearised step.

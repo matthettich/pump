@@ -20,7 +20,10 @@ Instruments (MIDI in, stereo out):
 - **Additive bass**: the Thunder Plus-style additive bass voice.
 - **Drum synth**: synthesized "new school" kits.
 - **MONO** analog mono / bass synth — done (2026-10-24).
-- **Vintage polysynth**: classic 70s/80s polysynth voicings (five-voice era and later).
+- **POLY** vintage polysynth — done (2026-10-24).
+- **Singing synth**: a vocal synthesizer that sings MIDI notes on vowels and phonemes (typed lyrics or a vowel
+  morph), with as many voice styles as we can make: soft, breathy, bright pop, choir, robotic, child-like, deep,
+  whisper, plus formant shift, vibrato and portamento.
 
 ## Instance List — planned, nice to have
 
