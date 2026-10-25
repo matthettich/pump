@@ -53,7 +53,7 @@ jobs:
             CC=x86_64-w64-mingw32-gcc-posix CXX=x86_64-w64-mingw32-g++-posix \
             AR=x86_64-w64-mingw32-ar WINDRES=x86_64-w64-mingw32-windres PKG_CONFIG=false 2>&1 | tee build.log \
             || { grep -E "error|Error|undefined reference|No rule" build.log | head -12 | while IFS= read -r l; do echo "::error::$l"; done; exit 1; }
-      - name: Leave out pump MACHINE (GPL-3.0: plugins/machine/NOTICE.md)
+      - name: "Leave out pump MACHINE (GPL-3.0, see plugins/machine/NOTICE.md)"
         # built above so CI checks it, but not published until pump's code compiled into it is offered under the GPL
         run: rm -rf bin/pump-machine bin/pump-machine.*
       - name: Package
@@ -81,7 +81,7 @@ jobs:
           set -o pipefail
           make -j4 MACOS=true 2>&1 | tee build.log \
             || { grep -E "error|Error|undefined|No rule" build.log | head -12 | while IFS= read -r l; do echo "::error::$l"; done; exit 1; }
-      - name: Leave out pump MACHINE (GPL-3.0: plugins/machine/NOTICE.md)
+      - name: "Leave out pump MACHINE (GPL-3.0, see plugins/machine/NOTICE.md)"
         # built above so CI checks it, but not published until pump's code compiled into it is offered under the GPL
         run: rm -rf bin/pump-machine bin/pump-machine.*
       - name: Sign (ad-hoc) and package
@@ -157,7 +157,7 @@ jobs:
           set -o pipefail
           make -j4 2>&1 | tee build.log \
             || { grep -E "error|Error|undefined|No rule" build.log | head -12 | while IFS= read -r l; do echo "::error::$l"; done; exit 1; }
-      - name: Leave out pump MACHINE (GPL-3.0: plugins/machine/NOTICE.md)
+      - name: "Leave out pump MACHINE (GPL-3.0, see plugins/machine/NOTICE.md)"
         # built above so CI checks it, but not published until pump's code compiled into it is offered under the GPL
         run: rm -rf bin/pump-machine bin/pump-machine.*
       - name: Package
