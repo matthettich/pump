@@ -43,6 +43,7 @@ offset block, Share Tech Mono, one light-neon colour per plugin, light or dark. 
 | **pump POLY** Vintage Poly Synth | dusk blue | two oscillators per voice (A: saw / pulse with sync to B; B: saw / triangle / pulse with a low-frequency mode), noise and sub; poly-mod from the filter envelope and oscillator B to A's pitch, A's pulse width and the filter; four filter models (Five 24, Eight 24, Eight 12, OB 12) plus a high-pass; filter and amp envelopes, delayed LFO with wheel depth; up to 16 voices, unison or mono with glide, per-voice slop; built-in chorus I / II / I+II |
 | **pump WOB** Additive Bass | ultraviolet | up to 64 sine partials (saw to square to triangle, tilt, odd / even, stretch) shaped per partial by a low-, band- or high-pass spectral filter with envelope, two vowel formants and a comb, so nothing aliases; a detuned reese set crossed in stereo, width, a sine sub; a wobble (six shapes, synced to the tempo or free, restarting with each note or following the song, delay and fade-in, mod-wheel depth) to cutoff, vowel, comb, level and pitch; mono with glide and legato |
 | **pump KIT** Drum Synth | signal red | eight pads on the General MIDI drum notes (toms on 41-50 at their own pitches), each any of eight synthesized voice models: kick, snare, clap, hat, tom, metal, FM and resonant noise, with tune, decay, pitch envelope, tone, noise, click, character and drive; re-hits fade the old voice, the closed hat chokes the open; level and pan per pad, kit drive, velocity sensitivity, humanize; twelve kits |
+| **pump MACHINE** Drum Machine | silver | the six voices of an open-source hardware drum machine's firmware, compiled unchanged and run as on the machine: three drums (oscillator, FM, pitch envelope, transient, filter, LFO), snare, cymbal and hi-hat (closed and open), every knob of their pages, velocity and LFO modulation to any voice, sample-rate reduction, drive; loads the machine's kit files; seven kits. GPL-3.0 (plugins/machine/NOTICE.md): build it from source, it is not in the published zips |
 
 ## Download
 
@@ -92,6 +93,9 @@ Every plugin shares the same mouse and key conventions. Press **?** in a plugin 
 - The instruments take MIDI from the host (in Live, put them on a MIDI track); the keyboard at the bottom of their window
   plays too. TABLE: drag a table screen up / down to move its position, the wheel changes the table; LOAD reads a .wav
   wavetable (frames of 2048 samples) into USER
+- KIT and MACHINE answer the General MIDI drum notes (36 kick, 38 snare, 42 / 46 hats, toms 41-50, cymbals 49-59);
+  MACHINE also plays its seven sounds chromatically on MIDI channels 2-8. Click a pad (or keys 1-8 / 1-7) to play it and
+  edit it. MACHINE's LOAD KIT reads a kit file (.snd) from the machine's card
 - TUNE goes on a solo voice. Live: set KEY and SCALE (or send it MIDI notes) and RETUNE. Graph: turn CAPTURE on and play
   the song once; the voice appears as notes on the host's timeline: drag them (Alt = free), double-click to snap,
   select several to STRAIGHTEN, change VIBRATO, FORMANT or GAIN. The edits are saved with the session

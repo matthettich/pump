@@ -26,6 +26,12 @@ third_party/NeuralAmpModelerCore/LICENSE. It includes nlohmann/json (MIT, Copyri
 https://eigen.tuxfamily.org. Source: the NAM core's Dependencies/eigen submodule (unmodified). Full text:
 https://www.mozilla.org/MPL/2.0/.
 
+## Drum machine firmware (GPL-3.0-only with additional terms), used by pump MACHINE only
+The LXR firmware's sound engine, Copyright (C) 2012-2026 Erica Synths, https://github.com/erica-synths/lxr-desktop-app,
+compiled unchanged (plugins/machine/fw/firmware/, with its LICENSE and NOTICE.md). pump MACHINE is a modified version,
+not official Erica Synths firmware or software, and pump is not affiliated with or endorsed by Erica Synths. pump
+MACHINE as a whole is GPL-3.0-only with those terms: plugins/machine/NOTICE.md. It is not in pump's published builds.
+
 ## Fonts (SIL Open Font License 1.1)
 Share Tech Mono — Copyright 2012 Carrois Type Design. JetBrains Mono — Copyright 2020 The JetBrains Mono Project
 Authors. Full texts: common/fonts/OFL-*.txt.

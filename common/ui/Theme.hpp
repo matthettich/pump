@@ -57,6 +57,7 @@ namespace accents {
     inline Accent poly()   { return { "poly",   hexColor(0xA9B8FF), hexColor(0x27307A), hexColor(0xE8A23C) }; }   // dusk blue
     inline Accent wob()    { return { "wob",    hexColor(0xA36BFF), hexColor(0x3A0F94), hexColor(0x3FD9A0) }; }   // ultraviolet
     inline Accent kit()    { return { "kit",    hexColor(0xFF5E57), hexColor(0x8C0F0A), hexColor(0x2FB8C9) }; }   // signal red
+    inline Accent machine(){ return { "machine",hexColor(0xB8C4DD), hexColor(0x354163), hexColor(0xFF7A45) }; }   // silver
 }
 
 struct Theme {

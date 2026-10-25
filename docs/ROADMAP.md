@@ -15,8 +15,9 @@ Effects, in this order:
 
 Instruments (MIDI in, stereo out):
 - **TABLE** wavetable synth — done (2026-10-24).
-- **Drum machine port**: the voices of an open-sourced hardware drum machine's firmware (keep its licence and
-  notices in THIRD_PARTY_NOTICES.md; voices first, no built-in sequencer).
+- **MACHINE** drum machine firmware voices — done (2026-10-24). Not in the published builds until pump's code compiled
+  into it is offered under the GPL (plugins/machine/NOTICE.md). Later, maybe: the FX bus's own page (delay, reverb,
+  compressor types), the machine's separate stereo outputs, a step sequencer.
 - **WOB** additive bass — done (2026-10-24).
 - **KIT** drum synth — done (2026-10-24).
 - **MONO** analog mono / bass synth — done (2026-10-24).

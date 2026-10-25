@@ -65,6 +65,16 @@ build/tests/test_amp: tests/test_amp.cpp build/tests/pffft.o build/tests/nam.o $
 	@mkdir -p build/tests
 	$(CXX) $(TEST_FLAGS) $(NAM_FLAGS) -Iplugins/amp $< build/tests/pffft.o build/tests/nam.o -lpthread -o $@
 
+# MACHINE's test links the drum machine firmware (C, built the way the plugin builds it: plugins/machine/Makefile)
+MFW := plugins/machine/fw
+MFW_FLAGS = -O2 -std=gnu11 -funsigned-char -w -I$(MFW)/stub -I$(MFW)/firmware/Core/Inc -I$(MFW) $(if $(shell $(CC) --version 2>/dev/null | grep -i clang),,-D__fp16=_Float16)
+build/tests/mfw_%.o: $(MFW)/machine_%.c $(MFW)/machine_fw.c $(MFW)/machine_fw.h
+	@mkdir -p build/tests
+	$(CC) $(MFW_FLAGS) -c $< -o $@
+build/tests/test_machine: tests/test_machine.cpp build/tests/pffft.o build/tests/mfw_unity.o build/tests/mfw_unity2.o $(wildcard common/*.hpp common/dsp/*.hpp tests/*.hpp plugins/machine/*.hpp)
+	@mkdir -p build/tests
+	$(CXX) $(TEST_FLAGS) -Iplugins/machine $< build/tests/pffft.o build/tests/mfw_unity.o build/tests/mfw_unity2.o -lpthread -o $@
+
 tests: $(TESTS) $(SYNC_TESTS) build/tests/wasm_wrapper
 	@for t in $(TESTS) $(SYNC_TESTS) build/tests/wasm_wrapper; do echo "== $$t"; ./$$t || exit 1; done
 

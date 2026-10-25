@@ -29,6 +29,7 @@
 #include "../plugins/poly/PolyParams.hpp"
 #include "../plugins/wob/WobParams.hpp"
 #include "../plugins/kit/KitParams.hpp"
+#include "../plugins/machine/MachineParams.hpp"
 #include <cstdio>
 #include <cstring>
 #include <map>
@@ -123,6 +124,7 @@ int main()
         { "POLY", poly::params(), poly::presets() },
         { "WOB", wob::params(), wob::presets() },
         { "KIT", kit::params(), kit::presets() },
+        { "MACHINE", machine::params(), machine::presets() },
     };
     std::map<std::string, int> sections;
     std::vector<std::vector<std::string>> chains;
