@@ -17,7 +17,7 @@ Instruments (MIDI in, stereo out):
 - **TABLE** wavetable synth — done (2026-10-24).
 - **Drum machine port**: the voices of an open-sourced hardware drum machine's firmware (keep its licence and
   notices in THIRD_PARTY_NOTICES.md; voices first, no built-in sequencer).
-- **Additive bass**: the Thunder Plus-style additive bass voice.
+- **WOB** additive bass — done (2026-10-24).
 - **Drum synth**: synthesized "new school" kits.
 - **MONO** analog mono / bass synth — done (2026-10-24).
 - **POLY** vintage polysynth — done (2026-10-24).
