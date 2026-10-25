@@ -90,6 +90,7 @@ public:
                 if (v.fadeOut) { v.fade -= fadeStep; if (v.fade <= 0.0) { v.active = false; continue; } y *= v.fade; }
                 l += y * v.gl; r += y * v.gr;
             }
+            l *= 0.5; r *= 0.5;   // headroom: a full kit's hits add up
             if (kd > 0.0) { l = std::tanh(l * kd) * kdn; r = std::tanh(r * kd) * kdn; }
             const double vol = volS.next();
             L[i] = (float)(l * vol); R[i] = (float)(r * vol);
@@ -274,7 +275,13 @@ private:
         }
         }
         // the click: a short high-passed noise and pulse transient at the start
-        if (p.click > 0.001 && v.click > 1e-4) { y += p.click * v.click * (v.clickHp.hp(wn) * 0.8 + (v.t < 1.0 / sr * 2 ? 0.6 : 0.0)); v.click *= v.clickK; }
+        if (p.click > 0.001 && v.click > 1e-4)
+        {
+            // a rounded half-millisecond pulse plus high-passed noise
+            const double tp = v.t * 2000.0, pulse = tp < 1.0 ? std::sin(kPi * tp) * 0.35 : 0.0;
+            y += p.click * v.click * (v.clickHp.hp(wn) * 0.7 + pulse);
+            v.click *= v.clickK;
+        }
         if (v.atk < 1.0) v.atk = std::min(1.0, v.atk + v.atkInc);
         y *= (own ? 1.0 : v.amp) * v.atk;
         v.amp *= v.ampK;
