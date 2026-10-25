@@ -15,8 +15,8 @@ Effects, in this order:
 
 Instruments (MIDI in, stereo out):
 - **TABLE** wavetable synth — done (2026-10-24).
-- **MACHINE** drum machine firmware voices — done (2026-10-24). Not in the published builds until pump's code compiled
-  into it is offered under the GPL (plugins/machine/NOTICE.md). Later, maybe: the FX bus's own page (delay, reverb,
+- **MACHINE** drum machine firmware voices — done (2026-10-24); GPL-3.0 with the pump code built into it
+  (plugins/machine/NOTICE.md). Later, maybe: the FX bus's own page (delay, reverb,
   compressor types), the machine's separate stereo outputs, a step sequencer.
 - **WOB** additive bass — done (2026-10-24).
 - **KIT** drum synth — done (2026-10-24).

@@ -53,9 +53,6 @@ jobs:
             CC=x86_64-w64-mingw32-gcc-posix CXX=x86_64-w64-mingw32-g++-posix \
             AR=x86_64-w64-mingw32-ar WINDRES=x86_64-w64-mingw32-windres PKG_CONFIG=false 2>&1 | tee build.log \
             || { grep -E "error|Error|undefined reference|No rule" build.log | head -12 | while IFS= read -r l; do echo "::error::$l"; done; exit 1; }
-      - name: "Leave out pump MACHINE (GPL-3.0, see plugins/machine/NOTICE.md)"
-        # built above so CI checks it, but not published until pump's code compiled into it is offered under the GPL
-        run: rm -rf bin/pump-machine bin/pump-machine.*
       - name: Package
         run: |
           mkdir -p dist/pump-windows
@@ -63,6 +60,7 @@ jobs:
           mkdir -p dist/pump-windows/CLAP && cp bin/*.clap dist/pump-windows/CLAP/
           cp docs/INSTALL-windows.txt dist/pump-windows/INSTALL.txt
           cp THIRD_PARTY_NOTICES.md dist/pump-windows/
+          cp plugins/machine/NOTICE.md dist/pump-windows/pump-MACHINE-NOTICE.md && cp plugins/machine/fw/LICENSE dist/pump-windows/pump-MACHINE-LICENSE-GPL-3.0.txt
           cd dist && zip -qr pump-windows.zip pump-windows
       - uses: actions/upload-artifact@v4
         with: { name: pump-windows, path: dist/pump-windows.zip }
@@ -81,9 +79,6 @@ jobs:
           set -o pipefail
           make -j4 MACOS=true 2>&1 | tee build.log \
             || { grep -E "error|Error|undefined|No rule" build.log | head -12 | while IFS= read -r l; do echo "::error::$l"; done; exit 1; }
-      - name: "Leave out pump MACHINE (GPL-3.0, see plugins/machine/NOTICE.md)"
-        # built above so CI checks it, but not published until pump's code compiled into it is offered under the GPL
-        run: rm -rf bin/pump-machine bin/pump-machine.*
       - name: Sign (ad-hoc) and package
         run: |
           # our own bundle identifiers (DPF's template uses studio.kx.distrho.*)
@@ -98,6 +93,7 @@ jobs:
           cp -R bin/*.component dist/pump-macos/Components/ 2>/dev/null || true
           cp docs/INSTALL-macos.txt dist/pump-macos/INSTALL.txt
           cp THIRD_PARTY_NOTICES.md dist/pump-macos/
+          cp plugins/machine/NOTICE.md dist/pump-macos/pump-MACHINE-NOTICE.md && cp plugins/machine/fw/LICENSE dist/pump-macos/pump-MACHINE-LICENSE-GPL-3.0.txt
           cd dist && ditto -c -k --keepParent pump-macos pump-macos.zip
       - name: System EQ (menu-bar app)
         # pump EQ on everything the Mac plays; bundles the signed bin/pump-eq.component from the step above
@@ -157,12 +153,10 @@ jobs:
           set -o pipefail
           make -j4 2>&1 | tee build.log \
             || { grep -E "error|Error|undefined|No rule" build.log | head -12 | while IFS= read -r l; do echo "::error::$l"; done; exit 1; }
-      - name: "Leave out pump MACHINE (GPL-3.0, see plugins/machine/NOTICE.md)"
-        # built above so CI checks it, but not published until pump's code compiled into it is offered under the GPL
-        run: rm -rf bin/pump-machine bin/pump-machine.*
       - name: Package
         run: |
           mkdir -p dist/pump-linux && cp -r bin/*.vst3 bin/*.clap dist/pump-linux/ && cp THIRD_PARTY_NOTICES.md dist/pump-linux/
+          cp plugins/machine/NOTICE.md dist/pump-linux/pump-MACHINE-NOTICE.md && cp plugins/machine/fw/LICENSE dist/pump-linux/pump-MACHINE-LICENSE-GPL-3.0.txt
           cd dist && tar czf pump-linux.tar.gz pump-linux
       - uses: actions/upload-artifact@v4
         with: { name: pump-linux, path: dist/pump-linux.tar.gz }
@@ -185,5 +179,5 @@ jobs:
           else
             gh release delete latest --yes --cleanup-tag 2>/dev/null || true
             gh release create latest $files --prerelease --title "…pump (latest build)" \
-              --notes "Newest build from main ($GITHUB_SHA). Mac: pump-macos.pkg (installer; if macOS blocks it, System Settings > Privacy & Security > Open Anyway) or pump-macos.zip. The .pkg also installs System EQ (pump EQ on everything the Mac plays) in Applications; system-eq-macos.zip has the app on its own. Windows: pump-windows.zip. Install steps are in INSTALL.txt inside each zip."
+              --notes "Newest build from main ($GITHUB_SHA). pump MACHINE is GPL-3.0 (pump-MACHINE-NOTICE.md in each package; source: this commit). Mac: pump-macos.pkg (installer; if macOS blocks it, System Settings > Privacy & Security > Open Anyway) or pump-macos.zip. The .pkg also installs System EQ (pump EQ on everything the Mac plays) in Applications; system-eq-macos.zip has the app on its own. Windows: pump-windows.zip. Install steps are in INSTALL.txt inside each zip."
           fi

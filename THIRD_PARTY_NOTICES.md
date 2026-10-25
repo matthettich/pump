@@ -30,7 +30,8 @@ https://www.mozilla.org/MPL/2.0/.
 The LXR firmware's sound engine, Copyright (C) 2012-2026 Erica Synths, https://github.com/erica-synths/lxr-desktop-app,
 compiled unchanged (plugins/machine/fw/firmware/, with its LICENSE and NOTICE.md). pump MACHINE is a modified version,
 not official Erica Synths firmware or software, and pump is not affiliated with or endorsed by Erica Synths. pump
-MACHINE as a whole is GPL-3.0-only with those terms: plugins/machine/NOTICE.md. It is not in pump's published builds.
+MACHINE as a whole, including the pump code compiled into it, is GPL-3.0-only with those terms: see
+pump-MACHINE-NOTICE.md and pump-MACHINE-LICENSE-GPL-3.0.txt next to this file (plugins/machine/ in the source).
 
 ## Fonts (SIL Open Font License 1.1)
 Share Tech Mono — Copyright 2012 Carrois Type Design. JetBrains Mono — Copyright 2020 The JetBrains Mono Project

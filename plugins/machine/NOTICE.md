@@ -9,12 +9,13 @@ Everything in this folder is free software under the **GNU General Public Licens
 the additional permission and the additional terms (GPL-3.0 section 7) that come with the firmware, which are in
 [`fw/firmware/NOTICE.md`](fw/firmware/NOTICE.md). The full licence text is in [`fw/LICENSE`](fw/LICENSE).
 
-A built pump MACHINE is a work based on the firmware, and it also contains pump's own shared code (`common/`) and
-DPF. Giving someone a built pump MACHINE means giving them all of that under the GPL-3.0 terms. pump's own code is
-© wake and is not otherwise under the GPL. So the published pump builds (the CI's releases) leave pump MACHINE out
-(see `.github/workflows/build.yml`) until pump's authors decide to offer that code under the GPL for it. Building it
-for yourself is always fine. The rest of pump does not use this folder: delete `plugins/machine/` and
-`tests/test_machine.cpp` (and the test's rule in the top-level Makefile) and pump builds without any GPL code.
+A built pump MACHINE is a work based on the firmware, and it also contains pump's own shared code (`common/`), the
+plugin build files (`plugins/Plugin.mk`, `patches/`, `tools/`) and DPF (ISC). **pump's authors (wake) license the pump
+code compiled into pump MACHINE under the GPL-3.0-only, with the firmware's additional terms, as part of pump
+MACHINE.** That grant covers pump MACHINE; the other pump plugins keep their own terms (pump's code in them is
+© wake), and nothing in them uses this folder. The source of every published pump MACHINE is the pump repository at
+https://github.com/matthettich/pump, at the commit the build was made from (the release notes name it); the
+packages carry this notice and the licence text.
 
 - **The firmware**: `fw/firmware/` holds the firmware files this build reads, unchanged, with the firmware's own
   LICENSE and NOTICE.md. Copyright (C) 2012-2026 Erica Synths. Source:
