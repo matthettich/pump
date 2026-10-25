@@ -1307,8 +1307,16 @@ protected:
         return f.empty() ? std::string("preset") : f;
     }
     // Reads a preset file: its name (the "name=" line, else the file name) and its values.
+    // A real preset is a few hundred bytes (one short line per parameter): a file far past that is not one, and the
+    // folder is scanned (every file opened) whenever the menu opens, so bound what one file can cost.
+    static constexpr std::uintmax_t kMaxPresetBytes = 256 * 1024;
+    static constexpr size_t kMaxPresetLine = 512;
+    static constexpr size_t kMaxPresetValues = 4096;
     static bool readPresetFile(const std::filesystem::path& p, std::string& name, std::vector<std::pair<std::string, float>>& values)
     {
+        std::error_code ec;
+        const std::uintmax_t size = std::filesystem::file_size(p, ec);
+        if (ec || size > kMaxPresetBytes) return false;
         std::ifstream in(p);
         if (!in) return false;
         name = p.stem().u8string();
@@ -1316,6 +1324,7 @@ protected:
         std::string line;
         while (std::getline(in, line))
         {
+            if (line.size() > kMaxPresetLine || values.size() >= kMaxPresetValues) continue;   // not a line of ours: skip it
             if (!line.empty() && line.back() == '\r') line.pop_back();
             if (line.empty() || line[0] == '#') continue;
             const size_t eq = line.find('=');
@@ -1397,19 +1406,26 @@ protected:
             for (char& c : b) c = (char)std::tolower((unsigned char)c);
             if (a == b) { file = fUserPresetFiles[k]; break; }
         }
-        std::ofstream out(file, std::ios::binary | std::ios::trunc);
-        if (!out) { setStatus("Could not write the preset file"); return; }
-        out << "# pump preset\nplugin=" << fTag << "\nname=" << name << "\n";
-        char buf[64];
-        for (uint32_t i = 0; i < fNum; ++i)
+        // Write to a temporary file next to it, then rename over the real one: a crash or a full disk part-way
+        // leaves the old preset intact instead of a truncated one (rename replaces atomically on one volume).
+        fs::path tmp = file; tmp += ".tmp";
         {
-            if (fSpecs[i].flags & (pump::kPOutput | pump::kPBypass | pump::kPNoUndo | pump::kPHidden)) continue;
-            std::snprintf(buf, sizeof buf, "%.9g", fValues[i]);
-            for (char* c = buf; *c; ++c) if (*c == ',') *c = '.';   // locale-proof
-            out << fSpecs[i].symbol << "=" << buf << "\n";
+            std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
+            if (!out) { setStatus("Could not write the preset file"); return; }
+            out << "# pump preset\nplugin=" << fTag << "\nname=" << name << "\n";
+            char buf[64];
+            for (uint32_t i = 0; i < fNum; ++i)
+            {
+                if (fSpecs[i].flags & (pump::kPOutput | pump::kPBypass | pump::kPNoUndo | pump::kPHidden)) continue;
+                std::snprintf(buf, sizeof buf, "%.9g", fValues[i]);
+                for (char* c = buf; *c; ++c) if (*c == ',') *c = '.';   // locale-proof
+                out << fSpecs[i].symbol << "=" << buf << "\n";
+            }
+            out.flush();
+            if (!out) { out.close(); fs::remove(tmp, ec); setStatus("Could not write the preset file (disk full?)"); return; }
         }
-        out.close();
-        if (!out) { setStatus("Could not write the preset file"); return; }
+        fs::rename(tmp, file, ec);
+        if (ec) { std::error_code ec2; fs::remove(tmp, ec2); setStatus("Could not write the preset file"); return; }
         fPresetName = name;
         fPresetIsUser = true;
         setState("preset", ("user:" + name).c_str());
