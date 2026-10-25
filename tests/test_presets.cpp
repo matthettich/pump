@@ -28,6 +28,7 @@
 #include "../plugins/mono/MonoParams.hpp"
 #include "../plugins/poly/PolyParams.hpp"
 #include "../plugins/wob/WobParams.hpp"
+#include "../plugins/kit/KitParams.hpp"
 #include <cstdio>
 #include <cstring>
 #include <map>
@@ -121,6 +122,7 @@ int main()
         { "MONO", mono::params(), mono::presets() },
         { "POLY", poly::params(), poly::presets() },
         { "WOB", wob::params(), wob::presets() },
+        { "KIT", kit::params(), kit::presets() },
     };
     std::map<std::string, int> sections;
     std::vector<std::vector<std::string>> chains;

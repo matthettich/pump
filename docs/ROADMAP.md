@@ -18,7 +18,7 @@ Instruments (MIDI in, stereo out):
 - **Drum machine port**: the voices of an open-sourced hardware drum machine's firmware (keep its licence and
   notices in THIRD_PARTY_NOTICES.md; voices first, no built-in sequencer).
 - **WOB** additive bass — done (2026-10-24).
-- **Drum synth**: synthesized "new school" kits.
+- **KIT** drum synth — done (2026-10-24).
 - **MONO** analog mono / bass synth — done (2026-10-24).
 - **POLY** vintage polysynth — done (2026-10-24).
 - **Singing synth**: a vocal synthesizer that sings MIDI notes on vowels and phonemes (typed lyrics or a vowel
