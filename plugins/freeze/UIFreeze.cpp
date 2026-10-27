@@ -12,9 +12,9 @@ using namespace pump::freeze;
 
 class UIFreeze : public PumpUI {
 public:
-    UIFreeze() : PumpUI(params().data(), kNumParams, &presets(), pump::accents::freeze(), "FREEZE", 1000, 724, -1)
+    UIFreeze() : PumpUI(params().data(), kNumParams, &presets(), pump::accents::freeze(), "FREEZE", 1000, 716, -1)
     {
-        auto dial = [&](int p, const char* l, bool bi = false, const char* tip = nullptr) { Dial* d = addDial(p, l, Dial::Small, bi); if (tip) d->tip = tip; return d; };
+        auto dial = [&](int p, const char* l, bool bi = false, const char* tip = nullptr) { Dial* d = addDial(p, l, Dial::Medium, bi); if (tip) d->tip = tip; return d; };
         srcM = addMenu(kSource, "SOURCE"); srcM->arrows = true;
         loadB = addButton("LOAD", [this] { FileBrowserOptions op; op.title = "Load a sound to freeze (.wav, up to 20 s)"; openFileBrowser(op); });
         loadB->tip = "Load a .wav of your own (then SOURCE: File)";
@@ -65,23 +65,33 @@ protected:
 
     void layout() override
     {
-        const float top = 58, hs = Dial::heightFor(Dial::Small);
-        soundR = Rect(14, top, 700, 214);
-        nowR = Rect(726, top, 234, 214);
-        meterL = Rect(966, top, 8, 202); meterR = Rect(977, top, 8, 202);
-        srcPanel = Rect(14, 284, 972, 116);
-        srcM->r = Rect(24, 316, 260, 24); loadB->r = Rect(290, 316, 80, 24);
-        Dial* sd[5] = { posD, speedD, sprayD, grainsD, blurD };
-        for (int k = 0; k < 5; ++k) sd[k]->r = Rect(386 + k * 118, 312, 118, hs);
-        specPanel = Rect(14, 410, 972, 116);
-        Dial* pd[9] = { rootD, trackD, stretchD, tiltD, shimD, lowD, highD, phaseD, widthD };
-        for (int k = 0; k < 9; ++k) pd[k]->r = Rect(22 + k * 107, 438, 107, hs);
-        voicePanel = Rect(14, 536, 972, 100);
-        for (int k = 0; k < 4; ++k) envD[k]->r = Rect(22 + k * 76, 562, 76, hs);
-        Dial* vd[5] = { velD, voicesD, glideD, octD, volD };
-        for (int k = 0; k < 5; ++k) vd[k]->r = Rect(330 + k * 88, 562, 88, hs);
-        vmodeSeg->r = Rect(780, 586, 196, 22);
-        keyboard.r = Rect(14, 646, 966, 50);
+        // top: sound, now, meters
+        const float top = 58, sh = 190, hm = Dial::heightFor(Dial::Medium), ph = 112;
+        soundR = Rect(14, top, 700, sh);
+        nowR = Rect(726, top, 234, sh);
+        meterL = Rect(966, top, 8, sh - 12); meterR = Rect(977, top, 8, sh - 12);
+        // spread n dials across w px from x, 28 below the panel's top
+        auto rowOf = [&](float x, float y, float w, Dial** d, int n) {
+            const float cw = w / n;
+            for (int k = 0; k < n; ++k) d[k]->r = Rect(x + k * cw, y + 28, cw, hm);
+        };
+        // SOURCE · GRAINS (source, load, five dials) | ENVELOPE
+        const float y1 = top + sh + 12;
+        srcPanel = Rect(14, y1, 652, ph);
+        srcM->r = Rect(26, y1 + 32, 220, 24); loadB->r = Rect(26, y1 + 66, 220, 24);
+        Dial* sd[5] = { posD, speedD, sprayD, grainsD, blurD }; rowOf(256, y1, 400, sd, 5);
+        envPanel = Rect(678, y1, 308, ph);
+        rowOf(688, y1, 288, envD, 4);
+        // SPECTRUM: nine dials
+        const float y2 = y1 + ph + 12;
+        specPanel = Rect(14, y2, 972, ph);
+        Dial* pd[9] = { rootD, trackD, stretchD, tiltD, shimD, lowD, highD, phaseD, widthD }; rowOf(24, y2, 952, pd, 9);
+        // VOICE: five dials, the mode beside them
+        const float y3 = y2 + ph + 12;
+        voicePanel = Rect(14, y3, 972, ph);
+        Dial* vd[5] = { velD, voicesD, glideD, octD, volD }; rowOf(24, y3, 640, vd, 5);
+        vmodeSeg->r = Rect(690, y3 + ph * 0.5f - 12, 284, 24);
+        keyboard.r = Rect(14, y3 + ph + 12, 966, 50);
     }
 
     void tick(float dt) override
@@ -185,7 +195,7 @@ protected:
         drawLevelMeter(meterL, lvl[0], hold[0], -48.0f, 6.0f);
         drawLevelMeter(meterR, lvl[1], hold[1], -48.0f, 6.0f);
         auto panel = [&](const Rect& r, const char* c) { strokeRect(r, theme.dim, 1.0f); caption(r.x + 12, r.y + 16, c); };
-        panel(srcPanel, "SOURCE · GRAINS"); panel(specPanel, "SPECTRUM"); panel(voicePanel, "VOICE");
+        panel(srcPanel, "SOURCE · GRAINS"); panel(envPanel, "ENVELOPE"); panel(specPanel, "SPECTRUM"); panel(voicePanel, "VOICE");
         keyboard.draw(*this);
     }
 
@@ -227,7 +237,7 @@ protected:
 private:
     static constexpr int kImgW = 512, kImgH = 128;
     PluginFreeze* plug = nullptr;
-    Rect soundR, nowR, meterL, meterR, srcPanel, specPanel, voicePanel;
+    Rect soundR, nowR, meterL, meterR, srcPanel, envPanel, specPanel, voicePanel;
     MenuButton* srcM;
     Button* loadB;
     Segmented* vmodeSeg;
