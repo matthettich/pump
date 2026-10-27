@@ -12,7 +12,7 @@ using namespace pump::coil;
 
 class UICoil : public PumpUI {
 public:
-    UICoil() : PumpUI(params().data(), kNumParams, &presets(), pump::accents::coil(), "COIL", 1000, 648, -1)
+    UICoil() : PumpUI(params().data(), kNumParams, &presets(), pump::accents::coil(), "COIL", 1000, 688, -1)
     {
         auto dial = [&](int p, const char* l, bool bi = false, const char* tip = nullptr, Dial::Size sz = Dial::Medium) { Dial* d = addDial(p, l, sz, bi); if (tip) d->tip = tip; return d; };
         modelSeg = addSegmented(kModel, { "TWO", "THREE", "SHORT", "LONG", "DIGITAL", "LO-FI" });
@@ -34,6 +34,7 @@ public:
         bendD = dial(kBend, "BEND");
         volD = dial(kVolume, "VOLUME", true);
 
+        springsView.tank = true;
         keyboard.lowNote = 36;
         keyboard.send = [this](int note, int vel) { if (plug) plug->keys.push((uint8_t)note, (uint8_t)vel); };
         if (auto* p = static_cast<PluginCoil*>(pluginPtr())) plug = p;
@@ -52,7 +53,7 @@ protected:
     void layout() override
     {
         // top: springs, KICK, scope, meters
-        const float top = 58, sh = 200, hm = Dial::heightFor(Dial::Medium), hl = Dial::heightFor(Dial::Large);
+        const float top = 58, sh = 240, hm = Dial::heightFor(Dial::Medium), hl = Dial::heightFor(Dial::Large);
         springsR = Rect(14, top, 600, sh);
         kickR = Rect(626, top, 140, sh);
         scopeR = Rect(778, top, 182, sh);

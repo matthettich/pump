@@ -13,9 +13,10 @@ using namespace pump::twang;
 
 class UITwang : public PumpUI {
 public:
-    UITwang() : PumpUI(params().data(), kNumParams, &presets(), pump::accents::twang(), "TWANG", 1000, 658, kBypass)
+    UITwang() : PumpUI(params().data(), kNumParams, &presets(), pump::accents::twang(), "TWANG", 1000, 698, kBypass)
     {
         auto dial = [&](int p, const char* l, bool bi = false, const char* tip = nullptr, Dial::Size sz = Dial::Medium) { Dial* d = addDial(p, l, sz, bi); if (tip) d->tip = tip; return d; };
+        springsView.tank = true;
         tuneSeg = addSegmented(kTuning, { "CHORD", "MIDI", "LATCH" });
         tuneSeg->tip = "Chord: ROOT + CHORD tune the springs · MIDI: the notes you hold · Latch: the last notes played, until new ones";
         rootD = dial(kRoot, "ROOT");
@@ -54,7 +55,7 @@ protected:
     void layout() override
     {
         // top: springs, KICK, scope, meters
-        const float top = 58, sh = 200, hm = Dial::heightFor(Dial::Medium), hl = Dial::heightFor(Dial::Large);
+        const float top = 58, sh = 240, hm = Dial::heightFor(Dial::Medium), hl = Dial::heightFor(Dial::Large);
         springsR = Rect(14, top, 600, sh);
         kickR = Rect(626, top, 140, sh);
         scopeR = Rect(778, top, 182, sh);
