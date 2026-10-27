@@ -13,16 +13,16 @@ using namespace pump::prism;
 
 class UIPrism : public PumpUI {
 public:
-    UIPrism() : PumpUI(params().data(), kNumParams, &presets(), pump::accents::prism(), "PRISM", 1000, 740, -1)
+    UIPrism() : PumpUI(params().data(), kNumParams, &presets(), pump::accents::prism(), "PRISM", 1000, 728, -1)
     {
-        auto dial = [&](int p, const char* l, bool bi = false, const char* tip = nullptr) { Dial* d = addDial(p, l, Dial::Small, bi); if (tip) d->tip = tip; return d; };
+        auto dial = [&](int p, const char* l, bool bi = false, const char* tip = nullptr) { Dial* d = addDial(p, l, Dial::Medium, bi); if (tip) d->tip = tip; return d; };
         srcA = addMenu(kSourceA, "A"); srcA->arrows = true;
         srcB = addMenu(kSourceB, "B"); srcB->arrows = true;
         loadA = addButton("LOAD A", [this] { which = 0; FileBrowserOptions op; op.title = "Load a sound to resynthesise (.wav, up to 20 s)"; openFileBrowser(op); });
         loadB = addButton("LOAD B", [this] { which = 1; FileBrowserOptions op; op.title = "Load a second sound to morph to (.wav, up to 20 s)"; openFileBrowser(op); });
         loadA->tip = "Load a .wav as source A (then SOURCE A: File A)";
         loadB->tip = "Load a .wav as source B (then SOURCE B: File B)";
-        morphD = dial(kMorph, "MORPH", false, "From sound A (0) to sound B (100), partial by partial");
+        morphD = dial(kMorph, "MORPH", false, "From sound A (0) to sound B (100), partial by partial"); morphD->size = Dial::Large;
         modeSeg = addSegmented(kMode, { "LOOP", "ONE-SHOT", "BOUNCE", "FREEZE" });
         modeSeg->tip = "Loop START-END · play once and hold the last moment · back and forth · stand still at SCAN";
         speedD = dial(kSpeed, "SPEED", false, "How fast it moves through the sound (100 % = as recorded, 0 = still)");
@@ -73,27 +73,36 @@ protected:
 
     void layout() override
     {
-        const float top = 58, hs = Dial::heightFor(Dial::Small);
-        soundR = Rect(14, top, 744, 200);
-        partsR = Rect(770, top, 190, 200);
-        meterL = Rect(966, top, 8, 188); meterR = Rect(977, top, 8, 188);
-        srcPanel = Rect(14, 270, 476, 120);
-        srcA->r = Rect(24, 298, 260, 24); loadA->r = Rect(290, 298, 90, 24);
-        srcB->r = Rect(24, 334, 260, 24); loadB->r = Rect(290, 334, 90, 24);
-        morphD->r = Rect(390, 290, 90, hs);
-        playPanel = Rect(502, 270, 484, 120);
-        modeSeg->r = Rect(512, 292, 464, 22);
+        const float top = 58, sh = 168, hm = Dial::heightFor(Dial::Medium), hl = Dial::heightFor(Dial::Large);
+        soundR = Rect(14, top, 744, sh);
+        partsR = Rect(770, top, 190, sh);
+        meterL = Rect(966, top, 8, sh - 12); meterR = Rect(977, top, 8, sh - 12);
+
+        // SOURCES (A, B, LOAD, MORPH) beside PLAY (mode + five dials)
+        const float y1 = top + sh + 12, ph = 140;
+        srcPanel = Rect(14, y1, 476, ph);
+        srcA->r = Rect(26, y1 + 44, 260, 24); loadA->r = Rect(294, y1 + 44, 90, 24);
+        srcB->r = Rect(26, y1 + 84, 260, 24); loadB->r = Rect(294, y1 + 84, 90, 24);
+        morphD->r = Rect(392, y1 + 30, 90, hl);
+        playPanel = Rect(502, y1, 484, ph);
+        modeSeg->r = Rect(514, y1 + 28, 460, 24);
         Dial* pd[5] = { speedD, startD, endD, scanD, followD };
-        for (int k = 0; k < 5; ++k) pd[k]->r = Rect(508 + k * 94, 318, 94, hs);
-        specPanel = Rect(14, 400, 972, 114);
+        for (int k = 0; k < 5; ++k) pd[k]->r = Rect(512 + k * 92.8f, y1 + 56, 92.8f, hm);
+
+        // SPECTRUM: nine dials spread across the strip
+        const float y2 = y1 + ph + 12, ph2 = 112;
+        specPanel = Rect(14, y2, 972, ph2);
         Dial* sd[9] = { partsD, tiltD, oddD, inharmD, ownD, formD, blurD, noiseD, widthD };
-        for (int k = 0; k < 9; ++k) sd[k]->r = Rect(22 + k * 107, 428, 107, hs);
-        voicePanel = Rect(14, 524, 972, 118);
-        for (int k = 0; k < 4; ++k) envD[k]->r = Rect(22 + k * 76, 552, 76, hs);
+        for (int k = 0; k < 9; ++k) sd[k]->r = Rect(24 + k * 105.8f, y2 + 28, 105.8f, hm);
+
+        // VOICE: envelope, play dials, voice mode
+        const float y3 = y2 + ph2 + 12;
+        voicePanel = Rect(14, y3, 972, ph2);
+        for (int k = 0; k < 4; ++k) envD[k]->r = Rect(22 + k * 76, y3 + 28, 76, hm);
         Dial* vd[5] = { velD, voicesD, glideD, octD, volD };
-        for (int k = 0; k < 5; ++k) vd[k]->r = Rect(330 + k * 88, 552, 88, hs);
-        vmodeSeg->r = Rect(780, 576, 196, 22);
-        keyboard.r = Rect(14, 652, 966, 56);
+        for (int k = 0; k < 5; ++k) vd[k]->r = Rect(330 + k * 88, y3 + 28, 88, hm);
+        vmodeSeg->r = Rect(780, y3 + 56, 194, 24);
+        keyboard.r = Rect(14, y3 + ph2 + 12, 966, 56);
     }
 
     void tick(float dt) override
@@ -215,7 +224,7 @@ protected:
             const std::string fa = plug->fileInfo(0), fb = plug->fileInfo(1);
             std::string t = fa.empty() ? "" : "A: " + fa; if (!fb.empty()) t += (t.empty() ? "" : "   ") + std::string("B: ") + fb;
             for (char& c : t) c = (char)std::toupper((unsigned char)c);
-            textAt(srcPanel.x + 12, srcPanel.b() - 14, t, kLabel, 8.5f, theme.ink2, ALIGN_LEFT | ALIGN_MIDDLE, 0.4f);
+            textAt(srcPanel.r() - 12, srcPanel.y + 16, t, kLabel, 8.5f, theme.ink2, ALIGN_RIGHT | ALIGN_MIDDLE, 0.4f);
         }
         keyboard.draw(*this);
     }
