@@ -31,6 +31,8 @@
 #include "../plugins/kit/KitParams.hpp"
 #include "../plugins/machine/MachineParams.hpp"
 #include "../plugins/sing/SingParams.hpp"
+#include "../plugins/coil/CoilParams.hpp"
+#include "../plugins/twang/TwangParams.hpp"
 #include <cstdio>
 #include <cstring>
 #include <map>
@@ -120,6 +122,7 @@ int main()
         { "SWIRL", swirl::params(), swirl::presets() },
         { "STUTTER", stutter::params(), stutter::presets() },
         { "AMP", amp::params(), amp::presets() },
+        { "TWANG", twang::params(), twang::presets() },
         { "TABLE", table::params(), table::presets() },
         { "MONO", mono::params(), mono::presets() },
         { "POLY", poly::params(), poly::presets() },
@@ -127,6 +130,7 @@ int main()
         { "KIT", kit::params(), kit::presets() },
         { "MACHINE", machine::params(), machine::presets() },
         { "SING", sing::params(), sing::presets() },
+        { "COIL", coil::params(), coil::presets() },
     };
     std::map<std::string, int> sections;
     std::vector<std::vector<std::string>> chains;

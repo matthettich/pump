@@ -59,6 +59,8 @@ namespace accents {
     inline Accent kit()    { return { "kit",    hexColor(0xFF5E57), hexColor(0x8C0F0A), hexColor(0x2FB8C9) }; }   // signal red
     inline Accent machine(){ return { "machine",hexColor(0xB8C4DD), hexColor(0x354163), hexColor(0xFF7A45) }; }   // silver
     inline Accent sing()   { return { "sing",   hexColor(0xF45CFF), hexColor(0x6A0A80), hexColor(0x2EE6C0) }; }   // electric orchid
+    inline Accent coil()   { return { "coil",   hexColor(0x5CFF5C), hexColor(0x0E6B0E), hexColor(0xFF5CC8) }; }   // laser green
+    inline Accent twang()  { return { "twang",  hexColor(0x2BD9C2), hexColor(0x055A50), hexColor(0xFF8A4D) }; }   // lagoon
 }
 
 struct Theme {

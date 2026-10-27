@@ -33,6 +33,7 @@ offset block, Share Tech Mono, one light-neon colour per plugin, light or dark. 
 | **pump SWIRL** Modulation | rose | six types with four variants each: stereo ensemble, bucket-brigade chorus (slow, fast, shimmer, vibrato), 2-6 voice rack chorus, tape flanger (classic, through-zero, negative, jet), 4-12 stage phaser and a lamp phaser; rate or host sync, depth, manual, feedback, spread, tone, warmth; live motion, response and stereo screens |
 | **pump STUTTER** Beat Repeat | ice | eight moves (repeat, roll, reverse, tape stop, half speed, shuffle, gate, glitch) from a dice roll on the song grid, from pads (or keys 1-8) or from MIDI notes; grid, gate, pitch, decay and filter per repeat, variation; timeline, pads and a bar clock |
 | **pump AMP** Amp Modeler | copper | loads neural amp models (.nam) and cabinet impulse responses (.wav), with previous / next file in the folder; input, gate, normalize to the model's loudness, mono or stereo, bass / mid / treble / presence, cab low and high cut; models run at their own rate (resampled when the host differs) |
+| **pump TWANG** Spring Resonator | lagoon | your audio rings a set of tuned springs: each of SPRING's six tanks (two- and three-spring, short, long, digital, lo-fi) tuned to a chord (root, twelve chords, octave), to the MIDI notes you hold, or to the last ones played (latch); HARMONIC from the springs' own clang and drip to clean string-like resonances; tension, drip, wobble, tone, spread, decay; drive, SPRING's tank around it, width, mix; KICK rings them on their own |
 
 ### Instruments
 
@@ -45,6 +46,7 @@ offset block, Share Tech Mono, one light-neon colour per plugin, light or dark. 
 | **pump KIT** Drum Synth | signal red | eight pads on the General MIDI drum notes (toms on 41-50 at their own pitches), each any of eight synthesized voice models: kick, snare, clap, hat, tom, metal, FM and resonant noise, with tune, decay, pitch envelope, tone, noise, click, character and drive; re-hits fade the old voice, the closed hat chokes the open; level and pan per pad, kit drive, velocity sensitivity, humanize; twelve kits |
 | **pump MACHINE** Drum Machine | silver | the six voices of an open-source hardware drum machine's firmware, compiled unchanged and run as on the machine: three drums (oscillator, FM, pitch envelope, transient, filter, LFO), snare, cymbal and hi-hat (closed and open), every knob of their pages, velocity and LFO modulation to any voice, sample-rate reduction, drive; loads the machine's kit files; seven kits. GPL-3.0, including the pump code built into it (plugins/machine/NOTICE.md) |
 | **pump SING** Singing Synth | electric orchid | type lyrics and every note sings the next syllable (letter-to-sound rules and a dictionary, or spell the sounds in brackets): a formant voice from a smooth throat to a buzzing machine, size (child to giant), breath and whisper, rasp and growl, brightness, softness, clarity, diction, vibrato with delay and wheel; mono legato (slides to the next syllable) or poly chords, up to 8 singers per note as a choir; a live vowel chart; 32 voices: singers, whispers, choirs and machines |
+| **pump COIL** Spring Synth | laser green | SPRING's six tanks played as tuned springs: every note a set of springs whose loop is tuned to it, kicked with the velocity, sounding like the reverb's own springs; HARMONIC pulls them from clang and drip to a clean pluck; tension, drip, decay, release, spread, wobble, tone, excite, grit for the digital ones, SPRING's tank around them, width; 8 voices; KICK re-kicks whatever is ringing; 22 voices: springs, tuned, bass, metal, digital |
 
 ## Download
 
@@ -100,6 +102,9 @@ Every plugin shares the same mouse and key conventions. Press **?** in a plugin 
 - SING: click the lyrics (or EDIT), type or paste, Enter. Every note sings the next syllable; a comma or full stop is a
   rest, `~` holds the last vowel over another note, `hel-lo` splits a word where you like, `[HH AX L OW]` spells the
   sounds. The lyrics start over when the host starts playing (or with RESTART) and are saved with the session
+- COIL plays like any synth; KICK (or K) kicks every ringing spring again. TWANG goes on a track or a send: CHORD tunes
+  the springs to ROOT + CHORD + OCTAVE, MIDI to the notes you hold (send it MIDI, or play its keyboard), LATCH to the
+  last chord until you play a new one. HARMONIC 0 is the springs as they are; 100 is in tune with itself
 - TUNE goes on a solo voice. Live: set KEY and SCALE (or send it MIDI notes) and RETUNE. Graph: turn CAPTURE on and play
   the song once; the voice appears as notes on the host's timeline: drag them (Alt = free), double-click to snap,
   select several to STRAIGHTEN, change VIBRATO, FORMANT or GAIN. The edits are saved with the session

@@ -23,12 +23,11 @@ Instruments (MIDI in, stereo out):
 - **MONO** analog mono / bass synth — done (2026-10-24).
 - **POLY** vintage polysynth — done (2026-10-24).
 - **SING** singing synth — done (2026-10-26).
-- **Spring synth** (next after the singing synth): SPRING's tanks (two-, three-spring, short, long, and the two digital
+- **Spring synth** (COIL) — done (2026-10-26): SPRING's tanks (two-, three-spring, short, long, and the two digital
   ones as tuned combs) played chromatically: each spring's loop tuned to the note (its allpass delay compensated),
-  excited by SPRING's kick (velocity = strength); a REFERENCE end that rings at the tank's own length (the reverb
-  itself); HARMONIC pulls the dispersion and the springs' detune toward a clean string-like pluck. Polyphonic.
-- **Spring resonator** (an effect, same engine): audio in excites the tuned springs, notes or a fixed pitch set the
-  tuning (MIDI, or a key / chord with a ROOT knob), with the same HARMONIC and REFERENCE controls and a dry / wet mix.
+  excited by SPRING's kick (velocity = strength); TANK puts SPRING's own tank of the same model around them; HARMONIC pulls the dispersion and the springs' detune toward a clean string-like pluck. Polyphonic.
+- **Spring resonator** (TWANG) — done (2026-10-26): audio in excites the tuned springs, notes or a fixed pitch set the
+  tuning (MIDI, or a key / chord with a ROOT knob), with the same HARMONIC and TANK controls and a dry / wet mix.
 
 ## Instance List — planned, nice to have
 
