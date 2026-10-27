@@ -17,8 +17,8 @@ class PluginFreeze : public PumpPlugin {
 public:
     PluginFreeze() : PumpPlugin(params().data(), kNumParams, &presets(), 1)
     {
-        Builtins::get().start();
-        if (std::getenv("PUMP_TEST_NOTES") || std::getenv("PUMP_RENDER_DIR") || std::getenv("PUMP_WAIT_SOURCES")) Builtins::get().waitReady();
+        Builtins::get().retain();
+        if (std::getenv("PUMP_TEST_NOTES") || std::getenv("PUMP_RENDER_DIR") || std::getenv("PUMP_WAIT_SOURCES")) { Builtins::get().start(); Builtins::get().waitReady(); }
         sync();
         engine.prepare(getSampleRate(), (int)getBufferSize()); outLimit.prepare(getSampleRate());
         if (const char* n = std::getenv("PUMP_TEST_NOTES")) testNotes = n;
@@ -33,6 +33,8 @@ public:
 
     const Spectra* soundNow() const { return now.load(std::memory_order_acquire); }
     std::string fileInfo() const { std::lock_guard<std::mutex> g(lock); return info; }
+
+    ~PluginFreeze() override { Builtins::get().release(); }
 
 protected:
     const char* getLabel() const override { return "pump_freeze"; }
@@ -75,7 +77,8 @@ protected:
         return PumpPlugin::getState(key);
     }
 
-    void activate() override { sync(); engine.prepare(getSampleRate(), (int)getBufferSize()); outLimit.prepare(getSampleRate()); }
+    // the built-in sounds are made when a plugin is first activated (not when a host only creates one to read it)
+    void activate() override { Builtins::get().start(); sync(); engine.prepare(getSampleRate(), (int)getBufferSize()); outLimit.prepare(getSampleRate()); }
     void sampleRateChanged(double) override { activate(); }
 
     void sync()

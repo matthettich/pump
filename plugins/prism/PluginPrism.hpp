@@ -17,7 +17,7 @@ class PluginPrism : public PumpPlugin {
 public:
     PluginPrism() : PumpPlugin(params().data(), kNumParams, &presets(), 2)
     {
-        Builtins::get().start();
+        Builtins::get().retain();
         sync();
         engine.prepare(getSampleRate(), (int)getBufferSize()); outLimit.prepare(getSampleRate());
         if (const char* n = std::getenv("PUMP_TEST_NOTES")) testNotes = n;
@@ -34,6 +34,8 @@ public:
     const Analysis* soundA() const { return nowA.load(std::memory_order_acquire); }
     const Analysis* soundB() const { return nowB.load(std::memory_order_acquire); }
     std::string fileInfo(int o) const { std::lock_guard<std::mutex> g(lock); return o ? infoB : infoA; }
+
+    ~PluginPrism() override { Builtins::get().release(); }
 
 protected:
     const char* getLabel() const override { return "pump_prism"; }
@@ -83,7 +85,8 @@ protected:
         return PumpPlugin::getState(key);
     }
 
-    void activate() override { sync(); engine.prepare(getSampleRate(), (int)getBufferSize()); outLimit.prepare(getSampleRate()); }
+    // the built-in sounds are made when a plugin is first activated (not when a host only creates one to read it)
+    void activate() override { Builtins::get().start(); sync(); engine.prepare(getSampleRate(), (int)getBufferSize()); outLimit.prepare(getSampleRate()); }
     void sampleRateChanged(double) override { activate(); }
 
     void sync()
