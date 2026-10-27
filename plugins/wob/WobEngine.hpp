@@ -1,6 +1,6 @@
 // pump WOB engine: an additive mono bass. Framework-free.
 //
-// Up to 64 sine partials are summed per sample. Their levels are set every 32 samples by a chain of spectral
+// Up to 256 sine partials are summed per sample. Their levels are set every 32 samples by a chain of spectral
 // shapers, so nothing here can alias (partials near Nyquist fade out and above it are dropped):
 //   source   the spectrum morphs saw (1/k) -> square (odd 1/k) -> triangle (odd 1/k^2); PARTIALS keeps the first N;
 //            TILT leans it brighter or darker; ODD/EVEN takes out the even (+) or the odd (-) partials; STRETCH
@@ -9,6 +9,10 @@
 //            envelope and key tracking move the cutoff
 //   formant  two vowel resonances (a e i o u, morphed)
 //   comb     a cosine comb across the spectrum (the hollow, phasey colour)
+//   morph    a second source spectrum (its own SHAPE B and TILT B) to morph to, by MORPH and the wobble
+//   motion   INHARMONIC bends the partial series sharp by a power law (bells, gongs, glass); SPRAY detunes every
+//            partial by its own fixed amount (a dense, chorused body); DRIFT moves each one's pitch and level by its
+//            own slow random walk (at DRIFT RATE): the spectrum lives
 // A REESE second set of partials, detuned, crosses the first in stereo; the upper partials alternate left / right
 // (WIDTH). A sine SUB one or two octaves down. The WOBBLE (sine, triangle, saws, square, random steps) runs at a
 // note division of the host tempo or free in hertz; it pushes the cutoff, vowel, comb, level and pitch. With
@@ -41,6 +45,7 @@ struct Settings {
     double attack = 0.002, decay = 0.3, sustain = 1.0, release = 0.08, glide = 0.0;
     bool legato = false;
     double drive = 0.0, volumeDb = -6.0;
+    double shapeB = 1.0, tiltB = 0.4, morph = 0.0, wobMorph = 0.0, inharm = 0.0, spray = 0.0, drift = 0.0, driftRate = 0.6;
 };
 
 class Engine {
@@ -51,6 +56,8 @@ public:
     {
         for (int i = 0; i <= kTab; ++i) sinT[(size_t)i] = (float)std::sin(kTwoPi * i / kTab);
         for (int k = 1; k <= N; ++k) phB[k] = std::fmod(k * 0.618034, 1.0);
+        fx::Rng r0(0x5EEDu);
+        for (int k = 1; k <= N; ++k) { sprayR[k] = r0.bi(); dPh[k] = r0.uni(); dT[k] = r0.bi(); dA[k] = r0.bi(); dRate[k] = 0.7 + 0.6 * r0.uni(); }
         rebuild();
     }
     void prepare(double sampleRate, int /*maxBlock*/)
@@ -187,10 +194,11 @@ private:
         }
     }
     // the source spectrum and the stereo placement of each partial
-    void rebuild()
+    // a source spectrum: saw -> square -> triangle by shape, leaned by tilt, odd / even, the first N partials
+    void spectrum(double shape, double tilt, std::array<double, N + 1>& out, double& e2, double& mx) const
     {
-        const double s = clampv(set.shape, 0.0, 1.0);
-        double e2 = 0.0, mx = 1e-9;
+        const double s = clampv(shape, 0.0, 1.0);
+        e2 = 0.0; mx = 1e-9;
         for (int k = 1; k <= N; ++k)
         {
             double a = 0.0;
@@ -203,17 +211,29 @@ private:
                     const double t = (s - 0.5) * 2.0;
                     a = odd ? ((1.0 - t) / k + t / ((double)k * k)) * ((t > 0.5 && (((k - 1) / 2) & 1)) ? -1.0 : 1.0) : 0.0;
                 }
-                a *= std::pow((double)k, set.tilt);
+                a *= std::pow((double)k, tilt);
                 if (set.oddEven > 0.0 && !odd) a *= 1.0 - set.oddEven;
                 else if (set.oddEven < 0.0 && odd && k > 1) a *= 1.0 + set.oddEven;
             }
-            base[k] = a; e2 += a * a; mx = std::max(mx, std::fabs(a));
+            out[k] = a; e2 += a * a; mx = std::max(mx, std::fabs(a));
+        }
+    }
+    // the source spectra and the stereo placement of each partial
+    void rebuild()
+    {
+        double eA, mA, eB, mB;
+        spectrum(set.shape, set.tilt, base, eA, mA);
+        spectrum(set.shapeB, set.tiltB, baseB, eB, mB);
+        for (int k = 1; k <= N; ++k)
+        {
             const double pan = ((k & 1) ? -1.0 : 1.0) * set.width * std::min(1.0, (k - 1) / 4.0);
             panL[k] = std::sqrt((1.0 - pan) * 0.5) * 1.4142135623730951; panR[k] = std::sqrt((1.0 + pan) * 0.5) * 1.4142135623730951;
         }
-        norm = 0.34 / std::max(0.25, std::sqrt(e2)) / (set.detune > 0.5 ? 1.35 : 1.0);
-        srcMax = mx;
-        for (int k = 1; k <= N; ++k) srcFeed[(size_t)k - 1].store((float)(std::fabs(base[k]) / mx), std::memory_order_relaxed);
+        const double dn = set.detune > 0.5 ? 1.35 : 1.0;
+        normA = 0.34 / std::max(0.25, std::sqrt(eA)) / dn; normB = 0.34 / std::max(0.25, std::sqrt(eB)) / dn;
+        norm = normA;
+        srcMax = mA; srcMaxB = mB;
+        for (int k = 1; k <= N; ++k) srcFeed[(size_t)k - 1].store((float)(std::fabs(base[k]) / mA), std::memory_order_relaxed);
         const double dr = set.drive > 0.001 ? 1.0 + set.drive * set.drive * 12.0 : 0.0;
         driveK = dr; driveN = dr > 0.0 ? 0.5 / std::tanh(dr * 0.5) : 1.0;
     }
@@ -264,25 +284,44 @@ private:
         const double vowel = clampv(set.vowel + set.wobVowel * u, 0.0, 1.0);
         const double cHz = combHz(set.combFreq + set.wobComb * u);
         const double st = set.stretch * 0.0015;
-        const double gain = norm * (1.0 - set.wobAmp * depth * (1.0 - lsm));
+        // the morph between the two spectra (each normalised to its own loudness), and the motion of every partial
+        const double mo = clampv(set.morph + set.wobMorph * u, 0.0, 1.0);
+        const double nA = (1.0 - mo) * normA, nB = mo * normB;
+        const double gain = 1.0 - set.wobAmp * depth * (1.0 - lsm);
+        const double ih = set.inharm * 0.35, spr = set.spray * 35.0, dr = set.drift;
+        if (dr > 0.0)
+        {
+            const double kk = 1.0 - std::exp(-dt * set.driftRate * 3.0);
+            for (int k = 1; k <= N; ++k)
+            {
+                dPh[k] += dt * set.driftRate * dRate[k];
+                if (dPh[k] >= 1.0) { dPh[k] -= std::floor(dPh[k]); dT[k] = rng.bi(); dA[k] = rng.bi(); }
+                dCur[k] += (dT[k] - dCur[k]) * kk; dAmp[k] += (dA[k] - dAmp[k]) * kk;
+            }
+        }
+        norm = nA + nB;
         double shown = 0.0;
         for (int k = 1; k <= N; ++k)
         {
-            const double b0 = base[k];
+            const double b0 = base[k] * nA + baseB[k] * nB;
             double a = 0.0;
+            double m = k * (1.0 + st * k * k);
+            if (ih > 0.0) m *= std::pow((double)k, ih);
+            if (spr > 0.0 || dr > 0.0) m *= std::exp2((spr * sprayR[k] * std::min(1.0, (k - 1) / 3.0) + dr * 25.0 * dCur[k] * std::min(1.0, (k - 1) / 2.0 + 0.2)) / 1200.0);
+            mul[k] = m;
             if (b0 != 0.0)
             {
-                const double fk = f * k * (1.0 + st * k * k);
+                const double fk = f * m;
                 if (fk < nyq * 0.92)
                 {
                     double g = filterGain(set.filterMode, fk, fc, set.res) * formantGain(fk, vowel, set.formant);
                     if (set.comb > 0.0) g *= 1.0 - set.comb * (0.5 + 0.5 * std::cos(kTwoPi * fk / cHz));
                     if (fk > nyq * 0.8) g *= (nyq * 0.92 - fk) / (nyq * 0.12);
-                    a = b0 * g * gain;
+                    a = b0 * g * gain * (dr > 0.0 ? 1.0 + 0.6 * dr * dAmp[k] : 1.0);
                 }
             }
             aT[k] = a;
-            const float lv = (float)(std::fabs(a) / std::max(1e-12, norm * srcMax));
+            const float lv = (float)(std::fabs(a) / std::max(1e-12, normA * srcMax));
             outFeed[(size_t)k - 1].store(lv, std::memory_order_relaxed);
             shown = std::max(shown, (double)lv);
         }
@@ -300,7 +339,6 @@ private:
     }
     void synthSample(double inc, double t, double& l, double& r)
     {
-        const double st = set.stretch * 0.0015;
         const bool det = detRatio > 0.0;
         const double half = det ? std::sqrt(detRatio) : 1.0;
         for (int k = 1; k <= N; ++k)
@@ -308,7 +346,7 @@ private:
             const double s0 = aA[k], s1 = aT[k];
             if (s0 == 0.0 && s1 == 0.0) continue;
             const double amp = s0 + (s1 - s0) * t;
-            const double ik = inc * k * (1.0 + st * k * k);
+            const double ik = inc * mul[k];
             if (ik >= 0.46) continue;   // past Nyquist (a pitch or stretch jump inside the block): never made
             if (det)
             {
@@ -340,7 +378,9 @@ private:
     synth::Adsr env;
     fx::Rng rng { 0xB0B5u };
     std::array<float, kTab + 1> sinT {};
-    std::array<double, N + 1> base {}, panL {}, panR {}, aA {}, aT {}, phA {}, phB {};
+    std::array<double, N + 1> base {}, baseB {}, panL {}, panR {}, aA {}, aT {}, phA {}, phB {}, mul {};
+    std::array<double, N + 1> sprayR {}, dPh {}, dT {}, dA {}, dCur {}, dAmp {}, dRate {};
+    double normA = 0.3, normB = 0.3, srcMaxB = 1.0;
     double sr = 48000.0, norm = 0.3, srcMax = 1.0, driveK = 0.0, driveN = 1.0;
     double subPh = 0.0, subA = 0.0, fe = 0.0, lf = 0.0, incNow = 0.0, incPrev = 0.0, detRatio = 0.0;
     double lph = 0.0, lsm = 0.0, sh = 0.5, wt = 0.0, ampPrev = 1.0;

@@ -208,6 +208,45 @@ int main()
             CHECK(finite && peak < 4.0, "random settings and MIDI: finite (peak %.2f)", peak);
         }
         {
+            // the morph: from a saw (A) to a triangle (B: odd harmonics only)
+            auto second = [&](double morph) {
+                Settings s = plain(); s.partials = 64; s.shape = 0.0; s.shapeB = 1.0; s.tiltB = 0.0; s.morph = morph;
+                Engine e; e.setSettings(s); e.prepare(sr, 512);
+                std::vector<float> L((size_t)sr);
+                render(e, L, { { 0, 0x90, 45, 100 } });
+                return harmonics(L, 20000, 110.0, sr, 4);
+            };
+            const auto a = second(0.0), b = second(1.0);
+            CHECK(a[1] > -9.0 && b[1] < -60.0 && b[2] < -15.0, "MORPH 0: a saw (2nd %.1f dB); MORPH 100: a triangle (2nd %.1f, 3rd %.1f dB)", a[1], b[1], b[2]);
+            // INHARMONIC: the second partial lands sharp of 2f
+            Settings s = plain(); s.partials = 2; s.inharm = 0.5; s.shape = 0.0;
+            Engine e; e.setSettings(s); e.prepare(sr, 512);
+            std::vector<float> L((size_t)sr);
+            render(e, L, { { 0, 0x90, 45, 100 } });
+            const int NN = 32768; RealFFT fft(NN); AlignedBuffer in((size_t)NN), out((size_t)NN);
+            for (int i = 0; i < NN; ++i) in[(size_t)i] = (float)(L[(size_t)(8000 + i)] * (0.5 - 0.5 * std::cos(kTwoPi * i / NN)));
+            fft.forward(in.data(), out.data());
+            int best = 0; double bp = 0;
+            for (int k = (int)(250.0 * NN / sr); k < (int)(300.0 * NN / sr); ++k) { const double p = (double)out[(size_t)(2 * k)] * out[(size_t)(2 * k)] + (double)out[(size_t)(2 * k + 1)] * out[(size_t)(2 * k + 1)]; if (p > bp) { bp = p; best = k; } }
+            const double f2 = best * sr / NN, want = 110.0 * std::pow(2.0, 1.0 + 0.5 * 0.35);
+            CHECK(std::fabs(f2 - want) < 2.0, "INHARMONIC 50 %%: partial 2 at %.1f Hz (2^1.175 x 110 = %.1f)", f2, want);
+        }
+        {
+            // 256 partials with spray and drift: finite, and no partial above Nyquist at a high note
+            Settings s = plain(); s.partials = 256; s.spray = 0.6; s.drift = 0.8; s.driftRate = 5.0; s.detune = 20; s.cutoff = 16000;
+            Engine e; e.setSettings(s); e.prepare(sr, 512);
+            std::vector<float> L((size_t)sr);
+            render(e, L, { { 0, 0x90, 84, 100 } });
+            bool fin = true; float pk = 0; for (float x : L) { fin = fin && std::isfinite(x); pk = std::max(pk, std::fabs(x)); }
+            CHECK(fin && pk > 0.01f && pk < 2.0f, "256 partials, spray and drift at C6: finite (peak %.2f)", pk);
+            Engine c; Settings t = plain(); t.partials = 256; t.drift = 0.5; t.spray = 0.3; t.detune = 20; t.formant = 0.5; c.setSettings(t); c.prepare(sr, 512);
+            std::vector<float> M((size_t)n);
+            const auto t0 = std::chrono::steady_clock::now();
+            render(c, M, { { 0, 0x90, 28, 100 } });
+            const double secs = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+            printf("  cpu: 256 partials x 2 (reese) at E1, drift, spray: %.1f %% of one core\n", 100.0 * secs / ((double)n / sr));
+        }
+        {
             Engine e; Settings s; s.partials = 64; s.detune = 20; s.formant = 0.5; s.comb = 0.4; s.wobCut = 3; e.setSettings(s); e.prepare(sr, 512);
             std::vector<float> L((size_t)n);
             const auto t0 = std::chrono::steady_clock::now();

@@ -44,7 +44,7 @@ Instruments (MIDI in, stereo out):
   kicks), next to a second engine of resonant analog-style drum voices (a tone with pitch bend, a filtered noise
   source, a click, a resonator); per pad model, tune, decay, harmonic, spread, drip, pitch drop, noise, level, pan,
   velocity to strength and brightness; a shared spring tank as a send.
-- **WOB upgrade**: up to 256 partials, an inharmonic / stretched mode, per-partial drift and spray, a morph between two
+- **WOB upgrade** — done (2026-10-26): up to 256 partials, an inharmonic / stretched mode, per-partial drift and spray, a morph between two
   spectra.
 - Ideas the user liked, in order: **spectral additive resynthesis** (a sample rebuilt as partials: stretch, freeze,
   morph two sounds), **modal / physical** synth (struck bars, plates, membranes, bowed and blown resonators),

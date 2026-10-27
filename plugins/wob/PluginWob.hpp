@@ -47,6 +47,8 @@ protected:
         s.wobCut = pv(kWobCut); s.wobVowel = pv(kWobVowel) * 0.01; s.wobComb = pv(kWobComb) * 0.01; s.wobAmp = pv(kWobAmp) * 0.01; s.wobPitch = pv(kWobPitch);
         s.attack = pv(kAttack) * 0.001; s.decay = pv(kDecay) * 0.001; s.sustain = pv(kSustain) * 0.01; s.release = pv(kRelease) * 0.001;
         s.glide = pv(kGlide); s.legato = pv(kLegato) >= 0.5f; s.drive = pv(kDrive) * 0.01; s.volumeDb = pv(kVolume) + kTrimDb;
+        s.shapeB = pv(kShapeB) * 0.01; s.tiltB = pv(kTiltB) * 0.01; s.morph = pv(kMorph) * 0.01; s.wobMorph = pv(kWobMorph) * 0.01;
+        s.inharm = pv(kInharm) * 0.01; s.spray = pv(kSpray) * 0.01; s.drift = pv(kDrift) * 0.01; s.driftRate = pv(kDriftRate);
         engine.setSettings(s);
     }
 

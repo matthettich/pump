@@ -5,13 +5,15 @@
 //   c++ -O2 -std=c++17 -Iplugins/mono -Idpf/distrho -Idpf/distrho/src -Icommon -DPARAMS_HDR='"MonoParams.hpp"' -DNS=mono \
 //       -DKIND=0 tools/render_presets.cpp plugins/mono/PluginMono.cpp plugins/mono/pffft.c -lpthread -o build/render_mono
 // KIND: 0 a synth (a chord, then a melody), 1 drums (GM notes), 2 LIFE (it plays itself), 3 SING (one voice).
-// Output: one line per preset, then "median peak" and "max peak" (dBFS).
+// Output: one line per preset, then "median peak" and "max peak" (dBFS). With PUMP_RENDER_DIR set, each preset's audio
+// is also written there as <index>.f32 (stereo interleaved float, 48 kHz).
 #include "DistrhoPluginInternal.hpp"
 #include "src/DistrhoPlugin.cpp"
 #define DISTRHO_IS_STANDALONE 0
 #include "src/DistrhoUtils.cpp"
 #include PARAMS_HDR
 #include <algorithm>
+#include <cstdlib>
 #include <cmath>
 #include <cstdio>
 #include <string>
@@ -67,6 +69,8 @@ int main()
         const float** ins = nullptr;
        #endif
         size_t e = 0; double pk = 0.0, en = 0.0; uint64_t cnt = 0;
+        std::vector<float> dump;
+        const char* dir = std::getenv("PUMP_RENDER_DIR");
         for (uint32_t off = 0; off < total; off += bs)
         {
             std::vector<MidiEvent> me;
@@ -87,8 +91,10 @@ int main()
                 const double a = std::max(std::fabs(L[i]), std::fabs(R[i]));
                 pk = std::max(pk, a);
                 if (a > 1e-4) { en += 0.5 * ((double)L[i] * L[i] + (double)R[i] * R[i]); ++cnt; }
+                if (dir) { dump.push_back(L[i]); dump.push_back(R[i]); }
             }
         }
+        if (dir) { const std::string fn = std::string(dir) + "/" + std::to_string(p) + ".f32"; if (FILE* f = std::fopen(fn.c_str(), "wb")) { std::fwrite(dump.data(), 4, dump.size(), f); std::fclose(f); } }
         const double pdb = 20 * std::log10(pk + 1e-12), rdb = cnt ? 10 * std::log10(en / cnt + 1e-24) : -200;
         std::printf("%3zu %-28s peak %6.1f dBFS  rms %6.1f dBFS\n", p, ps[p].name, pdb, rdb);
         peaks.push_back(pdb);

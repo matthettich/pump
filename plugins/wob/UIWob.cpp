@@ -12,7 +12,7 @@ using namespace pump::wob;
 
 class UIWob : public PumpUI {
 public:
-    UIWob() : PumpUI(params().data(), kNumParams, &presets(), pump::accents::wob(), "WOB", 1000, 740, -1)
+    UIWob() : PumpUI(params().data(), kNumParams, &presets(), pump::accents::wob(), "WOB", 1000, 850, -1)
     {
         auto tog = [&](int p, const char* l, const char* tip) { Button* b = addToggle(p, l); b->small = true; b->tip = tip; return b; };
         auto dial = [&](int p, const char* l, bool bi = false, const char* tip = nullptr) { Dial* d = addDial(p, l, Dial::Small, bi); if (tip) d->tip = tip; return d; };
@@ -68,6 +68,14 @@ public:
         volD = dial(kVolume, "VOLUME", true);
         legatoB = tog(kLegato, "LEGATO", "Overlapping notes slide (with glide) without restarting the envelope or the wobble");
 
+        shapeBD = dial(kShapeB, "SHAPE B", false, "Spectrum B: saw (0) -> square (50) -> triangle (100)");
+        tiltBD = dial(kTiltB, "TILT B", true, "Spectrum B leaned brighter (+) or darker (-)");
+        morphD = dial(kMorph, "MORPH", false, "From spectrum A (0) to spectrum B (100)");
+        toMorph = dial(kWobMorph, "TO MORPH", true, "Wobble to morph");
+        inharmD = dial(kInharm, "INHARM", false, "Bends the partial series sharp by a power law: bells, gongs, glass");
+        sprayD = dial(kSpray, "SPRAY", false, "Every partial detuned by its own fixed amount: a dense, chorused body");
+        driftD = dial(kDrift, "DRIFT", false, "Each partial's pitch and level wander on their own: the spectrum lives");
+        driftRD = dial(kDriftRate, "RATE", false, "How fast the drift wanders");
         keyboard.lowNote = 24;
         keyboard.send = [this](int note, int vel) { if (plug) plug->keys.push((uint8_t)note, (uint8_t)vel); };
         if (auto* p = static_cast<PluginWob*>(pluginPtr())) plug = p;
@@ -117,7 +125,14 @@ protected:
         for (int k = 0; k < 3; ++k) cb[k]->r = Rect(646 + k * 84, y1 + 112, 80, hs);
         subOct->r = Rect(904, y1 + 136, 72, 22);
 
-        const float y2 = 446, ph2 = 192;
+        const float yM = 446, phM = 106;
+        morphPanel = Rect(14, yM, 486, phM);
+        Dial* ma[4] = { shapeBD, tiltBD, morphD, toMorph };
+        for (int k = 0; k < 4; ++k) ma[k]->r = Rect(30 + k * 116, yM + 30, 116, hs);
+        motionPanel = Rect(512, yM, 474, phM);
+        Dial* mb[4] = { inharmD, sprayD, driftD, driftRD };
+        for (int k = 0; k < 4; ++k) mb[k]->r = Rect(526 + k * 114, yM + 30, 114, hs);
+        const float y2 = 564, ph2 = 192;
         wobPanel = Rect(14, y2, 420, ph2);
         shapeSeg->r = Rect(24, y2 + 28, 260, 22);
         syncB->r = Rect(292, y2 + 28, 64, 22); retrigB->r = Rect(360, y2 + 28, 64, 22);
@@ -131,7 +146,7 @@ protected:
         for (int k = 0; k < 4; ++k) envAD[k]->r = Rect(734 + k * 62, y2 + 26, 62, hs);
         glideD->r = Rect(734, y2 + 112, 62, hs); driveD->r = Rect(796, y2 + 112, 62, hs); volD->r = Rect(858, y2 + 112, 62, hs);
         legatoB->r = Rect(922, y2 + 136, 58, 22);
-        keyboard.r = Rect(14, 650, 966, 56);
+        keyboard.r = Rect(14, 768, 966, 56);
     }
 
     void tick(float dt) override
@@ -187,7 +202,7 @@ protected:
         drawLevelMeter(meterL, lvl[0], hold[0], -48.0f, 6.0f);
         drawLevelMeter(meterR, lvl[1], hold[1], -48.0f, 6.0f);
         auto panel = [&](const Rect& r, const char* c) { strokeRect(r, theme.dim, 1.0f); caption(r.x + 12, r.y + 16, c); };
-        panel(srcPanel, "SOURCE"); panel(filtPanel, "FILTER"); panel(colPanel, "FORMANT · COMB · REESE · SUB");
+        panel(srcPanel, "SOURCE"); panel(filtPanel, "FILTER"); panel(colPanel, "FORMANT · COMB · REESE · SUB"); panel(morphPanel, "SPECTRUM B · MORPH"); panel(motionPanel, "MOTION");
         panel(wobPanel, "WOBBLE"); panel(toPanel, "WOBBLE TO"); panel(ampPanel, "AMP");
         // the wobble's speed, in words
         char b[96];
@@ -241,11 +256,12 @@ protected:
         const Rect p(r.x + 10, r.y + 26, r.w - 20, r.h - 44);
         auto yOf = [&](double lv) { const double db = 20.0 * std::log10(std::max(1e-6, lv)); return (float)(p.y + (12.0 - pump::clampv(db, -60.0, 12.0)) / 72.0 * p.h); };
         for (int db = 0; db >= -48; db -= 24) { const float y = yOf(std::pow(10.0, db / 20.0)); line(p.x, y, p.r(), y, withAlpha2(theme.ink, db == 0 ? 0.25f : 0.12f), 1.0f); }
-        const float bw = p.w / kMaxPartials;
+        const int np = pump::clampv((int)value(kPartials), 8, kMaxPartials);
+        const float bw = p.w / np;
         const Color barC = pump::mixColor(theme.neon, theme.ink, theme.dark ? 0.0f : 0.35f);
-        for (int i = 0; i < kMaxPartials; ++i)
+        for (int i = 0; i < np; ++i)
         {
-            const float x = p.x + i * bw + 1.0f, w = std::max(1.0f, bw - 2.0f);
+            const float x = p.x + i * bw + (bw > 3.0f ? 1.0f : 0.0f), w = std::max(1.0f, bw - (bw > 3.0f ? 2.0f : 0.0f));
             if (src[i] > 1e-4f)
             {
                 const float ys = yOf(src[i]);
@@ -258,7 +274,7 @@ protected:
         const double st = value(kStretch) * 0.01 * 0.0015;
         for (int i = 0; i <= 128; ++i)
         {
-            const double kk = 1.0 + (kMaxPartials - 1) * i / 128.0;
+            const double kk = 1.0 + (np - 1) * i / 128.0;
             const double fk = shownF0 * kk * (1.0 + st * kk * kk);
             const double g = Engine::filterGain(m, fk, std::max(20.0f, shownCut), value(kRes) * 0.01);
             const float x = p.x + (float)(kk - 0.5) * bw, y = yOf(g);
@@ -374,11 +390,12 @@ protected:
 private:
     static constexpr int kScopeN = 8000;   // the ring holds 8192
     PluginWob* plug = nullptr;
-    Rect scopeR, specR, wobR, meterL, meterR, srcPanel, filtPanel, colPanel, wobPanel, toPanel, ampPanel;
+    Rect scopeR, specR, wobR, meterL, meterR, srcPanel, filtPanel, colPanel, wobPanel, toPanel, ampPanel, morphPanel, motionPanel;
     Dial *octD, *tuneD, *shapeD, *partsD, *tiltD, *oddD, *stretchD, *cutD, *resD, *envD, *fdecD, *keyD;
     Dial *vowelD, *formD, *combFD, *combD, *detD, *widthD, *subD;
     Dial *divD, *rateD, *phaseD, *smoothD, *delayD, *fadeD, *depthD, *wheelD, *toCut, *toVowel, *toComb, *toAmp, *toPitch;
     Dial *envAD[4], *glideD, *driveD, *volD;
+    Dial *shapeBD, *tiltBD, *morphD, *toMorph, *inharmD, *sprayD, *driftD, *driftRD;
     Segmented *modeSeg, *subOct, *shapeSeg;
     Button *syncB, *retrigB, *legatoB;
     KeyboardUI keyboard;

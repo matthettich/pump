@@ -16,6 +16,8 @@ enum Param : int {
     kWobSync, kWobDiv, kWobRate, kWobShape, kWobRetrig, kWobPhase, kWobSmooth, kWobDelay, kWobFade,
     kWobDepth, kWheel, kWobCut, kWobVowel, kWobComb, kWobAmp, kWobPitch,
     kAttack, kDecay, kSustain, kRelease, kGlide, kLegato, kDrive, kVolume,
+    // added 2026-10-26: a second spectrum to morph to, inharmonic partials, spray and drift
+    kShapeB, kTiltB, kMorph, kWobMorph, kInharm, kSpray, kDrift, kDriftRate,
     kNumParams
 };
 
@@ -26,7 +28,7 @@ static const char* const kModeNames[] = { "Low-pass", "Band-pass", "High-pass" }
 enum WobShape : int { kSine = 0, kTriangle, kSawDown, kSawUp, kSquare, kSteps, kNumShapes };
 static const char* const kShapeNames[] = { "Sine", "Triangle", "Saw down", "Saw up", "Square", "Steps" };
 static const char* const kSubOctNames[] = { "-1 oct", "-2 oct" };
-constexpr int kMaxPartials = 64;
+constexpr int kMaxPartials = 256;
 
 inline const std::vector<ParamSpec>& params()
 {
@@ -78,6 +80,14 @@ inline const std::vector<ParamSpec>& params()
     v.push_back({ "legato", "Legato", "Legato", 0, 1, 0, PUnit::None, PScale::Linear, B, nullptr, 1 });
     v.push_back({ "drive", "Drive", "Drive", 0, 100, 0, PUnit::Percent, PScale::Linear, A, nullptr, 1 });
     v.push_back({ "volume", "Volume", "Volume", -48, 12, 0, PUnit::dB, PScale::Linear, A, nullptr, 1 });
+    v.push_back({ "shape_b", "Spectrum B Shape", "Shape B", 0, 100, 100, PUnit::Percent, PScale::Linear, A, nullptr, 1 });
+    v.push_back({ "tilt_b", "Spectrum B Tilt", "Tilt B", -100, 100, 40, PUnit::Percent, PScale::Linear, A, nullptr, 1 });
+    v.push_back({ "morph", "Morph A to B", "Morph", 0, 100, 0, PUnit::Percent, PScale::Linear, A, nullptr, 1 });
+    v.push_back({ "wob_morph", "Wobble to Morph", "Morph", -100, 100, 0, PUnit::Percent, PScale::Linear, A, nullptr, 1 });
+    v.push_back({ "inharm", "Inharmonic", "Inharm", 0, 100, 0, PUnit::Percent, PScale::Power, A, nullptr, 2 });
+    v.push_back({ "spray", "Spray", "Spray", 0, 100, 0, PUnit::Percent, PScale::Power, A, nullptr, 2 });
+    v.push_back({ "drift", "Drift", "Drift", 0, 100, 0, PUnit::Percent, PScale::Linear, A, nullptr, 1 });
+    v.push_back({ "drift_rate", "Drift Rate", "Rate", 0.05f, 12, 0.6f, PUnit::Hz, PScale::Log, A, nullptr, 1 });
     return v;
 }
 
@@ -107,6 +117,12 @@ inline const std::vector<Preset>& presets()
     F("FX", "Band sweep", { { "filter_mode", kBandPass }, { "cutoff", 600 }, { "res", 70 }, { "wob_div", kNote2 }, { "wob_cut", 3 }, { "wob_shape", kTriangle }, { "sub", 30 } });
     F("FX", "High-pass laser", { { "filter_mode", kHighPass }, { "cutoff", 300 }, { "res", 60 }, { "wob_pitch", 7 }, { "wob_div", kNote16 }, { "wob_cut", 2 }, { "sub", 0 } });
     F("FX", "Siren", { { "wob_sync", 0 }, { "wob_rate", 1.5f }, { "wob_pitch", 12 }, { "wob_shape", kTriangle }, { "cutoff", 2000 }, { "filter_env", 0 }, { "sub", 0 }, { "octave", 0 } });
+    F("DENSE", "Wall of partials", { { "partials", 256 }, { "detune", 12 }, { "width", 80 }, { "cutoff", 2500 }, { "res", 20 }, { "drift", 35 }, { "spray", 10 }, { "filter_env", 1 } });
+    F("DENSE", "Morph wobble", { { "partials", 160 }, { "wob_div", kNote8 }, { "wob_morph", 100 }, { "shape", 0 }, { "shape_b", 100 }, { "tilt_b", 60 }, { "wob_cut", 2 }, { "cutoff", 500 }, { "res", 40 } });
+    F("DENSE", "Spray growl", { { "partials", 200 }, { "spray", 45 }, { "drift", 25 }, { "drift_rate", 3 }, { "wob_div", kNote16 }, { "wob_cut", 2.5f }, { "cutoff", 400 }, { "res", 45 }, { "drive", 40 } });
+    F("DENSE", "Inharmonic gong bass", { { "partials", 128 }, { "inharm", 40 }, { "cutoff", 1800 }, { "filter_env", 0 }, { "decay", 2500 }, { "sustain", 20 }, { "release", 1200 }, { "drift", 20 } });
+    F("DENSE", "Living reese", { { "partials", 192 }, { "detune", 24 }, { "width", 75 }, { "drift", 50 }, { "drift_rate", 0.4f }, { "morph", 35 }, { "cutoff", 900 }, { "res", 25 } });
+    F("DENSE", "Metallic morph", { { "partials", 180 }, { "inharm", 25 }, { "spray", 20 }, { "wob_sync", 0 }, { "wob_rate", 0.25f }, { "wob_morph", 80 }, { "cutoff", 3000 }, { "filter_env", 0 } });
     return v;
 }
 
