@@ -73,6 +73,8 @@ jobs:
           cp -r bin/*.vst3 dist/pump-windows/
           mkdir -p dist/pump-windows/CLAP && cp bin/*.clap dist/pump-windows/CLAP/
           cp docs/INSTALL-windows.txt dist/pump-windows/INSTALL.txt
+          cp installer/windows/*.bat dist/pump-windows/
+          mkdir -p dist/pump-windows/installer && cp installer/windows/pump-install.ps1 dist/pump-windows/installer/
           cp THIRD_PARTY_NOTICES.md dist/pump-windows/
           cp plugins/machine/NOTICE.md dist/pump-windows/pump-MACHINE-NOTICE.md && cp plugins/machine/fw/LICENSE dist/pump-windows/pump-MACHINE-LICENSE-GPL-3.0.txt
           cd dist && zip -qr pump-windows.zip pump-windows
@@ -112,6 +114,9 @@ jobs:
           cp -R bin/*.clap dist/pump-macos/CLAP/
           cp -R bin/*.component dist/pump-macos/Components/ 2>/dev/null || true
           cp docs/INSTALL-macos.txt dist/pump-macos/INSTALL.txt
+          cp "installer/macos/Uninstall pump.command" dist/pump-macos/
+          mkdir -p dist/pump-macos/installer && cp installer/macos/pump-cleanup.sh dist/pump-macos/installer/
+          chmod +x "dist/pump-macos/Uninstall pump.command" dist/pump-macos/installer/pump-cleanup.sh
           cp THIRD_PARTY_NOTICES.md dist/pump-macos/
           cp plugins/machine/NOTICE.md dist/pump-macos/pump-MACHINE-NOTICE.md && cp plugins/machine/fw/LICENSE dist/pump-macos/pump-MACHINE-LICENSE-GPL-3.0.txt
           cd dist && ditto -c -k --keepParent pump-macos pump-macos.zip
@@ -144,7 +149,15 @@ jobs:
           build_component au "bin/*.component" "/Library/Audio/Plug-Ins/Components"
           build_component clap "bin/*.clap" "/Library/Audio/Plug-Ins/CLAP"
           build_component app "bin/*.app" "/Applications"
-          args=""; for p in pkgs/*.pkg; do args="$args --package $p"; done
+          # first: the installed pump plugins move to /Library/Audio/Plug-Ins/pump-previous (renamed or removed ones
+          # don't stay); last: the Audio Unit cache is refreshed
+          mkdir -p scripts-cleanup scripts-refresh
+          cp installer/macos/pump-cleanup.sh scripts-cleanup/postinstall
+          printf '#!/bin/sh\nkillall -9 AudioComponentRegistrar >/dev/null 2>&1\nexit 0\n' > scripts-refresh/postinstall
+          chmod +x scripts-cleanup/postinstall scripts-refresh/postinstall
+          pkgbuild --nopayload --scripts scripts-cleanup --identifier com.wake.pump.cleanup --version "$VERSION" pkgs-cleanup.pkg
+          pkgbuild --nopayload --scripts scripts-refresh --identifier com.wake.pump.refresh --version "$VERSION" pkgs-refresh.pkg
+          args="--package pkgs-cleanup.pkg"; for p in pkgs/*.pkg; do args="$args --package $p"; done; args="$args --package pkgs-refresh.pkg"
           productbuild $args --identifier com.wake.pump --version "$VERSION" dist/pump-macos.pkg
           ls -la dist
       - uses: actions/upload-artifact@v4

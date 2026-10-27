@@ -64,7 +64,9 @@ offset block, Share Tech Mono, one light-neon colour per plugin, light or dark. 
 
 The newest builds are always on the [latest release](https://github.com/matthettich/pump/releases/tag/latest):
 `pump-macos.pkg` (installer, Apple Silicon + Intel), `pump-macos.zip`, `pump-windows.zip`. Each zip has an
-`INSTALL.txt`.
+`INSTALL.txt`. On Windows, `Install pump.bat` in the zip installs everything; both installers first move any pump
+plugins already installed (old, renamed or removed ones) to a `pump-previous` backup, so nothing is left twice, and
+each has an uninstaller (`Uninstall pump.bat`, `Uninstall pump.command`).
 
 ## System EQ (Mac)
 

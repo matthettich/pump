@@ -1,6 +1,18 @@
 …pump plugins — Windows install
 ===============================
 
+EASIEST: double-click "Install pump.bat" (in this folder, after unzipping)
+  Windows asks for administrator rights once (the plug-in folders need them). Close your host (Ableton Live,
+  Renoise...) first: it can't replace a plugin that's open, and says so if one is. It then
+    - moves every pump plugin already installed (old versions, renamed or removed ones, copies in your user
+      plug-in folders) into C:\Program Files\Common Files\pump-previous - only the last version is kept there,
+      and hosts don't look in it; copy it back to undo
+    - copies these plugins into C:\Program Files\Common Files\VST3\ (and the CLAP ones into ...\CLAP\)
+    - says what was updated, what's new and what was taken out.
+  "Uninstall pump.bat" removes every pump plugin (and the backup).
+  If Windows says it protected your PC (SmartScreen): More info > Run anyway.
+
+OR: copy the files yourself
 1. Copy every pump-….vst3 folder (pump-eq.vst3, pump-comp.vst3, …) into:
        C:\Program Files\Common Files\VST3\
    (Windows asks for permission once; that folder is where Ableton Live and other hosts look.)

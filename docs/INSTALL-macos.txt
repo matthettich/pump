@@ -9,7 +9,11 @@ EASIEST: the installer
   2. If macOS says it can't verify it: open System Settings > Privacy & Security, scroll down to
      "pump-macos.pkg was blocked…" and click Open Anyway, then confirm.
   3. The installer puts every plugin in /Library/Audio/Plug-Ins (VST3, Components = Audio Units, CLAP).
-     Plugins installed this way are not blocked.
+     Plugins installed this way are not blocked. Any pump plugins already installed (old versions, renamed or
+     removed ones, copies in your own ~/Library/Audio/Plug-Ins) are first moved to
+     /Library/Audio/Plug-Ins/pump-previous (only the last version is kept; hosts don't look there), and the
+     Audio Unit cache is refreshed so hosts see the new ones. "Uninstall pump.command" (in the zip) removes
+     every pump plugin.
   4. It also puts System EQ in Applications (macOS 14.2 or later): pump EQ on everything the Mac plays.
      Open it once; it lives in the menu bar (the three-sliders icon), not the Dock.
 
