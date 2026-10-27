@@ -40,6 +40,7 @@
 #include "../plugins/modal/ModalParams.hpp"
 #include "../plugins/orbit/OrbitParams.hpp"
 #include "../plugins/fold/FoldParams.hpp"
+#include "../plugins/vector/VectorParams.hpp"
 #include <cstdio>
 #include <cstring>
 #include <map>
@@ -145,6 +146,7 @@ int main()
         { "MODAL", modal::params(), modal::presets() },
         { "ORBIT", orbit::params(), orbit::presets() },
         { "FOLD", fold::params(), fold::presets() },
+        { "VECTOR", vector::params(), vector::presets() },
     };
     std::map<std::string, int> sections;
     std::vector<std::vector<std::string>> chains;

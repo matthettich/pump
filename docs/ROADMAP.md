@@ -54,7 +54,10 @@ Instruments (MIDI in, stereo out):
   period doubling, sync to the note, a 3D view of the orbit, a slow chaotic drift as modulation.
 - **FOLD** west-coast synth — done (2026-10-26, asked for that evening): complex oscillator, multi-stage wavefolder,
   low-pass gate with a light-dependent-resistor response, function generator, random source.
-- Ideas the user liked, in order: **vector / wave-sequencing**,
+- **VECTOR** vector / wave-sequencing synth — done (2026-10-26): four sources on a joystick square with a vector
+  envelope path; waves from a bank of 32, wave sequences, and scanned strings (asked for that evening: scanned
+  synthesis, put here as a source type).
+- Ideas the user liked, in order:
   **granular spectral-freeze** synth, **formant / vocal-tract** pad.
 - Asked for on 2026-10-26 (after those):
   - **A multi-engine drum synth**: per channel a tone
