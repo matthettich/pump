@@ -32,10 +32,17 @@ Instruments (MIDI in, stereo out):
 - **PHASE** FM synth — done (2026-10-26): console and arcade 4-op chips, the PC card chip (2- and 4-op, eight
   waveforms), a studio engine of 2 to 6 operators, phase distortion; CHIP emulates each chip's integer maths, rate
   and DAC.
-- **LIFE** groovebox (next): eight tone voices (a parabolic sine with pitch, kick (a pitch drop), FM, ring
+- **LIFE** groovebox — done (2026-10-26): eight tone voices (a parabolic sine with pitch, kick (a pitch drop), FM, ring
   modulation, decay, level), global FM / drive / decay, an LFO, a multi-FX (pitch shifter with grain and delay, a
   bipolar low/high-pass, feedback), and a Game of Life grid as the sequencer: cells trigger the voice of their colour,
   loop / evolve / free-run modes, cycle length and offset, sensitivity, draw / randomise / load patterns, host sync.
+- **Volume pass** (next): every instrument at 0 dB by default, its internal gain set so a typical factory voice peaks
+  near -6 dBFS (chords on the poly ones keep their headroom).
+- **BOING** drum machine: COIL's springs as drum voices (kick: a long tank with a pitch drop and a sub; snare: a short
+  tank with noise; toms; hats and cymbals from the digital tanks, spread and grit, with a choke; claps as bursts of
+  kicks), next to a second engine of resonant analog-style drum voices (a tone with pitch bend, a filtered noise
+  source, a click, a resonator); per pad model, tune, decay, harmonic, spread, drip, pitch drop, noise, level, pan,
+  velocity to strength and brightness; a shared spring tank as a send.
 - **WOB upgrade**: up to 256 partials, an inharmonic / stretched mode, per-partial drift and spray, a morph between two
   spectra.
 - Ideas the user liked, in order: **spectral additive resynthesis** (a sample rebuilt as partials: stretch, freeze,

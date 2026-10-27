@@ -34,6 +34,7 @@
 #include "../plugins/coil/CoilParams.hpp"
 #include "../plugins/twang/TwangParams.hpp"
 #include "../plugins/phase/PhaseParams.hpp"
+#include "../plugins/life/LifeParams.hpp"
 #include <cstdio>
 #include <cstring>
 #include <map>
@@ -133,6 +134,7 @@ int main()
         { "SING", sing::params(), sing::presets() },
         { "COIL", coil::params(), coil::presets() },
         { "PHASE", phase::params(), phase::presets() },
+        { "LIFE", life::params(), life::presets() },
     };
     std::map<std::string, int> sections;
     std::vector<std::vector<std::string>> chains;
