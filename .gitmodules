@@ -5,3 +5,4 @@
 [submodule "third_party/NeuralAmpModelerCore"]
 	path = third_party/NeuralAmpModelerCore
 	url = https://github.com/sdatkinson/NeuralAmpModelerCore
+	ignore = dirty
