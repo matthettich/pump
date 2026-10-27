@@ -38,6 +38,7 @@
 #include "../plugins/boing/BoingParams.hpp"
 #include "../plugins/prism/PrismParams.hpp"
 #include "../plugins/modal/ModalParams.hpp"
+#include "../plugins/orbit/OrbitParams.hpp"
 #include <cstdio>
 #include <cstring>
 #include <map>
@@ -141,6 +142,7 @@ int main()
         { "BOING", boing::params(), boing::presets() },
         { "PRISM", prism::params(), prism::presets() },
         { "MODAL", modal::params(), modal::presets() },
+        { "ORBIT", orbit::params(), orbit::presets() },
     };
     std::map<std::string, int> sections;
     std::vector<std::vector<std::string>> chains;

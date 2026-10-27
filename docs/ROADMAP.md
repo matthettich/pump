@@ -50,7 +50,9 @@ Instruments (MIDI in, stereo out):
   sounds, keep formants.
 - **MODAL** physical synth — done (2026-10-26): up to 48 modes in the ratios of eight objects, wood-to-metal
   material, strike position, mallet / pluck / bow / breath exciters.
-- Ideas the user liked, in order: **strange-attractor oscillator** (Lorenz / Rössler as audio and modulation), **vector / wave-sequencing**,
+- **ORBIT** strange-attractor synth — done (2026-10-26): six chaotic systems as pitched oscillators, chaos sweep with
+  period doubling, sync to the note, a 3D view of the orbit, a slow chaotic drift as modulation.
+- Ideas the user liked, in order: **vector / wave-sequencing**,
   **granular spectral-freeze** synth, **formant / vocal-tract** pad.
 - Asked for on 2026-10-26 (after those):
   - **A multi-engine drum synth**: per channel a tone
