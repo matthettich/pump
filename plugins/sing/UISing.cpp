@@ -11,9 +11,9 @@ using namespace pump::sing;
 
 class UISing : public PumpUI {
 public:
-    UISing() : PumpUI(params().data(), kNumParams, &presets(), pump::accents::sing(), "SING", 1000, 740, -1)
+    UISing() : PumpUI(params().data(), kNumParams, &presets(), pump::accents::sing(), "SING", 1000, 694, -1)
     {
-        auto dial = [&](int p, const char* l, bool bi = false, const char* tip = nullptr) { Dial* d = addDial(p, l, Dial::Small, bi); if (tip) d->tip = tip; return d; };
+        auto dial = [&](int p, const char* l, bool bi = false, const char* tip = nullptr) { Dial* d = addDial(p, l, Dial::Medium, bi); if (tip) d->tip = tip; return d; };
         octD = dial(kOctave, "OCTAVE", true);
         sizeD = dial(kSize, "SIZE", true, "The singer's size: + smaller (younger, higher formants), - bigger (deeper)");
         robotD = dial(kRobot, "ROBOT", false, "The source: a smooth throat (0) to a buzzy machine (100)");
@@ -80,37 +80,34 @@ protected:
 
     void layout() override
     {
-        const float top = 58, sh = 166, hs = Dial::heightFor(Dial::Small);
+        const float top = 58, sh = 150, hm = Dial::heightFor(Dial::Medium);
         lyrR = Rect(14, top, 560, sh);
         editBtn->r = Rect(lyrR.r() - 150, top + 6, 66, 18); restartBtn->r = Rect(lyrR.r() - 78, top + 6, 70, 18);
         vowR = Rect(586, top, 212, sh);
         scopeR = Rect(810, top, 150, sh);
         meterL = Rect(966, top, 8, sh - 12); meterR = Rect(977, top, 8, sh - 12);
 
-        const float y1 = 238, ph = 196;
-        voicePanel = Rect(14, y1, 320, ph);
-        Dial* va[3] = { octD, sizeD, robotD }; Dial* vb[3] = { voiceD, breathD, roughD };
-        for (int k = 0; k < 3; ++k) { va[k]->r = Rect(24 + k * 100, y1 + 26, 100, hs); vb[k]->r = Rect(24 + k * 100, y1 + 112, 100, hs); }
-        tonePanel = Rect(346, y1, 320, ph);
-        Dial* ta[3] = { brightD, softD, clarD }; Dial* tb[3] = { hissD, dictD, driveD };
-        for (int k = 0; k < 3; ++k) { ta[k]->r = Rect(356 + k * 100, y1 + 26, 100, hs); tb[k]->r = Rect(356 + k * 100, y1 + 112, 100, hs); }
-        choirPanel = Rect(678, y1, 308, ph);
-        modeSeg->r = Rect(690, y1 + 30, 284, 22);
-        Dial* ca[3] = { choirD, spreadD, widthD };
-        for (int k = 0; k < 3; ++k) ca[k]->r = Rect(688 + k * 96, y1 + 84, 96, hs);
-
-        const float y2 = 446, ph2 = 192;
-        vibPanel = Rect(14, y2, 320, ph2);
-        Dial* vv[4] = { vibD, vibRateD, vibDelayD, wheelD };
-        for (int k = 0; k < 4; ++k) vv[k]->r = Rect(22 + k * 76, y2 + 64, 76, hs);
-        envPanel = Rect(346, y2, 320, ph2);
-        Dial* ee[4] = { atkD, relD, glideD, velD };
-        for (int k = 0; k < 4; ++k) ee[k]->r = Rect(354 + k * 76, y2 + 64, 76, hs);
-        outPanel = Rect(678, y2, 308, ph2);
-        engSeg->r = Rect(690, y2 + 26, 284, 22);
-        loadBank->r = Rect(690, y2 + 54, 96, 20);
-        volD->r = Rect(684, y2 + 82, 74, hs); genderD->r = Rect(756, y2 + 82, 74, hs);
-        keyboard.r = Rect(14, 650, 966, 56);
+        // three strips of panels, one row of dials each, the dials spread evenly
+        const float ph = 116;
+        auto rowOf = [&](Rect& panel, float x, float y, float w, float dx, Dial** d, int n) {
+            panel = Rect(x, y, w, ph);
+            const float cw = (w - 20 - dx) / n;
+            for (int k = 0; k < n; ++k) d[k]->r = Rect(x + 10 + dx + k * cw, y + 28, cw, hm);
+        };
+        const float y1 = top + sh + 12;
+        Dial* va[6] = { octD, sizeD, robotD, voiceD, breathD, roughD };   rowOf(voicePanel, 14, y1, 480, 0, va, 6);
+        Dial* ta[6] = { brightD, softD, clarD, hissD, dictD, driveD };    rowOf(tonePanel, 506, y1, 480, 0, ta, 6);
+        const float y2 = y1 + ph + 12;
+        Dial* vv[4] = { vibD, vibRateD, vibDelayD, wheelD };              rowOf(vibPanel, 14, y2, 480, 0, vv, 4);
+        Dial* ee[4] = { atkD, relD, glideD, velD };                       rowOf(envPanel, 506, y2, 480, 0, ee, 4);
+        // SINGERS: mono/poly beside its three dials; OUTPUT: engine, LOAD BANK and the bank beside volume and gender
+        const float y3 = y2 + ph + 12;
+        Dial* ca[3] = { choirD, spreadD, widthD };                         rowOf(choirPanel, 14, y3, 480, 156, ca, 3);
+        modeSeg->r = Rect(26, y3 + 56, 144, 24);
+        Dial* oo[2] = { volD, genderD };                                   rowOf(outPanel, 506, y3, 480, 236, oo, 2);
+        engSeg->r = Rect(518, y3 + 32, 224, 24);
+        loadBank->r = Rect(518, y3 + 64, 96, 20);
+        keyboard.r = Rect(14, y3 + ph + 12, 966, 56);
     }
 
     void tick(float dt) override
@@ -161,16 +158,17 @@ protected:
         {
             std::string info = plug ? plug->bankInfo() : std::string();
             if (info.empty()) info = "NO VOICEBANK";
-            textAt(outPanel.x + 116, outPanel.y + 64, info, kLabel, 8.5f, bk ? theme.ink : theme.ink2, ALIGN_LEFT | ALIGN_MIDDLE, 0.3f);
+            textAt(outPanel.x + 12, outPanel.y + 96, info, kLabel, 8.5f, bk ? theme.ink : theme.ink2, ALIGN_LEFT | ALIGN_MIDDLE, 0.3f);
             const int en = plug ? plug->engine.entryNow() : -1;
             if (bk && value(kEngine) >= 0.5f) now = en >= 0 && en < (int)bk->entries.size() ? "\"" + bk->entries[(size_t)en].alias + "\"" : now + "(FORMANT)";
         }
-        textAt(outPanel.x + 168, outPanel.y + 96, "SINGING", kLabel, 9.0f, theme.ink2, ALIGN_LEFT | ALIGN_MIDDLE, 0.8f);
-        textAt(outPanel.x + 168, outPanel.y + 114, now, kMono, 10.5f, theme.ink, ALIGN_LEFT | ALIGN_MIDDLE);
+        // what is sung now, along the bottom of the LYRICS screen
+        textAt(lyrR.x + 10, lyrR.b() - 14, "SINGING", kLabel, 9.0f, theme.ink2, ALIGN_LEFT | ALIGN_MIDDLE, 0.8f);
+        textAt(lyrR.x + 76, lyrR.b() - 14, now, kMono, 10.5f, theme.ink, ALIGN_LEFT | ALIGN_MIDDLE);
         char b[64];
         std::snprintf(b, sizeof b, "SYLLABLE %d OF %d", cur >= 0 ? cur + 1 : 0, (int)syl.size());
-        textAt(outPanel.x + 168, outPanel.y + 134, b, kLabel, 8.5f, theme.ink2, ALIGN_LEFT | ALIGN_MIDDLE, 0.4f);
-        textAt(outPanel.x + 12, outPanel.b() - 16, "KEYS: EVERY NOTE SINGS THE NEXT SYLLABLE", kLabel, 8.5f, theme.ink2, ALIGN_LEFT | ALIGN_MIDDLE, 0.5f);
+        textAt(lyrR.r() - 10, lyrR.b() - 14, b, kLabel, 8.5f, theme.ink2, ALIGN_RIGHT | ALIGN_MIDDLE, 0.4f);
+        textAt(choirPanel.r() - 12, choirPanel.y + 16, "KEYS: EVERY NOTE SINGS THE NEXT SYLLABLE", kLabel, 8.5f, theme.ink2, ALIGN_RIGHT | ALIGN_MIDDLE, 0.5f);
         keyboard.draw(*this);
     }
 
@@ -180,7 +178,7 @@ protected:
         const Rect& r = lyrR;
         screenBox(r);
         caption(r.x + 10, r.y + 14, "LYRICS");
-        const Rect p(r.x + 10, r.y + 30, r.w - 20, r.h - 40);
+        const Rect p(r.x + 10, r.y + 30, r.w - 20, r.h - 56);
         save(); scissor(p.x, p.y, p.w, p.h);
         float x = p.x, y = p.y + 12;
         const float lineH = 30.0f;
