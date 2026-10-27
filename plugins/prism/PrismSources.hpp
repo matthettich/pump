@@ -9,6 +9,7 @@
 #include "../wob/WobEngine.hpp"
 #include <array>
 #include <atomic>
+#include <memory>
 #include <mutex>
 #include <thread>
 
@@ -42,14 +43,14 @@ inline std::vector<float> builtinAudio(int id, double sr)
     {
     case 1:
     {
-        sing::Engine e; sing::Settings s; s.vib = 0.35; e.setSettings(s); e.prepare(sr, 256); e.setLyrics("aa ~ ee ~ ii ~ oo ~ uu");
+        auto ep = std::make_unique<sing::Engine>(); sing::Engine& e = *ep; sing::Settings s; s.vib = 0.35; e.setSettings(s); e.prepare(sr, 256); e.setLyrics("aa ~ ee ~ ii ~ oo ~ uu");
         V ev; for (int k = 0; k < 9; ++k) { ev.push_back({ (uint32_t)(k * 0.5 * sr), 0x90, 57, 100 }); ev.push_back({ (uint32_t)((k * 0.5 + 0.49) * sr), 0x80, 57, 0 }); }
         std::sort(ev.begin(), ev.end(), [](const synth::Midi& a, const synth::Midi& b) { return a.offset < b.offset; });
         return renderWith(e, sr, 4.8, ev, [](sing::Engine& x, float* l, float* r, int n, V& h) { x.process(l, r, n, h.data(), (int)h.size()); });
     }
     case 2: case 7:
     {
-        coil::Engine e; coil::Settings s;
+        auto ep = std::make_unique<coil::Engine>(); coil::Engine& e = *ep; coil::Settings s;
         if (id == 2) { s.model = 1; s.harmonic = 0.7; s.decay = 4.0; s.excite = 0.6; s.spread = 0.05; s.release = 1.5; }
         else { s.model = 3; s.harmonic = 0.2; s.decay = 6.0; s.excite = 0.9; s.spread = 0.45; s.tone = 0.3; s.release = 3.0; }
         e.prepare(sr, 256); e.setSettings(s);
@@ -58,7 +59,7 @@ inline std::vector<float> builtinAudio(int id, double sr)
     }
     case 3:
     {
-        phase::Engine e; phase::Settings s; s.engine = phase::kSix; s.algo = 14; s.chip = false; s.feedback = 0;
+        auto ep = std::make_unique<phase::Engine>(); phase::Engine& e = *ep; phase::Settings s; s.engine = phase::kSix; s.algo = 14; s.chip = false; s.feedback = 0;
         const double ratio[6] = { 1, 3, 5, 7, 9, 3 }, fine[6] = { 0, 50, 41, 0, 0, 50 }, level[6] = { 90, 82, 76, 70, 64, 80 }, dec[6] = { 4.0, 3.0, 2.0, 1.6, 1.2, 2.5 };
         for (int k = 0; k < 6; ++k) { auto& o = s.op[k]; o.ratio = (int)ratio[k]; o.fine = fine[k]; o.level = level[k]; o.a = 0.001; o.d = dec[k]; o.s = 0.0; o.r = 2.0; o.vel = 0.0; }
         e.setSettings(s); e.prepare(sr, 256);
@@ -67,7 +68,7 @@ inline std::vector<float> builtinAudio(int id, double sr)
     }
     case 4:
     {
-        wob::Engine e; wob::Settings s; s.partials = 160; s.wobSync = false; s.wobRate = 2.0; s.wobMorph = 1.0; s.shapeB = 1.0; s.tiltB = 0.6;
+        auto ep = std::make_unique<wob::Engine>(); wob::Engine& e = *ep; wob::Settings s; s.partials = 160; s.wobSync = false; s.wobRate = 2.0; s.wobMorph = 1.0; s.shapeB = 1.0; s.tiltB = 0.6;
         s.wobCut = 2.0; s.cutoff = 500.0; s.res = 0.4; s.sub = 0.0; s.octave = 0; s.volumeDb = 0.0;
         e.setSettings(s); e.prepare(sr, 256);
         V ev { { 0, 0x90, 45, 110 }, { (uint32_t)(3.9 * sr), 0x80, 45, 0 } };
