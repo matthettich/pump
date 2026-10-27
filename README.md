@@ -47,6 +47,7 @@ offset block, Share Tech Mono, one light-neon colour per plugin, light or dark. 
 | **pump MACHINE** Drum Machine | silver | the six voices of an open-source hardware drum machine's firmware, compiled unchanged and run as on the machine: three drums (oscillator, FM, pitch envelope, transient, filter, LFO), snare, cymbal and hi-hat (closed and open), every knob of their pages, velocity and LFO modulation to any voice, sample-rate reduction, drive; loads the machine's kit files; seven kits. GPL-3.0, including the pump code built into it (plugins/machine/NOTICE.md) |
 | **pump SING** Singing Synth | electric orchid | type lyrics and every note sings the next syllable (letter-to-sound rules and a dictionary, or spell the sounds in brackets): a formant voice from a smooth throat to a buzzing machine, size (child to giant), breath and whisper, rasp and growl, brightness, softness, clarity, diction, vibrato with delay and wheel; mono legato (slides to the next syllable) or poly chords, up to 8 singers per note as a choir; a live vowel chart; 32 voices: singers, whispers, choirs and machines |
 | **pump COIL** Spring Synth | laser green | SPRING's six tanks played as tuned springs: every note a set of springs whose loop is tuned to it, kicked with the velocity, sounding like the reverb's own springs; HARMONIC pulls them from clang and drip to a clean pluck; tension, drip, decay, release, spread, wobble, tone, excite, grit for the digital ones, SPRING's tank around them, width; 8 voices; KICK re-kicks whatever is ringing; 22 voices: springs, tuned, bass, metal, digital |
+| **pump PHASE** FM Synth | cobalt | six engines, each with its chip's integer sine and exponent tables, envelope steps, own sample rate and DAC (CHIP), or clean: the 4-operator chips of 16-bit consoles (9-bit DAC grit) and arcade boards (noise on op 4), the PC sound card chip in 2- and 4-operator modes with its eight waveforms, a studio engine of 2 to 6 operators (eighteen algorithms, every waveform), and phase distortion (eight bent shapes incl. three resonant ones, two alternating per line, a bend envelope, lines 1 / 2 / 1+1' / 1+2', ring or noise mod); fixed-frequency operators, feedback, pitch envelope, LFO to level and pitch; up to 16 voices, mono or legato with glide; 31 voices |
 
 ## Download
 
@@ -104,6 +105,9 @@ In your host they sit in three folders (the vendor): **wake mastering**, **wake 
 - SING: click the lyrics (or EDIT), type or paste, Enter. Every note sings the next syllable; a comma or full stop is a
   rest, `~` holds the last vowel over another note, `hel-lo` splits a word where you like, `[HH AX L OW]` spells the
   sounds. The lyrics start over when the host starts playing (or with RESTART) and are saved with the session
+- PHASE: pick an ENGINE, then click the ALGORITHM screen's halves (or scroll) to step through its algorithms; click an
+  operator (or keys 1-6) to edit it. A carrier's LEVEL is its loudness, a modulator's is the FM depth. CHIP off plays
+  the same voice clean
 - COIL plays like any synth; KICK (or K) kicks every ringing spring again. TWANG goes on a track or a send: CHORD tunes
   the springs to ROOT + CHORD + OCTAVE, MIDI to the notes you hold (send it MIDI, or play its keyboard), LATCH to the
   last chord until you play a new one. HARMONIC 0 is the springs as they are; 100 is in tune with itself

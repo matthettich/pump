@@ -29,6 +29,20 @@ Instruments (MIDI in, stereo out):
 - **Spring resonator** (TWANG) — done (2026-10-26): audio in excites the tuned springs, notes or a fixed pitch set the
   tuning (MIDI, or a key / chord with a ROOT knob), with the same HARMONIC and TANK controls and a dry / wet mix.
 
+- **PHASE** FM synth — done (2026-10-26): console and arcade 4-op chips, the PC card chip (2- and 4-op, eight
+  waveforms), a studio engine of 2 to 6 operators, phase distortion; CHIP emulates each chip's integer maths, rate
+  and DAC.
+- **LIFE** groovebox (next): eight tone voices (a parabolic sine with pitch, kick (a pitch drop), FM, ring
+  modulation, decay, level), global FM / drive / decay, an LFO, a multi-FX (pitch shifter with grain and delay, a
+  bipolar low/high-pass, feedback), and a Game of Life grid as the sequencer: cells trigger the voice of their colour,
+  loop / evolve / free-run modes, cycle length and offset, sensitivity, draw / randomise / load patterns, host sync.
+- **WOB upgrade**: up to 256 partials, an inharmonic / stretched mode, per-partial drift and spray, a morph between two
+  spectra.
+- Ideas the user liked, in order: **spectral additive resynthesis** (a sample rebuilt as partials: stretch, freeze,
+  morph two sounds), **modal / physical** synth (struck bars, plates, membranes, bowed and blown resonators),
+  **strange-attractor oscillator** (Lorenz / Rössler as audio and modulation), **vector / wave-sequencing**,
+  **granular spectral-freeze** synth, **formant / vocal-tract** pad.
+
 ## Instance List — planned, nice to have
 
 One window that shows every pump EQ in the session. Decided 2026-10-23: build it in tiers, after the EQ bug audit;

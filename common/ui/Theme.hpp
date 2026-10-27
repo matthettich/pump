@@ -61,6 +61,7 @@ namespace accents {
     inline Accent sing()   { return { "sing",   hexColor(0xF45CFF), hexColor(0x6A0A80), hexColor(0x2EE6C0) }; }   // electric orchid
     inline Accent coil()   { return { "coil",   hexColor(0x5CFF5C), hexColor(0x0E6B0E), hexColor(0xFF5CC8) }; }   // laser green
     inline Accent twang()  { return { "twang",  hexColor(0x2BD9C2), hexColor(0x055A50), hexColor(0xFF8A4D) }; }   // lagoon
+    inline Accent phase()  { return { "phase",  hexColor(0x6B85FF), hexColor(0x1A2A99), hexColor(0xFFB43D) }; }   // cobalt
 }
 
 struct Theme {
