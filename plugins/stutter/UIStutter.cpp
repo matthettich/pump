@@ -15,7 +15,7 @@ using pump::kNumNotes;
 
 class UIStutter : public PumpUI {
 public:
-    UIStutter() : PumpUI(params().data(), kNumParams, &presets(), pump::accents::stutter(), "STUTTER", 1000, 866, kBypass)
+    UIStutter() : PumpUI(params().data(), kNumParams, &presets(), pump::accents::stutter(), "STUTTER", 1000, 800, kBypass)
     {
         trigSeg = addSegmented(kTrigger, { "AUTO", "MANUAL" });
         trigSeg->tip = "Auto: the dice roll at every interval (pads and MIDI always work). Manual: only pads and MIDI";
@@ -84,44 +84,50 @@ protected:
 
     void layout() override
     {
-        timeR = Rect(14, 58, 708, 150);
-        padsR = Rect(14, 222, 708, 158);
-        nowR = Rect(738, 58, 210, 322);
-        meterL = Rect(962, 58, 9, 304);
-        meterR = Rect(973, 58, 9, 304);
+        // top: TIMELINE over the eight pads, NOW and the meters beside them
+        const float top = 58, th = 130, pads = 140, sh = th + 12 + pads;
+        timeR = Rect(14, top, 708, th);
+        padsR = Rect(14, top + th + 12, 708, pads);
+        nowR = Rect(738, top, 210, sh);
+        meterL = Rect(962, top, 9, sh - 18);
+        meterR = Rect(973, top, 9, sh - 18);
         const float pw = (padsR.w - 3 * 12) / 4, ph = (padsR.h - 12) / 2;
         for (int m = 0; m < kNumMoves; ++m)
         {
             pad[m] = Rect(padsR.x + (m % 4) * (pw + 12), padsR.y + (m / 4) * (ph + 12), pw, ph);
             useBox[m] = Rect(pad[m].r() - 52, pad[m].y + 8, 44, 16);
         }
-        const float y0 = 396;
-        autoPanel = Rect(14, y0, 440, 192);
-        trigSeg->r = Rect(26, y0 + 40, 128, 24);
-        intMenu->r = Rect(166, y0 + 40, 132, 24);
-        lenMenu->r = Rect(310, y0 + 40, 132, 24);
-        chanceDial->r = Rect(170, y0 + 98, 72, Dial::heightFor(Dial::Medium));
-        varDial->r = Rect(314, y0 + 98, 72, Dial::heightFor(Dial::Medium));
+        // AUTO | REPEATS | OUTPUT: menus on top (captioned), dials under
+        const float y0 = top + sh + 12, h0 = 164, hm = Dial::heightFor(Dial::Medium), hs = Dial::heightFor(Dial::Small);
+        autoPanel = Rect(14, y0, 440, h0);
+        trigSeg->r = Rect(26, y0 + 44, 128, 24);
+        intMenu->r = Rect(166, y0 + 44, 132, 24);
+        lenMenu->r = Rect(310, y0 + 44, 132, 24);
+        chanceDial->r = Rect(170, y0 + 78, 72, hm);
+        varDial->r = Rect(314, y0 + 78, 72, hm);
 
-        repPanel = Rect(468, y0, 308, 192);
-        gridMenu->r = Rect(480, y0 + 40, 140, 24);
+        repPanel = Rect(468, y0, 308, h0);
+        gridMenu->r = Rect(480, y0 + 44, 140, 24);
         const float c0 = 476, cw = 59;
-        gateDial->r = Rect(c0, y0 + 102, 56, Dial::heightFor(Dial::Small));
-        pitchDial->r = Rect(c0 + cw, y0 + 102, 56, Dial::heightFor(Dial::Small));
-        decayDial->r = Rect(c0 + 2 * cw, y0 + 102, 56, Dial::heightFor(Dial::Small));
-        filterDial->r = Rect(c0 + 3 * cw, y0 + 102, 56, Dial::heightFor(Dial::Small));
-        tapeDial->r = Rect(c0 + 4 * cw, y0 + 102, 56, Dial::heightFor(Dial::Small));
+        gateDial->r = Rect(c0, y0 + 84, 56, hs);
+        pitchDial->r = Rect(c0 + cw, y0 + 84, 56, hs);
+        decayDial->r = Rect(c0 + 2 * cw, y0 + 84, 56, hs);
+        filterDial->r = Rect(c0 + 3 * cw, y0 + 84, 56, hs);
+        tapeDial->r = Rect(c0 + 4 * cw, y0 + 84, 56, hs);
 
-        patPanel = Rect(14, 600, 972, 240);
-        patOn->r = Rect(26, 622, 110, 24);
-        patMenu->r = Rect(148, 622, 210, 24);
-        stepMenu->r = Rect(370, 622, 110, 24);
-        lenDown->r = Rect(560, 622, 28, 24); lenUp->r = Rect(650, 622, 28, 24);
-        clearB->r = Rect(900, 622, 76, 24);
-        gridR = Rect(110, 656, 866, 8 * 16);
-        outPanel = Rect(790, y0, 196, 192);
-        mixDial->r = Rect(802, y0 + 98, 72, Dial::heightFor(Dial::Medium));
-        outDial->r = Rect(902, y0 + 98, 72, Dial::heightFor(Dial::Medium));
+        outPanel = Rect(790, y0, 196, h0);
+        mixDial->r = Rect(802, y0 + 50, 72, hm);
+        outDial->r = Rect(902, y0 + 50, 72, hm);
+
+        // PATTERN: its controls, then the step editor (moves, transposition and grid rows under it)
+        const float y1 = y0 + h0 + 12;
+        patPanel = Rect(14, y1, 972, 240);
+        patOn->r = Rect(26, y1 + 28, 110, 24);
+        patMenu->r = Rect(148, y1 + 28, 210, 24);
+        stepMenu->r = Rect(370, y1 + 28, 110, 24);
+        lenDown->r = Rect(560, y1 + 28, 28, 24); lenUp->r = Rect(650, y1 + 28, 28, 24);
+        clearB->r = Rect(900, y1 + 28, 76, 24);
+        gridR = Rect(110, y1 + 62, 866, 8 * 16);
     }
 
     void tick(float dt) override
@@ -168,14 +174,14 @@ protected:
         caption(gridMenu->r.x, gridMenu->r.y - 10, "GRID");
         caption(outPanel.x + 12, outPanel.y + 16, "OUTPUT");
         drawPattern();
-        // the auto summary, in words
+        // the auto summary, in words (on the caption line); how MIDI plays the moves, beside the dials
         char t[96];
         std::snprintf(t, sizeof t, "%.0f%% EVERY %s, FOR %s", value(kChance), kNoteNames[pump::clampv((int)value(kInterval), 0, kNumNotes - 1)],
                       kNoteNames[pump::clampv((int)value(kLength), 0, kNumNotes - 1)]);
         if (value(kTrigger) >= 0.5f) std::snprintf(t, sizeof t, "PADS, KEYS 1-8 AND MIDI ONLY");
-        textAt(26, autoPanel.y + 116, t, kLabel, 9.5f, theme.ink2, ALIGN_LEFT | ALIGN_MIDDLE, 0.6f);
-        textAt(26, autoPanel.y + 134, "MIDI: C C# D D# E F F# G", kLabel, 9.5f, theme.ink2, ALIGN_LEFT | ALIGN_MIDDLE, 0.6f);
-        textAt(26, autoPanel.y + 152, "(ANY OCTAVE) HOLD MOVES", kLabel, 9.5f, theme.ink2, ALIGN_LEFT | ALIGN_MIDDLE, 0.6f);
+        textAt(autoPanel.r() - 12, autoPanel.y + 16, t, kLabel, 9.0f, theme.ink2, ALIGN_RIGHT | ALIGN_MIDDLE, 0.6f);
+        textAt(26, chanceDial->r.cy() - 9, "MIDI: C C# D D# E F F# G", kLabel, 9.5f, theme.ink2, ALIGN_LEFT | ALIGN_MIDDLE, 0.6f);
+        textAt(26, chanceDial->r.cy() + 9, "(ANY OCTAVE) HOLD MOVES", kLabel, 9.5f, theme.ink2, ALIGN_LEFT | ALIGN_MIDDLE, 0.6f);
     }
 
     void drawTimeline()
@@ -313,11 +319,11 @@ protected:
     void drawPattern()
     {
         strokeRect(patPanel, theme.dim, 1.0f);
-        caption(patPanel.x + 12, patPanel.y + 13, "PATTERN");
+        caption(patPanel.x + 12, patPanel.y + 16, "PATTERN");
         const Pattern& p = shown();
         char b[48]; std::snprintf(b, sizeof b, "%d STEPS", p.length);
-        textAt(619, 634, b, kLabel, 9.5f, theme.ink, ALIGN_CENTER | ALIGN_MIDDLE, 0.6f);
-        textAt(690, 634, "CLICK A CELL · DRAG RIGHT FOR LENGTH", kLabel, 8.5f, theme.ink2, ALIGN_LEFT | ALIGN_MIDDLE, 0.4f);
+        textAt((lenDown->r.r() + lenUp->r.x) * 0.5f, lenUp->r.cy(), b, kLabel, 9.5f, theme.ink, ALIGN_CENTER | ALIGN_MIDDLE, 0.6f);
+        textAt(lenUp->r.r() + 12, lenUp->r.cy(), "CLICK A CELL · DRAG RIGHT FOR LENGTH", kLabel, 8.5f, theme.ink2, ALIGN_LEFT | ALIGN_MIDDLE, 0.4f);
         const float cw = colW(p), rh = gridR.h / kNumMoves;
         const int now = plug ? plug->engine.patternStepNow() : -1;
         const Color hot = pump::mixColor(theme.neon, theme.ink, theme.dark ? 0.0f : 0.35f);
