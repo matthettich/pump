@@ -1,7 +1,9 @@
 // pump STUTTER: interface. TIMELINE (the last few seconds of output, coloured where a move played, named), eight
 // PADS (hold one to play its move; the small AUTO box in a pad lets the dice pick it), and NOW (the move playing,
 // its repeat count and progress, and the bar on the grid). Below: auto (trigger, interval, chance, length,
-// variation), repeats (grid, gate, pitch, decay, filter, tape stop time) and output (mix, output).
+// variation), repeats (grid, gate, pitch, decay, filter, tape stop time) and output (mix, output). PATTERN: the step
+// editor (a row per move, a column per step: click to place, drag right for the length; each step's transposition
+// and own grid underneath), which pattern, its step and length.
 #include "ui/PumpUI.hpp"
 #include "PluginStutter.hpp"
 
@@ -13,7 +15,7 @@ using pump::kNumNotes;
 
 class UIStutter : public PumpUI {
 public:
-    UIStutter() : PumpUI(params().data(), kNumParams, &presets(), pump::accents::stutter(), "STUTTER", 1000, 620, kBypass)
+    UIStutter() : PumpUI(params().data(), kNumParams, &presets(), pump::accents::stutter(), "STUTTER", 1000, 866, kBypass)
     {
         trigSeg = addSegmented(kTrigger, { "AUTO", "MANUAL" });
         trigSeg->tip = "Auto: the dice roll at every interval (pads and MIDI always work). Manual: only pads and MIDI";
@@ -49,7 +51,17 @@ public:
         outDial = addDial(kOutGain, "OUTPUT", Dial::Medium, true);
         outDial->tip = "Output gain";
 
-        if (auto* p = static_cast<PluginStutter*>(pluginPtr())) plug = p;
+        patOn = addToggle(kPatternOn, "PATTERN");
+        patOn->tip = "Play the pattern below (instead of the dice) while the song plays";
+        patMenu = addMenu(kPatternSel); patMenu->arrows = true;
+        patMenu->tip = "A factory pattern, or USER (yours: editing a factory one copies it to USER)";
+        stepMenu = addMenu(kPatStep); stepMenu->arrows = true;
+        stepMenu->tip = "The pattern's step";
+        lenDown = addButton("-", [this] { editPattern([](Pattern& q) { q.length = std::max(1, q.length - 1); }); });
+        lenUp = addButton("+", [this] { editPattern([](Pattern& q) { q.length = std::min(kMaxSteps, q.length + 1); }); });
+        clearB = addButton("CLEAR", [this] { editPattern([](Pattern& q) { for (Step& st : q.s) st = Step { -1, 1, 0, 0 }; }); });
+        lenDown->tip = lenUp->tip = "The pattern's length in steps";
+        if (auto* p = static_cast<PluginStutter*>(pluginPtr())) { plug = p; user = p->userPattern(); }
     }
     ~UIStutter() override { if (plug) plug->padHeld.store(-1); }
 
@@ -100,6 +112,13 @@ protected:
         filterDial->r = Rect(c0 + 3 * cw, y0 + 102, 56, Dial::heightFor(Dial::Small));
         tapeDial->r = Rect(c0 + 4 * cw, y0 + 102, 56, Dial::heightFor(Dial::Small));
 
+        patPanel = Rect(14, 600, 972, 240);
+        patOn->r = Rect(26, 622, 110, 24);
+        patMenu->r = Rect(148, 622, 210, 24);
+        stepMenu->r = Rect(370, 622, 110, 24);
+        lenDown->r = Rect(560, 622, 28, 24); lenUp->r = Rect(650, 622, 28, 24);
+        clearB->r = Rect(900, 622, 76, 24);
+        gridR = Rect(110, 656, 866, 8 * 16);
         outPanel = Rect(790, y0, 196, 192);
         mixDial->r = Rect(802, y0 + 98, 72, Dial::heightFor(Dial::Medium));
         outDial->r = Rect(902, y0 + 98, 72, Dial::heightFor(Dial::Medium));
@@ -148,6 +167,7 @@ protected:
         caption(repPanel.x + 12, repPanel.y + 16, "REPEATS");
         caption(gridMenu->r.x, gridMenu->r.y - 10, "GRID");
         caption(outPanel.x + 12, outPanel.y + 16, "OUTPUT");
+        drawPattern();
         // the auto summary, in words
         char t[96];
         std::snprintf(t, sizeof t, "%.0f%% EVERY %s, FOR %s", value(kChance), kNoteNames[pump::clampv((int)value(kInterval), 0, kNumNotes - 1)],
@@ -272,9 +292,130 @@ protected:
         if (!shown) textAt(r.x + 12, y, "NOTHING (PADS ONLY)", kLabel, 10.0f, theme.ink2, ALIGN_LEFT | ALIGN_MIDDLE, 0.8f);
     }
 
+    // ---- the pattern editor ----
+    const Pattern& shown() const { const int sel = (int)value(kPatternSel); return sel >= kUserPattern ? user : factoryPattern(sel); }
+    // an edit: a factory pattern is copied to USER first; the result is sent to the plugin as text
+    template <class F> void editPattern(F&& f)
+    {
+        const int sel = (int)value(kPatternSel);
+        if (sel < kUserPattern) { user = factoryPattern(sel); setParamGesture(kPatternSel, (float)kUserPattern); }
+        f(user);
+        setState("pattern", patternToText(user).c_str());
+    }
+    void onExtraState(const char* key, const char* value) override { if (std::strcmp(key, "pattern") == 0) user = patternFromText(value); }
+    float colW(const Pattern& p) const { return gridR.w / p.length; }
+    // which step a cell belongs to (the step whose move covers it), or -1
+    int owner(const Pattern& p, int col) const
+    {
+        for (int i = col; i >= 0; --i) if (p.s[i].move >= 0) return i + p.s[i].len > col ? i : -1;
+        return -1;
+    }
+    void drawPattern()
+    {
+        strokeRect(patPanel, theme.dim, 1.0f);
+        caption(patPanel.x + 12, patPanel.y + 13, "PATTERN");
+        const Pattern& p = shown();
+        char b[48]; std::snprintf(b, sizeof b, "%d STEPS", p.length);
+        textAt(619, 634, b, kLabel, 9.5f, theme.ink, ALIGN_CENTER | ALIGN_MIDDLE, 0.6f);
+        textAt(690, 634, "CLICK A CELL · DRAG RIGHT FOR LENGTH", kLabel, 8.5f, theme.ink2, ALIGN_LEFT | ALIGN_MIDDLE, 0.4f);
+        const float cw = colW(p), rh = gridR.h / kNumMoves;
+        const int now = plug ? plug->engine.patternStepNow() : -1;
+        const Color hot = pump::mixColor(theme.neon, theme.ink, theme.dark ? 0.0f : 0.35f);
+        for (int m = 0; m < kNumMoves; ++m) textAt(gridR.x - 8, gridR.y + rh * (m + 0.5f), kMoveKeys[m], kLabel, 8.5f, theme.ink2, ALIGN_RIGHT | ALIGN_MIDDLE, 0.5f);
+        for (int c = 0; c < p.length; ++c)
+        {
+            const float x = gridR.x + c * cw;
+            if (c == now && value(kPatternOn) >= 0.5f) fillRect(Rect(x, gridR.y, cw, gridR.h + 40), withAlpha2(theme.ink, 0.10f));
+            for (int m = 0; m < kNumMoves; ++m) strokeRect(Rect(x, gridR.y + m * rh, cw, rh), (c % 4 == 0) ? theme.dim : withAlpha2(theme.dim, 0.5f), 1.0f);
+        }
+        // the moves: a block from their step for their length
+        for (int c = 0; c < p.length; ++c)
+        {
+            const Step& st = p.s[c];
+            if (st.move < 0) continue;
+            const int len = std::min(st.len, p.length - c);
+            const Rect blk(gridR.x + c * cw + 1, gridR.y + st.move * rh + 1, len * cw - 2, rh - 2);
+            fillRect(blk, hot);
+            if (blk.w > 34) textAt(blk.x + 4, blk.cy(), kMoveKeys[st.move], kLabel, 8.0f, theme.neonInk, ALIGN_LEFT | ALIGN_MIDDLE, 0.4f);
+        }
+        // the rows under: each step's transposition and its own grid
+        const float ty = gridR.b() + 4, gy = gridR.b() + 22;
+        textAt(gridR.x - 8, ty + 8, "TRANSP", kLabel, 8.0f, theme.ink2, ALIGN_RIGHT | ALIGN_MIDDLE, 0.5f);
+        textAt(gridR.x - 8, gy + 8, "GRID", kLabel, 8.0f, theme.ink2, ALIGN_RIGHT | ALIGN_MIDDLE, 0.5f);
+        for (int c = 0; c < p.length; ++c)
+        {
+            const Step& st = p.s[c];
+            const float x = gridR.x + c * cw;
+            strokeRect(Rect(x, ty, cw, 16), theme.dim, 1.0f); strokeRect(Rect(x, gy, cw, 16), theme.dim, 1.0f);
+            if (st.move < 0) continue;
+            char t[12];
+            if (st.transpose) { std::snprintf(t, sizeof t, "%+d", st.transpose); textAt(x + cw * 0.5f, ty + 8, t, kMono, 8.5f, theme.ink, ALIGN_CENTER | ALIGN_MIDDLE); }
+            textAt(x + cw * 0.5f, gy + 8, st.grid ? kNoteNames[pump::clampv(st.grid - 1, 0, kNumNotes - 1)] : "-", kMono, 8.0f, st.grid ? theme.ink : theme.ink2, ALIGN_CENTER | ALIGN_MIDDLE);
+        }
+    }
+    bool patternDown(float x, float y, int button)
+    {
+        const Pattern& p = shown();
+        const float cw = colW(p), rh = gridR.h / kNumMoves;
+        const int c = (int)((x - gridR.x) / cw);
+        if (x < gridR.x || c < 0 || c >= p.length) return false;
+        const float ty = gridR.b() + 4, gy = gridR.b() + 22;
+        if (gridR.contains(x, y))
+        {
+            const int m = pump::clampv((int)((y - gridR.y) / rh), 0, kNumMoves - 1);
+            const int o = owner(p, c);
+            if (button == kMouseButtonRight) { if (o >= 0) editPattern([o](Pattern& q) { q.s[o].move = -1; }); return true; }
+            if (o >= 0 && p.s[o].move == m)
+            {
+                // on its own block: a click on its first step clears it; anywhere: drag right to set the length
+                dragStep = o; dragMoved = false; clearOnUp = o == c && p.s[o].len == 1;
+                return true;
+            }
+            editPattern([c, m](Pattern& q) { q.s[c].move = m; q.s[c].len = 1; });
+            dragStep = c; dragMoved = false; clearOnUp = false;
+            return true;
+        }
+        if (y >= ty && y < ty + 16 && p.s[c].move >= 0)
+        {
+            if (button == kMouseButtonRight) { editPattern([c](Pattern& q) { q.s[c].transpose = 0; }); return true; }
+            trStep = c; trY = y; trStart = p.s[c].transpose; return true;
+        }
+        if (y >= gy && y < gy + 16 && p.s[c].move >= 0)
+        {
+            // cycle the step's own grid: the GRID control's, 1/32, 1/16, 1/8, 1/4
+            static const int cyc[5] = { 0, pump::kNote32 + 1, pump::kNote16 + 1, pump::kNote8 + 1, pump::kNote4 + 1 };
+            int k = 0; for (int i = 0; i < 5; ++i) if (cyc[i] == p.s[c].grid) k = i;
+            const int nx = cyc[(k + (button == kMouseButtonRight ? 4 : 1)) % 5];
+            editPattern([c, nx](Pattern& q) { q.s[c].grid = nx; });
+            return true;
+        }
+        return false;
+    }
+    void patternDrag(float x, float y)
+    {
+        const Pattern& p = shown();
+        if (dragStep >= 0)
+        {
+            const int c = pump::clampv((int)((x - gridR.x) / colW(p)), 0, p.length - 1);
+            const int len = std::max(1, c - dragStep + 1);
+            if (len != p.s[dragStep].len) { dragMoved = true; const int d = dragStep; editPattern([d, len](Pattern& q) { q.s[d].len = len; }); }
+        }
+        if (trStep >= 0)
+        {
+            const int v = pump::clampv(trStart + (int)std::lround((trY - y) / 8.0f), -24, 24);
+            if (v != p.s[trStep].transpose) { const int d = trStep; editPattern([d, v](Pattern& q) { q.s[d].transpose = v; }); }
+        }
+    }
+    void patternUp()
+    {
+        if (dragStep >= 0 && clearOnUp && !dragMoved) { const int d = dragStep; editPattern([d](Pattern& q) { q.s[d].move = -1; }); }
+        dragStep = trStep = -1;
+    }
+
     // ---- pads: hold to play; the AUTO box toggles that move for auto ----
     bool bodyMouseDown(float x, float y, int button, uint, bool) override
     {
+        if (patPanel.contains(x, y) && patternDown(x, y, button)) return true;
         if (button != kMouseButtonLeft) return false;
         for (int m = 0; m < kNumMoves; ++m)
         {
@@ -283,7 +424,8 @@ protected:
         }
         return false;
     }
-    void bodyMouseUp(float, float) override { release(); }
+    void bodyMouseUp(float, float) override { release(); patternUp(); }
+    void bodyMouseDrag(float x, float y, uint) override { patternDrag(x, y); }
     void press(int m) { padDown = m; if (plug) plug->padHeld.store(m); setStatus(std::string(kMoveNames[m]) + " (held)"); }
     void release() { padDown = -1; keyDown = -1; if (plug) plug->padHeld.store(-1); }
     void bodyHover(float x, float y) override
@@ -295,6 +437,9 @@ protected:
         }
         if (timeR.contains(x, y)) setStatus("Timeline: the last seconds of output; shaded where a move played");
         else if (nowR.contains(x, y)) setStatus("Now: the move playing, its repeat, and the bar on the grid (thick lines = where auto rolls the dice)");
+        else if (gridR.contains(x, y)) setStatus("Click a cell: that move starts on that step (click it again to clear; right-click clears). Drag right: how many steps it lasts");
+        else if (patPanel.contains(x, y) && y > gridR.b() && y < gridR.b() + 20) setStatus("The step's transposition: drag up or down (right-click: 0). Repeat and roll start transposing from their second repeat");
+        else if (patPanel.contains(x, y) && y > gridR.b() + 20) setStatus("The step's own grid: click to cycle (-: the GRID control's)");
     }
     bool keyPress(uint key, uint mod) override
     {
@@ -313,11 +458,13 @@ protected:
             { "Hold a pad, or keys 1 - 8", "play that move while held" },
             { "MIDI C C# D D# E F F# G", "the same eight moves, any octave" },
             { "AUTO box on a pad", "let the dice pick that move" },
+            { "PATTERN", "click cells to place moves, drag right for their length" },
         };
     }
     std::string footerInfo() override
     {
-        std::string s = value(kTrigger) >= 0.5f ? "MANUAL" : "AUTO";
+        std::string s = value(kPatternOn) >= 0.5f ? std::string("PATTERN ") + kPatternNames[pump::clampv((int)value(kPatternSel), 0, kUserPattern)] : (value(kTrigger) >= 0.5f ? "MANUAL" : "AUTO");
+        for (char& c : s) c = (char)std::toupper((unsigned char)c);
         s += std::string("   GRID ") + kNoteNames[pump::clampv((int)value(kGrid), 0, kNumNotes - 1)];
         s += moveShow >= 0 ? std::string("   ") + kMoveKeys[moveShow] : std::string("   LIVE");
         return s;
@@ -326,7 +473,13 @@ protected:
 private:
     static constexpr int kStrip = 3000;
     PluginStutter* plug = nullptr;
-    Rect timeR, padsR, nowR, meterL, meterR, autoPanel, repPanel, outPanel;
+    Rect timeR, padsR, nowR, meterL, meterR, autoPanel, repPanel, outPanel, patPanel, gridR;
+    Button *patOn, *lenDown, *lenUp, *clearB;
+    MenuButton *patMenu, *stepMenu;
+    Pattern user;
+    int dragStep = -1, trStep = -1, trStart = 0;
+    float trY = 0.0f;
+    bool dragMoved = false, clearOnUp = false;
     Rect pad[kNumMoves], useBox[kNumMoves];
     float lvl[2] = { -120.0f, -120.0f }, hold[2] = { -120.0f, -120.0f }, holdT[2] = { 0.0f, 0.0f };
     float strip[kStrip] = {}, stripMove[kStrip] = {}, flash[kNumMoves] = {};

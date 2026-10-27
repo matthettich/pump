@@ -3,6 +3,10 @@
 
 #include "PumpParams.hpp"
 #include "dsp/Tempo.hpp"
+#include <array>
+#include <cstdlib>
+#include <cstring>
+#include <string>
 #include <vector>
 
 namespace pump { namespace stutter {
@@ -12,7 +16,8 @@ enum Param : int {
     kTrigger = 0, kInterval, kChance, kLength, kGrid, kGate, kPitch, kDecay, kFilter, kVariation, kTape,
     kMix, kOutGain, kBypass,
     kUse0,   // eight "use in auto" switches, one per move (kUse0 + move)
-    kNumParams = kUse0 + 8
+    kPatternOn = kUse0 + 8, kPatternSel, kPatStep,   // the pattern (added 2026-10-26)
+    kNumParams
 };
 
 // The moves. Each plays from the buffer that records the input all the time.
@@ -30,6 +35,63 @@ static const char* const kMoveKeys[] = { "REPEAT", "ROLL", "REVERSE", "TAPE STOP
 static const char* const kMoveSymbols[] = { "use_repeat", "use_roll", "use_reverse", "use_tape", "use_half", "use_shuffle", "use_gate", "use_glitch" };
 enum Trigger : int { kAuto = 0, kManual, kNumTriggers };
 static const char* const kTriggerNames[] = { "Auto", "Manual" };
+
+// ---- patterns ----------------------------------------------------------------------------------------------------
+// A pattern is up to 32 steps on its own grid (STEP: a 16th by default). A step can start a move (or not); the move
+// lasts LEN steps (the steps it covers start nothing), repeats its own GRID slice (0 = the GRID control's) and is
+// TRANSPOSED (semitones: from the second repeat on for repeat and roll, which play the live slice first; all of it for
+// the others). Twelve factory patterns, and USER: the one you draw (kept with the session as text).
+constexpr int kMaxSteps = 32;
+struct Step { int move = -1, len = 1, grid = 0, transpose = 0; };   // grid: 0 = the GRID control, else a NoteIndex + 1
+struct Pattern { int length = 16; Step s[kMaxSteps]; };
+constexpr int kNumFactoryPatterns = 12, kUserPattern = kNumFactoryPatterns;
+static const char* const kPatternNames[kNumFactoryPatterns + 1] = { "Empty", "Build-up", "End-of-bar roll", "3-3-2 stutter", "Reverse offbeats", "Half-time back half",
+    "Tape stop drop", "Glitch funk", "Melodic repeats", "Gate the bar", "Shuffle chop", "Fill", "User" };
+inline const Pattern& factoryPattern(int i)
+{
+    static const std::array<Pattern, kNumFactoryPatterns> P = [] {
+        std::array<Pattern, kNumFactoryPatterns> p;
+        for (Pattern& q : p) { q.length = 16; for (Step& st : q.s) st = Step { -1, 1, 0, 0 }; }   // (set out: brace-initialising the array zeroed some steps)
+        auto put = [](Pattern& q, int at, int move, int len, int grid = 0, int tr = 0) { q.s[at].move = move; q.s[at].len = len; q.s[at].grid = grid; q.s[at].transpose = tr; };
+        const int g8 = kNote8 + 1, g16 = kNote16 + 1, g32 = kNote32 + 1;
+        put(p[1], 0, kRepeat, 4, g8); put(p[1], 4, kRepeat, 4, g16); put(p[1], 8, kRepeat, 4, g32); put(p[1], 12, kRoll, 4, g16);
+        put(p[2], 12, kRoll, 4, g8);
+        put(p[3], 0, kRepeat, 3, g16); put(p[3], 3, kRepeat, 3, g16); put(p[3], 6, kRepeat, 2, g16);
+        for (int k = 2; k < 16; k += 4) put(p[4], k, kReverse, 2);
+        put(p[5], 8, kHalf, 8);
+        put(p[6], 12, kTapeStop, 4);
+        put(p[7], 1, kGlitch, 1, g32); put(p[7], 3, kGlitch, 1, g32); put(p[7], 6, kGlitch, 2, g16); put(p[7], 11, kGlitch, 1, g32); put(p[7], 14, kGlitch, 2, g16);
+        put(p[8], 0, kRepeat, 4, g16, 0); put(p[8], 4, kRepeat, 4, g16, 3); put(p[8], 8, kRepeat, 4, g16, 7); put(p[8], 12, kRepeat, 4, g16, 12);
+        put(p[9], 0, kGateMove, 16, g16);
+        put(p[10], 0, kShuffle, 16, g8);
+        put(p[11], 8, kRepeat, 2, g8); put(p[11], 10, kRepeat, 2, g16); put(p[11], 12, kRoll, 2, g16); put(p[11], 14, kGlitch, 2, g32);
+        return p;
+    }();
+    return P[(size_t)clampv(i, 0, kNumFactoryPatterns - 1)];
+}
+// the text a pattern is kept as: "length;move,len,grid,transpose;..." (32 steps)
+inline std::string patternToText(const Pattern& p)
+{
+    std::string t = std::to_string(p.length);
+    for (int i = 0; i < kMaxSteps; ++i) { const Step& s = p.s[i]; t += ";" + std::to_string(s.move) + "," + std::to_string(s.len) + "," + std::to_string(s.grid) + "," + std::to_string(s.transpose); }
+    return t;
+}
+inline Pattern patternFromText(const char* t)
+{
+    Pattern p;
+    if (!t || !*t) return p;
+    p.length = clampv(std::atoi(t), 1, kMaxSteps);
+    const char* c = std::strchr(t, ';');
+    for (int i = 0; i < kMaxSteps && c; ++i)
+    {
+        ++c;
+        int v[4] = { -1, 1, 0, 0 };
+        for (int k = 0; k < 4; ++k) { v[k] = std::atoi(c); while (*c && *c != ',' && *c != ';') ++c; if (*c == ',') ++c; else break; }
+        p.s[i].move = clampv(v[0], -1, kNumMoves - 1); p.s[i].len = clampv(v[1], 1, kMaxSteps); p.s[i].grid = clampv(v[2], 0, kNumNotes); p.s[i].transpose = clampv(v[3], -24, 24);
+        c = std::strchr(c, ';');
+    }
+    return p;
+}
 
 inline const std::vector<ParamSpec>& params()
 {
@@ -52,6 +114,9 @@ inline const std::vector<ParamSpec>& params()
     v.push_back({ "bypass", "Bypass", "Bypass", 0, 1, 0, PUnit::None, PScale::Linear, A | kPBoolean | kPBypass, nullptr, 1 });
     for (int m = 0; m < kNumMoves; ++m)
         v.push_back({ kMoveSymbols[m], kMoveNames[m], kMoveKeys[m], 0, 1, m <= kTapeStop ? 1.0f : 0.0f, PUnit::None, PScale::Linear, A | kPBoolean, nullptr, 1 });
+    v.push_back({ "pattern_on", "Pattern", "Pattern", 0, 1, 0, PUnit::None, PScale::Linear, A | kPBoolean, nullptr, 1 });
+    v.push_back({ "pattern", "Pattern Select", "Pattern", 0, kUserPattern, 1, PUnit::None, PScale::Linear, A | kPInteger, kPatternNames, 1 });
+    v.push_back({ "pattern_step", "Pattern Step", "Step", 0, kNumNotes - 1, kNote16, PUnit::None, PScale::Linear, A | kPInteger, kNoteNames, 1 });
     return v;
 }
 
@@ -97,6 +162,18 @@ inline const std::vector<Preset>& presets()
     C("Broken CD", { 7, 0 }, { { "grid", kNote32 }, { "variation", 90 }, { "chance", 70 }, { "length", kNote8 }, { "interval", kNote4 } });
     C("Chopped and slowed", { 4, 3, 6 }, { { "grid", kNote8T }, { "gate", 55 }, { "chance", 45 }, { "variation", 35 } });
     C("Total chaos", { 0, 1, 2, 3, 4, 5, 6, 7 }, { { "interval", kNote4 }, { "chance", 70 }, { "variation", 100 }, { "length", kNote8 } });
+    auto P = [&](const char* n, int pat, std::vector<PresetValue> p) { p.push_back({ "pattern_on", 1.0f }); p.push_back({ "pattern", (float)pat }); v.push_back({ n, uses({}, std::move(p)), "PATTERNS" }); };
+    P("Pattern: build-up", 1, {});
+    P("Pattern: bar-end roll", 2, {});
+    P("Pattern: 3-3-2", 3, {});
+    P("Pattern: reverse offbeats", 4, {});
+    P("Pattern: half-time back half", 5, {});
+    P("Pattern: tape stop drop", 6, {});
+    P("Pattern: glitch funk", 7, {});
+    P("Pattern: melodic repeats", 8, { { "decay", 10 } });
+    P("Pattern: gate the bar", 9, { { "gate", 50 } });
+    P("Pattern: shuffle chop", 10, {});
+    P("Pattern: fill", 11, { { "filter", -25 } });
     return v;
 }
 

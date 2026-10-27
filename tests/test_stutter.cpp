@@ -2,6 +2,7 @@
 // a held reverse plays the past backwards; gate silences the closed part of each step; half speed halves the pitch;
 // a tape stop runs down to silence; auto moves start exactly on the interval grid of the song position, at about
 // the chance asked for; renders repeat; random settings, held moves and block sizes stay finite and bounded.
+// patterns start their moves on their steps (with a step's own grid and transposition) and survive being saved as text.
 // 44.1, 48 and 96 kHz. Also prints CPU per second of audio.
 #include "TestMix.hpp"
 #include "../plugins/stutter/StutterEngine.hpp"
@@ -192,6 +193,49 @@ int main()
                 }
             }
             CHECK(finite && peak < 4.0, "random settings, held moves, tempos and block sizes: finite, peak %.2f", peak);
+        }
+        // ---- patterns: moves start on their steps, for their lengths; a transposed step; the text round trip
+        {
+            Pattern p; p.length = 8;
+            p.s[2].move = kRepeat; p.s[2].len = 2; p.s[2].grid = kNote16 + 1;
+            p.s[6].move = kReverse; p.s[6].len = 1;
+            Settings st = manual(); st.patternOn = true; st.patternSel = kUserPattern; st.patStep = kNote16;
+            Engine e; e.setSettings(st); e.prepare(sr, 512); e.setUserPattern(p);
+            const double stepS = noteQuarters(kNote16) / qps;
+            std::vector<float> L = L0, R = R0;
+            bool right = true; int seenRep = 0, seenRev = 0;
+            for (int i = 0; i + 64 <= n; i += 64)
+            {
+                Transport t; t.bpm = 120; t.ppq = i * qps; t.playing = true; t.valid = true;
+                e.setTransport(t);
+                e.process(L.data() + i, R.data() + i, 64);
+                const double stp = std::fmod((i + 64) / stepS, 8.0);
+                const int m = e.moveNow();
+                // well inside a step (away from the fades): what should be playing
+                const double frac = stp - std::floor(stp);
+                if (frac < 0.15 || frac > 0.85) continue;
+                const int k = (int)stp;
+                const int want = (k == 2 || k == 3) ? kRepeat : (k == 6 ? kReverse : -1);
+                if (m != want) right = false;
+                seenRep += m == kRepeat; seenRev += m == kReverse;
+            }
+            CHECK(right && seenRep > 0 && seenRev > 0, "a pattern: the repeat plays on steps 3-4, the reverse on step 7, nothing elsewhere");
+            // a transposed repeat: an octave up from the second repeat
+            std::vector<float> S((size_t)n), T((size_t)n);
+            for (int i = 0; i < n; ++i) S[(size_t)i] = T[(size_t)i] = (float)(0.5 * std::sin(kTwoPi * 220.0 * i / sr));
+            Pattern q; q.length = 16; q.s[0].move = kRepeat; q.s[0].len = 8; q.s[0].grid = kNote16 + 1; q.s[0].transpose = 12;
+            Engine e2; e2.setSettings(st); e2.prepare(sr, 512); e2.setUserPattern(q);
+            for (int i = 0; i + 64 <= n; i += 64) { Transport t; t.bpm = 120; t.ppq = i * qps; t.playing = true; t.valid = true; e2.setTransport(t); e2.process(S.data() + i, T.data() + i, 64); }
+            // the third repeat (well inside): its zero crossings
+            const int a0 = (int)(2.2 * stepS), a1 = (int)(2.8 * stepS);
+            int zc = 0; for (int i = a0 + 1; i < a1; ++i) zc += (S[(size_t)i - 1] <= 0.0f && S[(size_t)i] > 0.0f);
+            const double f = zc / ((a1 - a0) / sr);
+            CHECK(std::fabs(f - 440.0) < 40.0, "a step transposed +12: its later repeats play at about %.0f Hz (a 220 Hz input)", f);
+            Pattern r = factoryPattern(8); r.length = 13; r.s[12].move = kGlitch; r.s[12].len = 3; r.s[12].grid = 4; r.s[12].transpose = -5;
+            const Pattern back = patternFromText(patternToText(r).c_str());
+            bool same = back.length == r.length;
+            for (int i = 0; i < kMaxSteps; ++i) same = same && back.s[i].move == r.s[i].move && back.s[i].len == r.s[i].len && back.s[i].grid == r.s[i].grid && back.s[i].transpose == r.s[i].transpose;
+            CHECK(same, "a pattern survives being saved as text");
         }
         // ---- CPU (glitch with full variation, the busiest)
         {

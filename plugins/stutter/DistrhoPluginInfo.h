@@ -25,7 +25,7 @@
 #define DISTRHO_UI_USE_NANOVG          1
 #define DISTRHO_UI_USER_RESIZABLE      1
 #define DISTRHO_UI_DEFAULT_WIDTH       1000
-#define DISTRHO_UI_DEFAULT_HEIGHT      620
+#define DISTRHO_UI_DEFAULT_HEIGHT      866
 
 #define DISTRHO_PLUGIN_VST3_CATEGORIES "Fx|Delay"
 #define DISTRHO_PLUGIN_CLAP_FEATURES   "audio-effect", "glitch", "delay", "stereo"

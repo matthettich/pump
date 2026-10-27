@@ -64,8 +64,8 @@ Instruments (MIDI in, stereo out):
 - Asked for on 2026-10-26 (after those):
   - **A multi-engine drum synth** — done (2026-10-26) as **STRIKE**, the engines pump's drum machines lacked: modal,
     waveguide, analog bridged-T circuit, three-operator FM, west-coast fold and gate, additive cymbals, chaos.
-  - **STUTTER pattern editor**: program and edit the retrigger patterns (steps, lengths, moves per step) instead of only
-    the dice and pads.
+  - **STUTTER pattern editor** — done (2026-10-26): PATTERN mode, a step grid of moves with lengths, per-step slice and
+    transposition, twelve factory patterns plus a user one saved with the session.
   - **A live-stream chopper** (grid-chopping a live input): the input is always streaming into a buffer; 8 slice / retrigger
     pads cut and replay the live stream, loop a section of it and manipulate it; per retrigger options such as
     pitch change and specific effects; each of the 8 retriggers MIDI-mappable to a note or a key, as a momentary switch.

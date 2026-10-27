@@ -6,6 +6,8 @@
 //            when it doesn't send one), with CHANCE, picking one of the moves switched on for auto; it lasts LENGTH
 //   held     MIDI notes (C, C#, D ... G of any octave = the eight moves) and the pads in the window: the move
 //            starts at once and lasts while held (the last one pressed wins); held moves override auto
+//   pattern  (PATTERN on, instead of auto) the pattern's steps on their own grid: a step with a move starts it for
+//            its length in steps, with its own slice and transposition
 // Every move starts where it is triggered (its slice is recorded as it plays), so nothing needs latency. GRID is
 // the slice. Each repeat of a slice gets a 1 ms fade at its ends (no clicks at the loop points), its own pitch
 // (PITCH semitones per repeat), level (DECAY per repeat) and filter (FILTER per repeat: down = a low-pass closing,
@@ -24,6 +26,7 @@ struct Settings {
     double chance = 35.0, gate = 100.0, pitch = 0.0, decay = 0.0, filter = 0.0, variation = 0.0, tape = 100.0;
     double mix = 100.0, outDb = 0.0;
     bool use[kNumMoves] = { true, true, true, true, false, false, false, false };
+    bool patternOn = false; int patternSel = 1, patStep = kNote16;
 };
 
 class Engine {
@@ -43,12 +46,16 @@ public:
         ev = Event(); env = 0.0;
         offL = offR = lastL = lastR = 0.0; declick = false;
         offK = std::exp(-1.0 / (0.0007 * sr));
-        pos = 0.0; lastStep = -1; heldMove = -1;
+        pos = 0.0; lastStep = -1; lastPatStep = -1; heldMove = -1;
         rng.seed(0x5EEDu);
         for (auto& f : filt) f.reset();
         decim = 0; peakAcc = 0.0f;
     }
     void setSettings(const Settings& s) { set = s; }
+    // the USER pattern (the factory ones are built in)
+    void setUserPattern(const Pattern& p) { user = p; }
+    const Pattern& pattern() const { return set.patternSel >= kUserPattern ? user : factoryPattern(set.patternSel); }
+    int patternStepNow() const { return patFeed.load(std::memory_order_relaxed); }   // -1: not running
     void setTransport(const Transport& t)
     {
         tr = t;
@@ -74,7 +81,11 @@ public:
         const double qps = clampv(tr.bpm, 20.0, 999.0) / 60.0 / sr;   // quarter notes per sample
         const double intervalQ = noteQuarters(set.interval), barQ = tr.barQuarters > 0.0 ? tr.barQuarters : 4.0;
         // auto runs while the host plays (locked to its position), or on a free clock when the host sends no position
-        const bool autoOn = set.trigger == kAuto && (locked || !tr.valid);
+        const bool patOn = set.patternOn && (locked || !tr.valid);
+        const bool autoOn = !patOn && set.trigger == kAuto && (locked || !tr.valid);
+        const Pattern& pat = pattern();
+        const double patQ = noteQuarters(set.patStep);
+        int patNow = -1;
         bool anyUse = false; for (bool u : set.use) anyUse = anyUse || u;
         mixS.setTarget(set.mix * 0.01);
         outS.setTarget(dbToGain(set.outDb));
@@ -91,6 +102,21 @@ public:
             const long long step = (long long)std::floor(steps);
             const bool boundary = step != lastStep && steps - (double)step < 2.0 * qps / intervalQ;
             lastStep = step;
+            // the pattern's step: a move starts where a step has one (and not while a held move plays)
+            if (patOn)
+            {
+                const double ps = pos / patQ + 1e-9;
+                const long long pk = (long long)std::floor(ps);
+                const bool pb = pk != lastPatStep && ps - (double)pk < 2.0 * qps / patQ;
+                lastPatStep = pk;
+                const int idx = (int)(((pk % pat.length) + pat.length) % pat.length);
+                patNow = idx;
+                if (pb && heldMove < 0)
+                {
+                    const Step& st = pat.s[idx];
+                    if (st.move >= 0) start(st.move, false, st.len * patQ / qps, st.grid - 1, st.transpose);
+                }
+            }
             if (heldMove >= 0)
             {
                 if (!ev.active || !ev.held || ev.ending || ev.move != heldMove) start(heldMove, true, 0.0);
@@ -142,6 +168,7 @@ public:
         repFeed.store(ev.active ? ev.k : 0, std::memory_order_relaxed);
         progFeed.store(ev.active ? (float)(ev.lengthS > 0.0 ? std::min(1.0, ev.elapsed / ev.lengthS) : std::min(1.0, ev.elapsed / (4.0 * sr))) : 0.0f, std::memory_order_relaxed);
         barFeed.store((float)(pos / barQ - std::floor(pos / barQ)), std::memory_order_relaxed);
+        patFeed.store(patNow, std::memory_order_relaxed);
     }
 
 private:
@@ -157,16 +184,18 @@ private:
         double glitchRatio = 1.0;
         bool glitchRev = false;
         double nextChange = 0.0, wild = 0.0;
+        double trRatio = 1.0;       // a pattern step's transposition, as a rate
     };
 
-    void start(int move, bool held, double lengthS)
+    void start(int move, bool held, double lengthS, int gridOverride = -1, int transpose = 0)
     {
         const double qps = clampv(tr.bpm, 20.0, 999.0) / 60.0 / sr;
         const double var = held ? 0.0 : set.variation * 0.01;
         Event e;
         e.active = true; e.held = held; e.move = move;
         e.t0 = written; e.elapsed = 0.0; e.lengthS = lengthS;
-        double slice = noteQuarters(set.grid) / qps;
+        e.trRatio = std::exp2(clampv(transpose, -24, 24) / 12.0);
+        double slice = noteQuarters(gridOverride >= 0 ? gridOverride : set.grid) / qps;
         if (var > 0.0 && rng.uni() < var) slice *= rng.uni() < 0.5 ? 0.5 : 2.0;
         e.sliceS = clampv(slice, 0.004 * sr, 4.0 * sr);
         e.pitchStep = set.pitch;
@@ -243,7 +272,7 @@ private:
             else e.k = (int)std::floor(e.elapsed / e.sliceS);
             const double len = e.move == kRoll ? e.segLen : e.sliceS;
             const double j = e.move == kRoll ? e.elapsed - e.segStart : e.elapsed - e.k * e.sliceS;
-            const double ratio = std::exp2(e.k * e.pitchStep / 12.0);
+            const double ratio = std::exp2(e.k * e.pitchStep / 12.0) * (e.k >= 1 ? e.trRatio : 1.0);
             double src = std::fmod(j * ratio, len);
             if (e.reverse && e.k >= 1) src = len - 1.0 - src;
             double l, r;
@@ -260,7 +289,7 @@ private:
         {
             // what came before the move, backwards
             double l, r;
-            readAt((double)e.t0 - 1.0 - e.elapsed, l, r);
+            readAt((double)e.t0 - 1.0 - e.elapsed * e.trRatio, l, r);
             wl = l; wr = r;
             break;
         }
@@ -278,7 +307,7 @@ private:
         }
         case kHalf:
         {
-            e.readPos += 0.5;
+            e.readPos += 0.5 * e.trRatio;
             double l, r;
             readAt(e.readPos, l, r);
             wl = l; wr = r;
@@ -299,7 +328,8 @@ private:
                 e.glitchRev = e.reverse && rng.uni() < 0.5;
             }
             double l, r;
-            readAt(e.segStart + (e.glitchRev ? e.sliceS - 1.0 - j : j), l, r);
+            const double jj = std::fmod(j * e.trRatio, e.sliceS);
+            readAt(e.segStart + (e.glitchRev ? e.sliceS - 1.0 - jj : jj), l, r);
             const double g = edges(j, e.sliceS) * (gateF < 1.0 ? (j < gateF * e.sliceS ? std::min(1.0, (gateF * e.sliceS - j) / edge) : 0.0) : 1.0);
             wl = l * g; wr = r * g;
             break;
@@ -327,7 +357,7 @@ private:
                 e.readPos = 0.0;
             }
             const double j = std::fmod(e.readPos, e.segLen);
-            e.readPos += e.glitchRatio;
+            e.readPos += e.glitchRatio * e.trRatio;
             double l, r;
             readAt(e.segStart + (e.glitchRev ? e.segLen - 1.0 - j : j), l, r);
             const double g = edges(j, e.segLen);
@@ -342,7 +372,8 @@ private:
     Transport tr;
     bool locked = false;
     double pos = 0.0;
-    long long lastStep = -1, written = 0;
+    long long lastStep = -1, written = 0, lastPatStep = -1;
+    Pattern user;
     int mask = 0, fade = 144, edge = 48, heldMove = -1;
     unsigned ctl = 0;
     std::vector<float> buf[2];
@@ -354,7 +385,7 @@ private:
     LinearSmoother mixS, outS;
     int decim = 0;
     float peakAcc = 0.0f;
-    std::atomic<int> moveFeed { -1 }, repFeed { 0 };
+    std::atomic<int> moveFeed { -1 }, repFeed { 0 }, patFeed { -1 };
     std::atomic<bool> heldFeed { false };
     std::atomic<float> progFeed { 0.0f }, barFeed { 0.0f };
 };

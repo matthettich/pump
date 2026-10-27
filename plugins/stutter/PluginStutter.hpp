@@ -4,6 +4,7 @@
 #include "StutterParams.hpp"
 #include "StutterEngine.hpp"
 #include "dsp/Bypass.hpp"
+#include <mutex>
 
 START_NAMESPACE_DISTRHO
 
@@ -11,7 +12,7 @@ using namespace pump::stutter;
 
 class PluginStutter : public PumpPlugin {
 public:
-    PluginStutter() : PumpPlugin(params().data(), kNumParams, &presets())
+    PluginStutter() : PumpPlugin(params().data(), kNumParams, &presets(), 1)
     {
         sync();
         engine.prepare(getSampleRate(), (int)getBufferSize());
@@ -24,10 +25,30 @@ public:
     // the pad the window holds (-1 = none); a momentary state, never a parameter (not saved, not automated)
     std::atomic<int> padHeld { -1 };
     int latencyNow() const { return 0; }
+    // the USER pattern as the window last set it (the window edits a copy and sends it back as text)
+    Pattern userPattern() const { std::lock_guard<std::mutex> g(patLock); return userPat; }
 
 protected:
     const char* getLabel() const override { return "pump_stutter"; }
     const char* getDescription() const override { return PUMP_PLUGIN_ABOUT; }
+
+    void initState(uint32_t index, State& state) override
+    {
+        if (index < kPumpNumStates) { PumpPlugin::initState(index, state); return; }
+        state.key = "pattern"; state.label = "User Pattern"; state.defaultValue = ""; state.hints = 0;
+    }
+    void setState(const char* key, const char* value) override
+    {
+        if (std::strcmp(key, "pattern") != 0) { PumpPlugin::setState(key, value); return; }
+        const Pattern p = patternFromText(value);
+        std::lock_guard<std::mutex> g(patLock);
+        userPat = p; patText = value ? value : ""; patDirty = true;
+    }
+    String getState(const char* key) const override
+    {
+        if (std::strcmp(key, "pattern") == 0) { std::lock_guard<std::mutex> g(patLock); return String(patText.c_str()); }
+        return PumpPlugin::getState(key);
+    }
 
     void activate() override
     {
@@ -55,6 +76,7 @@ protected:
         s.mix = pv(kMix);
         s.outDb = pv(kOutGain);
         for (int m = 0; m < kNumMoves; ++m) s.use[m] = pv((uint32_t)(kUse0 + m)) >= 0.5f;
+        s.patternOn = pv(kPatternOn) >= 0.5f; s.patternSel = (int)pv(kPatternSel); s.patStep = (int)pv(kPatStep);
         engine.setSettings(s);
     }
 
@@ -94,6 +116,8 @@ protected:
             sync();
         }
         engine.setTransport(transport());
+        // a new USER pattern from the window (never wait for it on the audio thread)
+        if (patDirty.load(std::memory_order_acquire)) { std::unique_lock<std::mutex> g(patLock, std::try_to_lock); if (g.owns_lock()) { engine.setUserPattern(userPat); patDirty = false; } }
         float* L = outputs[0];
         float* R = outputs[1];
         if (L != inputs[0]) std::memcpy(L, inputs[0], sizeof(float) * frames);
@@ -126,6 +150,10 @@ protected:
 private:
     pump::BypassMixer bypass;
     int held[16] = {}, nHeld = 0;
+    Pattern userPat;
+    std::string patText;
+    std::atomic<bool> patDirty { false };
+    mutable std::mutex patLock;
 
     DISTRHO_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PluginStutter)
 };
