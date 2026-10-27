@@ -12,9 +12,9 @@ using namespace pump::orbit;
 
 class UIOrbit : public PumpUI {
 public:
-    UIOrbit() : PumpUI(params().data(), kNumParams, &presets(), pump::accents::orbit(), "ORBIT", 1000, 780, -1)
+    UIOrbit() : PumpUI(params().data(), kNumParams, &presets(), pump::accents::orbit(), "ORBIT", 1000, 744, -1)
     {
-        auto dial = [&](int p, const char* l, bool bi = false, const char* tip = nullptr) { Dial* d = addDial(p, l, Dial::Small, bi); if (tip) d->tip = tip; return d; };
+        auto dial = [&](int p, const char* l, bool bi = false, const char* tip = nullptr) { Dial* d = addDial(p, l, Dial::Medium, bi); if (tip) d->tip = tip; return d; };
         sysSeg = addSegmented(kSystem, { kSystemKeys, kSystemKeys + kNumSystems });
         sysSeg->tip = "The chaotic system each voice runs";
         chaosD = dial(kChaos, "CHAOS", false, "From a clean periodic orbit (0) through period doubling into chaos (100)");
@@ -51,29 +51,32 @@ protected:
 
     void layout() override
     {
-        const float top = 58, hs = Dial::heightFor(Dial::Small);
-        orbitR = Rect(14, top, 620, 240);
-        waveR = Rect(646, top, 314, 240);
-        meterL = Rect(966, top, 8, 228); meterR = Rect(977, top, 8, 228);
-        sysPanel = Rect(14, 310, 600, 116);
-        sysSeg->r = Rect(24, 332, 580, 22);
-        Dial* sd[5] = { chaosD, syncD, axisD, widthD, driveD };
-        for (int k = 0; k < 5; ++k) sd[k]->r = Rect(22 + k * 117, 356, 117, hs);
-        driftPanel = Rect(626, 310, 360, 116);
-        Dial* dd[4] = { dRateD, dPitchD, dCutD, dChaosD };
-        for (int k = 0; k < 4; ++k) dd[k]->r = Rect(632 + k * 88, 344, 88, hs);
-        filtPanel = Rect(14, 436, 520, 116);
-        Dial* fd[5] = { cutD, resD, keyD, envCutD, envChaosD };
-        for (int k = 0; k < 5; ++k) fd[k]->r = Rect(22 + k * 102, 470, 102, hs);
-        modPanel = Rect(546, 436, 440, 116);
-        for (int k = 0; k < 4; ++k) modD[k]->r = Rect(556 + k * 106, 470, 106, hs);
-        ampPanel = Rect(14, 562, 380, 116);
-        for (int k = 0; k < 4; ++k) ampD[k]->r = Rect(22 + k * 92, 596, 92, hs);
-        voicePanel = Rect(406, 562, 580, 116);
-        vmodeSeg->r = Rect(416, 584, 560, 22);
-        Dial* vd[6] = { velD, voicesD, glideD, octD, fineD, volD };
-        for (int k = 0; k < 6; ++k) vd[k]->r = Rect(414 + k * 94, 608, 94, hs);
-        keyboard.r = Rect(14, 688, 966, 56);
+        // top: orbit, wave, meters
+        const float top = 58, sh = 180, hm = Dial::heightFor(Dial::Medium);
+        orbitR = Rect(14, top, 620, sh);
+        waveR = Rect(646, top, 314, sh);
+        meterL = Rect(966, top, 8, sh - 12); meterR = Rect(977, top, 8, sh - 12);
+        // spread n dials across a panel, starting dy below its top
+        auto rowOf = [&](Rect& panel, float x, float y, float w, float h, float dy, Dial** d, int n) {
+            panel = Rect(x, y, w, h);
+            const float cw = (w - 20) / n;
+            for (int k = 0; k < n; ++k) d[k]->r = Rect(x + 10 + k * cw, y + dy, cw, hm);
+        };
+        // SYSTEM (system + five dials) beside VOICE (mode + six dials)
+        const float y1 = top + sh + 12, ph1 = 148;
+        Dial* sd[5] = { chaosD, syncD, axisD, widthD, driveD }; rowOf(sysPanel, 14, y1, 480, ph1, 62, sd, 5);
+        sysSeg->r = Rect(26, y1 + 28, 456, 24);
+        Dial* vd[6] = { velD, voicesD, glideD, octD, fineD, volD }; rowOf(voicePanel, 506, y1, 480, ph1, 62, vd, 6);
+        vmodeSeg->r = Rect(518, y1 + 28, 456, 24);
+        // FILTER | MOD ENVELOPE
+        const float ph = 112, y2 = y1 + ph1 + 12;
+        Dial* fd[5] = { cutD, resD, keyD, envCutD, envChaosD }; rowOf(filtPanel, 14, y2, 530, ph, 28, fd, 5);
+        rowOf(modPanel, 556, y2, 430, ph, 28, modD, 4);
+        // AMP ENVELOPE | DRIFT
+        const float y3 = y2 + ph + 12;
+        rowOf(ampPanel, 14, y3, 480, ph, 28, ampD, 4);
+        Dial* dd[4] = { dRateD, dPitchD, dCutD, dChaosD }; rowOf(driftPanel, 506, y3, 480, ph, 28, dd, 4);
+        keyboard.r = Rect(14, y3 + ph + 12, 966, 52);
     }
 
     void tick(float dt) override
@@ -191,7 +194,7 @@ protected:
         drawWave();
         drawLevelMeter(meterL, lvl[0], hold[0], -48.0f, 6.0f);
         drawLevelMeter(meterR, lvl[1], hold[1], -48.0f, 6.0f);
-        auto panel = [&](const Rect& r, const char* c) { strokeRect(r, theme.dim, 1.0f); caption(r.x + 12, r.y + 13, c); };
+        auto panel = [&](const Rect& r, const char* c) { strokeRect(r, theme.dim, 1.0f); caption(r.x + 12, r.y + 16, c); };
         panel(sysPanel, "SYSTEM"); panel(driftPanel, "DRIFT"); panel(filtPanel, "FILTER"); panel(modPanel, "MOD ENVELOPE");
         panel(ampPanel, "AMP ENVELOPE"); panel(voicePanel, "VOICE");
         keyboard.draw(*this);
