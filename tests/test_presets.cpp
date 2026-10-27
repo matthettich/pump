@@ -37,6 +37,7 @@
 #include "../plugins/life/LifeParams.hpp"
 #include "../plugins/boing/BoingParams.hpp"
 #include "../plugins/prism/PrismParams.hpp"
+#include "../plugins/modal/ModalParams.hpp"
 #include <cstdio>
 #include <cstring>
 #include <map>
@@ -139,6 +140,7 @@ int main()
         { "LIFE", life::params(), life::presets() },
         { "BOING", boing::params(), boing::presets() },
         { "PRISM", prism::params(), prism::presets() },
+        { "MODAL", modal::params(), modal::presets() },
     };
     std::map<std::string, int> sections;
     std::vector<std::vector<std::string>> chains;

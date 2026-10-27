@@ -51,6 +51,7 @@ offset block, Share Tech Mono, one light-neon colour per plugin, light or dark. 
 | **pump LIFE** Groovebox | acid | a groovebox played by a Game of Life: eight tone voices (a parabolic sine with pitch, kick, FM from the next voice, ring from the previous, decay, level) set as bar charts, global FM / drive / decay, an LFO; a pitch-shifting delay with a low/high-pass in its loop, fed per hit by its own envelope; the grid (up to 16 x 16, six rules, fourteen patterns or your drawing): each generation the born, living or dying cells play the voice of their colour; LOOP repeats with the song, EVOLVE and FREE run on (reseeding when the board stalls); MIDI 36-43 play the voices; 16 factory sets |
 | **pump BOING** Spring Drums | flamingo | a drum machine of springs: eight pads on the General MIDI drum notes, each a tuned spring (SPRING's six tanks, kicked by the hit: harmonic, spread, drip) blended with an analog-style drum voice (sine, triangle, fold, square, saw or metallic partials, with a pitch drop; resonant noise that also runs through the spring; a click), decay, hits (claps), level, pan and a send into a real spring tank shared by the kit; choke, velocity, drive; the pads' springs drawn ringing; 13 kits |
 | **pump PRISM** Resynthesis Synth | glacier | load a .wav (or pick one of seven built-in sources made by pump's own instruments) and it is analysed into 128 partials and twelve bands of noise; the notes you play rebuild it at their pitch: loop, one-shot, bounce or freeze anywhere in it, at any speed; keep its own melody and vibrato (FOLLOW) and its formants (FORMANT) or not; morph it partial by partial into a second sound; reshape it (partials, tilt, odd / even, inharmonic, its own detuning, blur, noise, width); 8 voices or mono with glide; a picture of its partials over time with the playhead; 14 voices |
+| **pump MODAL** Physical Synth | honey | physical modelling: every note is up to 48 resonant modes in the ratios of an object (a free bar, a tuned marimba bar, a string, a drum skin, a square plate, a bell, a tube, a wine glass); MATERIAL from wood (the upper modes die fast) to metal (everything rings), DECAY and DAMP (key up), BRIGHT, STRETCH, and where it is struck; played by a mallet (HARDNESS: felt to stick), a pluck, a bow or breath (both sound while held, at PRESSURE), with vibrato; 8 voices or mono with glide; the object drawn moving with its modes, and its modes as they ring; 18 voices |
 
 ## Download
 
@@ -113,6 +114,8 @@ In your host they sit in three folders (the vendor): **wake mastering**, **wake 
   the same voice clean
 - PRISM: LOAD A (or pick a built-in SOURCE) and play. Drag on the SOUND picture to set START / END (or SCAN when
   frozen); FORMANT 100 keeps a voice a voice when you play it far from its own pitch; MORPH needs a SOURCE B
+- MODAL: pick an OBJECT and an EXCITER and play. Drag on the OBJECT picture to move where it is struck; MATERIAL is
+  the big one (wood, glass, metal); BOW and BREATH sound for as long as you hold the key
 - BOING: click a pad (or 1-8) to play and edit it; BLEND goes from the analog voice (0) to the spring (100). The kick
   and toms get their thump from BEND (the analog layer's pitch drop) and their boing from the spring
 - LIFE: press play in the host (LOOP and EVOLVE follow the song; FREE runs on its own). Draw on the grid, pick a

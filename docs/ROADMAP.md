@@ -48,8 +48,9 @@ Instruments (MIDI in, stereo out):
   spectra.
 - **PRISM** spectral resynthesis — done (2026-10-26): a sample rebuilt as partials and noise: stretch, freeze, morph two
   sounds, keep formants.
-- Ideas the user liked, in order: **modal / physical** synth (struck bars, plates, membranes, bowed and blown resonators),
-  **strange-attractor oscillator** (Lorenz / Rössler as audio and modulation), **vector / wave-sequencing**,
+- **MODAL** physical synth — done (2026-10-26): up to 48 modes in the ratios of eight objects, wood-to-metal
+  material, strike position, mallet / pluck / bow / breath exciters.
+- Ideas the user liked, in order: **strange-attractor oscillator** (Lorenz / Rössler as audio and modulation), **vector / wave-sequencing**,
   **granular spectral-freeze** synth, **formant / vocal-tract** pad.
 - Asked for on 2026-10-26 (after those):
   - **A multi-engine drum synth**: per channel a tone
