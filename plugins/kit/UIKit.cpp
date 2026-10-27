@@ -10,7 +10,7 @@ using namespace pump::kit;
 
 class UIKit : public PumpUI {
 public:
-    UIKit() : PumpUI(params().data(), kNumParams, &presets(), pump::accents::kit(), "KIT", 1000, 740, -1)
+    UIKit() : PumpUI(params().data(), kNumParams, &presets(), pump::accents::kit(), "KIT", 1000, 664, -1)
     {
         static const char* const lab[9] = { "TUNE", "DECAY", "PITCH", "P-DECAY", "TONE", "NOISE", "CLICK", "CHAR", "DRIVE" };
         static const int what[9] = { kTune, kDecay, kPitch, kPitchDecay, kTone, kNoise, kClick, kChar, kDrive };
@@ -58,28 +58,32 @@ protected:
 
     void layout() override
     {
-        const float top = 58;
-        padsR = Rect(14, top, 480, 232);
-        for (int p = 0; p < kPads; ++p) padR[p] = Rect(24 + (p % 4) * 117, top + 28 + (p / 4) * 100, 109, 92);
-        scopeR = Rect(506, top, 454, 110);
-        envR = Rect(506, top + 122, 454, 110);
-        meterL = Rect(966, top, 8, 220); meterR = Rect(977, top, 8, 220);
-        editR = Rect(14, 302, 972, 190);
+        const float top = 58, sh = 212, hs = Dial::heightFor(Dial::Small), hm = Dial::heightFor(Dial::Medium);
+        padsR = Rect(14, top, 480, sh);
+        for (int p = 0; p < kPads; ++p) padR[p] = Rect(24 + (p % 4) * 117, top + 28 + (p / 4) * 92, 109, 84);
+        scopeR = Rect(506, top, 454, (sh - 12) / 2);
+        envR = Rect(506, top + (sh + 12) / 2, 454, (sh - 12) / 2);
+        meterL = Rect(966, top, 8, sh - 12); meterR = Rect(977, top, 8, sh - 12);
+        // the selected pad: model + FOLLOW, then its nine dials
+        const float y1 = top + sh + 12, eh = 148;
+        editR = Rect(14, y1, 972, eh);
         for (int p = 0; p < kPads; ++p)
         {
-            model[p]->r = Rect(150, 316, 700, 24);
-            for (int k = 0; k < 9; ++k) edit[p][k]->r = Rect(22 + k * 107, 356, 100, Dial::heightFor(Dial::Medium));
+            model[p]->r = Rect(26, y1 + 28, 820, 24);
+            for (int k = 0; k < 9; ++k) edit[p][k]->r = Rect(24 + k * 105.8f, y1 + 62, 105.8f, hm);
         }
-        followB->r = Rect(866, 318, 110, 20);
-        mixR = Rect(14, 504, 760, 200);
+        followB->r = Rect(858, y1 + 28, 116, 24);
+        // MIXER (level over pan, per pad) beside KIT
+        const float y2 = y1 + eh + 12, mh = 188;
+        mixR = Rect(14, y2, 760, mh);
         for (int p = 0; p < kPads; ++p)
         {
-            levelD[p]->r = Rect(22 + p * 94, 532, 88, Dial::heightFor(Dial::Small));
-            panD[p]->r = Rect(22 + p * 94, 614, 88, Dial::heightFor(Dial::Small));
+            levelD[p]->r = Rect(22 + p * 94, y2 + 28, 88, hs);
+            panD[p]->r = Rect(22 + p * 94, y2 + 96, 88, hs);
         }
-        kitR = Rect(786, 504, 200, 200);
-        velD->r = Rect(794, 532, 92, Dial::heightFor(Dial::Small)); humD->r = Rect(886, 532, 92, Dial::heightFor(Dial::Small));
-        kitDrive->r = Rect(794, 614, 92, Dial::heightFor(Dial::Small)); volD->r = Rect(886, 614, 92, Dial::heightFor(Dial::Small));
+        kitR = Rect(786, y2, 200, mh);
+        velD->r = Rect(794, y2 + 28, 92, hs); humD->r = Rect(886, y2 + 28, 92, hs);
+        kitDrive->r = Rect(794, y2 + 96, 92, hs); volD->r = Rect(886, y2 + 96, 92, hs);
     }
 
     void tick(float dt) override
@@ -130,7 +134,7 @@ protected:
         char b[64];
         std::snprintf(b, sizeof b, "PAD %d · %s", sel + 1, kPadInfo[sel].label);
         caption(editR.x + 12, editR.y + 16, b);
-        textAt(editR.cx(), editR.b() - 16, modelHint((int)value(pp(sel, kModel))), kLabel, 9.0f, theme.ink2, ALIGN_CENTER | ALIGN_MIDDLE, 0.6f);
+        textAt(editR.r() - 12, editR.y + 16, modelHint((int)value(pp(sel, kModel))), kLabel, 9.0f, theme.ink2, ALIGN_RIGHT | ALIGN_MIDDLE, 0.6f);
         strokeRect(mixR, theme.dim, 1.0f); caption(mixR.x + 12, mixR.y + 16, "MIXER");
         for (int p = 0; p < kPads; ++p)
         {
