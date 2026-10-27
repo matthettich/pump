@@ -54,7 +54,7 @@ static double rms(const std::vector<float>& x, size_t a, size_t b) { double s = 
 
 int main()
 {
-    for (double sr : { 44100.0, 48000.0 })
+    for (double sr : { 44100.0, 48000.0, 192000.0 })   // 192 kHz: the dispersion history reaches past 16 samples
     {
         printf("== %.0f Hz\n", sr);
         const int N = 32768;
@@ -137,9 +137,10 @@ int main()
             Engine e; Settings s; s.resonator = true; s.tuning = kTuneChord; s.root = 9; s.chord = kChordFifth; s.octave = 0; s.mix = 1.0; s.harmonic = 0.6; s.decay = 3.0; s.wobble = 0.0; s.spread = 0.0;
             e.setSettings(s); e.prepare(sr, 512);
             std::mt19937 rng(3); std::uniform_real_distribution<float> u(-0.3f, 0.3f);
-            std::vector<float> in((size_t)(N + 16384)); for (auto& x : in) x = u(rng);
+            const int Nt = N * std::max(1, (int)(sr / 48000.0));   // the same frequency resolution at every rate
+            std::vector<float> in((size_t)(Nt + 16384)); for (auto& x : in) x = u(rng);
             const auto L = run(e, (int)in.size(), {}, &in);
-            const auto sp = spectrum(L, 16384, N, sr);
+            const auto sp = spectrum(L, 16384, Nt, sr);
             const double fa = peakHz(sp, 200, 240), fe = peakHz(sp, 310, 350);
             double pa = 0, pn = 0; peakHz(sp, 215, 225, &pa); peakHz(sp, 260, 280, &pn);
             CHECK(std::fabs(cents(fa, 220.0)) < 12 && std::fabs(cents(fe, synth::midiToHz(64))) < 12 && pa > 30 * pn, "TWANG on noise, A fifth: peaks at %.1f and %.1f Hz, %.0f dB over the gap between", fa, fe, 10 * std::log10(pa / (pn + 1e-30)));

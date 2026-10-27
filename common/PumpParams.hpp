@@ -52,6 +52,7 @@ inline double parseNumber(const char* s, const char** end)
         while (*p >= '0' && *p <= '9') { if (e < 400) e = e * 10 + (*p - '0'); ++p; }
         v *= std::pow(10.0, eneg ? -e : e);
     }
+    if (!std::isfinite(v)) { if (end) *end = s; return 0.0; }   // "1e999", "0e999" (0 x inf): not a number we accept
     if (end) *end = p;
     return neg ? -v : v;
 }

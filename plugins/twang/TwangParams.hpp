@@ -18,8 +18,8 @@ enum Param : int {
 
 inline const std::vector<ParamSpec>& params()
 {
-    static std::vector<ParamSpec> v;
-    if (!v.empty()) return v;
+    static const std::vector<ParamSpec> v = []() {
+    std::vector<ParamSpec> v;
     const unsigned A = kPAutomatable, I = kPAutomatable | kPInteger;
     v.push_back({ "model", "Spring Model", "Model", 0, 5, 0, PUnit::None, PScale::Linear, I, kModelNames, 1 });
     v.push_back({ "tension", "Tension", "Tension", -100, 100, 0, PUnit::Percent, PScale::Linear, A, nullptr, 1 });
@@ -42,13 +42,15 @@ inline const std::vector<ParamSpec>& params()
     v.push_back({ "volume", "Output", "Output", -24, 12, 0, PUnit::dB, PScale::Linear, A, nullptr, 1 });
     v.push_back({ "bypass", "Bypass", "Bypass", 0, 1, 0, PUnit::None, PScale::Linear, A | kPBoolean | kPBypass, nullptr, 1 });
     return v;
+    }();
+    return v;
 }
 
 // Chords: 0 single 1 octave 2 fifth 3 power 4 major 5 minor 6 sus4 7 maj7 8 min7 9 dom7 10 sus2 11 fifths stack.
 inline const std::vector<Preset>& presets()
 {
-    static std::vector<Preset> v;
-    if (!v.empty()) return v;
+    static const std::vector<Preset> v = []() {
+    std::vector<Preset> v;
     auto F = [&](const char* sec, const char* n, std::vector<PresetValue> p) { v.push_back({ n, std::move(p), sec }); };
     v.push_back({ "Default", {} });
     F("CHORDS", "Fifth drone", { { "chord", 2 }, { "decay", 5.0f }, { "harmonic", 50 }, { "mix", 60 } });
@@ -64,6 +66,8 @@ inline const std::vector<Preset>& presets()
     F("DIGITAL", "Lo-fi buzz", { { "model", 5 }, { "chord", 2 }, { "grit", 80 }, { "decay", 2.0f }, { "drive", 70 } });
     F("MIDI", "MIDI resonator", { { "tuning", 1 }, { "harmonic", 70 }, { "decay", 2.5f }, { "release", 0.5f } });
     F("MIDI", "MIDI latch drone", { { "tuning", 2 }, { "harmonic", 50 }, { "decay", 6.0f }, { "mix", 60 } });
+    return v;
+    }();
     return v;
 }
 

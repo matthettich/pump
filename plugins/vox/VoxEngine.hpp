@@ -1113,6 +1113,9 @@ public:
             outL[i] = l; outR[i] = r;
         }
         while (ev < numEvents) { synth.midi(events[ev].status, events[ev].d1, events[ev].d2); ++ev; }
+        // a non-finite value got into the state (a filter or lattice blew up): the rest of this block is silenced
+        // above; clear every stage so it can't stay latched
+        if (blown) { blown = false; reset(); }
     }
 
     // ---- feeds for the UI ----
@@ -1130,6 +1133,8 @@ public:
     bool switching() const { return fadeDir != 0; }
 
 private:
+    bool blown = false;   // a non-finite output this block
+
     void applyStructure()
     {
         // what a mode / route / FFT size change rebuilds (called while silent)
@@ -1277,8 +1282,9 @@ private:
         double l = (wl + sib + dv + dcl) * outGain * fade, r = (wr + sib + dv + dcr) * outGain * fade;
         // safety: a soft ceiling far above normal levels (bends at +9.5 dBFS, never past +12), so a runaway setting
         // can't explode
-        if (std::fabs(l) > 3.0) l = (l > 0 ? 1.0 : -1.0) * (3.0 + fastTanh((float)(std::fabs(l) - 3.0)));
-        if (std::fabs(r) > 3.0) r = (r > 0 ? 1.0 : -1.0) * (3.0 + fastTanh((float)(std::fabs(r) - 3.0)));
+        // (NaN fails every comparison: it is caught here and becomes silence, and process() then resets the state)
+        if (!(std::fabs(l) <= 3.0)) l = std::isfinite(l) ? (l > 0 ? 1.0 : -1.0) * (3.0 + fastTanh((float)(std::fabs(l) - 3.0))) : (blown = true, 0.0);
+        if (!(std::fabs(r) <= 3.0)) r = std::isfinite(r) ? (r > 0 ? 1.0 : -1.0) * (3.0 + fastTanh((float)(std::fabs(r) - 3.0))) : (blown = true, 0.0);
         outL = (float)l; outR = (float)r;
         // ---- feeds ----
         voicePeak.setMax((float)std::fabs(v));

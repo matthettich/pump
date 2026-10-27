@@ -252,12 +252,12 @@ static void testGraph(double sr)
     printf("Graph (%.0f Hz)\n", sr);
     const size_t n = (size_t)(sr * 3);
     const auto x = sing(sr, steady(220.0, n));
-    auto list = std::make_shared<NoteList>();
+    std::unique_ptr<NoteList> list(new NoteList());
     GraphNote g; g.t0 = 1.0; g.t1 = 2.0; g.src = 57.0f; g.dst = 59.0f;
     list->notes.push_back(g);
     Settings s = base(); s.mode = kGraph;
     Engine e; e.setSettings(s); e.prepare(sr, 256);
-    e.setNotes(list);
+    e.setNotes(std::move(list));
     e.setTimeline(true, 0.0);
     e.setCapture(true);
     std::vector<float> L(n), R(n);
@@ -356,9 +356,9 @@ static void testFuzz(double sr)
         for (int h = 0; h < kVoices; ++h) { s.interval[h] = I(-12, 12); s.level[h] = U(0, 100); s.pan[h] = U(-100, 100); }
         s.harmFormant = U(-12, 12); s.harmHumanize = U(0, 100); s.lead = U(0, 100); s.harmLevelDb = U(-24, 12); s.outDb = U(-24, 6);
         Engine e; e.setSettings(s); e.prepare(sr, 512);
-        auto list = std::make_shared<NoteList>();
+        std::unique_ptr<NoteList> list(new NoteList());
         for (int k = 0; k < 5; ++k) { GraphNote g; g.t0 = 0.15 * k; g.t1 = g.t0 + 0.1; g.src = 50; g.dst = (float)I(40, 70); g.straighten = (float)U(0, 1); g.vibrato = (float)U(0, 2); g.formant = (float)U(-6, 6); g.gainDb = (float)U(-12, 6); list->notes.push_back(g); }
-        e.setNotes(list);
+        e.setNotes(std::move(list));
         e.setTimeline(true, 0.0);
         std::vector<float> L(n), R(n);
         const MidiMsg ev[2] = { { 0, 0x90, (uint8_t)I(40, 70), 100 }, { 5, 0x90, (uint8_t)I(40, 70), 100 } };

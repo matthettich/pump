@@ -46,8 +46,8 @@ inline bool highCutActive(double f) { return f < kHighCutOff - 10.0; }
 
 inline const std::vector<ParamSpec>& params()
 {
-    static std::vector<ParamSpec> v;
-    if (!v.empty()) return v;
+    static const std::vector<ParamSpec> v = []() {
+    std::vector<ParamSpec> v;
     const unsigned A = kPAutomatable;
     v.push_back({ "mode", "Mode", "Mode", 0, kNumModes - 1, kHall, PUnit::None, PScale::Linear, A | kPInteger, kModeNames, 1 });
     v.push_back({ "predelay", "Pre-Delay", "Pre-Delay", 0, (float)kMaxPredelayMs, 20, PUnit::ms, PScale::Power, A, nullptr, 2.0f });
@@ -76,14 +76,16 @@ inline const std::vector<ParamSpec>& params()
     v.push_back({ "out_gain", "Output Gain", "Output", -24, 24, 0, PUnit::dB, PScale::Linear, A, nullptr, 1 });
     v.push_back({ "bypass", "Bypass", "Bypass", 0, 1, 0, PUnit::None, PScale::Linear, A | kPBoolean | kPBypass, nullptr, 1 });
     return v;
+    }();
+    return v;
 }
 
 // Factory presets. Modes: 0 hall 1 room 2 chamber 3 plate 4 vintage hall 5 vintage plate 6 classic hall
 // 7 classic plate 8 90s rack 9 gated 10 reverse 11 shimmer. Notes (predelay_note): 2 = 1/32, 5 = 1/16, 8 = 1/8.
 inline const std::vector<Preset>& presets()
 {
-    static std::vector<Preset> v;
-    if (!v.empty()) return v;
+    static const std::vector<Preset> v = []() {
+    std::vector<Preset> v;
     auto F = [&](const char* n, std::vector<PresetValue> p) { v.push_back({ n, std::move(p) }); };
     auto S = [&](const char* n, std::vector<PresetValue> p) { v.push_back({ n, std::move(p), "SOURCES" }); };
     auto C = [&](const char* n, std::vector<PresetValue> p) { v.push_back({ n, std::move(p), "CREATIVE" }); };
@@ -134,6 +136,8 @@ inline const std::vector<Preset>& presets()
                             { "mix", 35 } });
     C("Ghost reverse", { { "mode", 10 }, { "env_time", 1100 }, { "decay", 1.0f }, { "predelay_sync", 1 }, { "predelay_note", 8 },
                          { "low_cut", 200 }, { "mix", 45 } });
+    return v;
+    }();
     return v;
 }
 

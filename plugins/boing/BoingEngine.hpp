@@ -110,7 +110,7 @@ public:
         if (!std::isfinite(chk))
         {
             for (auto& d : pads) { d.spring.reset(); d.env = d.nenv = 0.0; d.nf.reset(); }
-            body.prepare(sr, n); dcL.reset(); dcR.reset();
+            body.recover(); dcL.reset(); dcR.reset();
             sanitizeBlock(L, n); sanitizeBlock(R, n);
         }
         for (int p = 0; p < kPads; ++p)

@@ -45,6 +45,8 @@ private:
 // Uniformly partitioned overlap-save convolution of a stereo signal with a 2x2 kernel matrix
 // (out_L = K_LL * in_L + K_LR * in_R, out_R = K_RL * in_L + K_RR * in_R). Cross kernels are skipped when
 // absent. Kernels can be replaced from another thread: the new set is crossfaded in over one block.
+// Kernel hand-off is lock-free and the audio thread never frees: a new kernel goes in through an atomic pointer,
+// and the one it replaces comes back through a queue that setKernel() / collect() empty on the calling thread.
 // Latency: one block (B samples), on top of whatever delay the kernels themselves have.
 class StereoConvolver {
 public:
@@ -53,6 +55,12 @@ public:
         bool cross = false;                 // has K_LR / K_RL
         std::vector<AlignedBuffer> spec[4]; // [LL, LR, RL, RR][partition], unordered spectra of size 2B
     };
+    using KernelPtr = std::unique_ptr<Kernel>;
+
+    StereoConvolver() = default;
+    StereoConvolver(const StereoConvolver&) = delete;
+    StereoConvolver& operator=(const StereoConvolver&) = delete;
+    ~StereoConvolver() { dropKernels(); }
 
     void prepare(int blockSize, int maxTaps)
     {
@@ -66,14 +74,11 @@ public:
             for (int p = 0; p < maxParts; ++p) fdl[ch].emplace_back((size_t)N);
             inBuf[ch].resize((size_t)N);
             outBuf[ch].resize((size_t)B);
-            prevOut[ch].resize((size_t)B);
         }
         acc.resize((size_t)N); acc2.resize((size_t)N); tmp.resize((size_t)N); spec.resize((size_t)N);
         fdlPos = 0;
         fill = 0;
-        cur.reset();
-        pending.reset();
-        pendingReady.store(false);
+        dropKernels();
     }
 
     int blockSize() const { return B; }
@@ -81,9 +86,9 @@ public:
 
     // Build a kernel set from time-domain impulse responses (length <= maxTaps). Call from any thread
     // except the audio thread (allocates). ir[1]/ir[2] may be null (no cross terms).
-    std::shared_ptr<Kernel> makeKernel(const float* const ir[4], int taps)
+    KernelPtr makeKernel(const float* const ir[4], int taps)
     {
-        auto k = std::make_shared<Kernel>();
+        KernelPtr k(new Kernel());
         k->partitions = std::min((taps + B - 1) / B, maxParts);
         k->cross = ir[1] != nullptr || ir[2] != nullptr;
         RealFFT f(N);
@@ -104,20 +109,23 @@ public:
         return k;
     }
 
-    // Hand a new kernel to the audio thread (from a worker thread).
-    void setKernel(std::shared_ptr<Kernel> k)
+    // Hand a new kernel to the audio thread (from one non-audio thread; with PUMP_SYNC_KERNELS, from the audio
+    // thread itself). Also frees the kernels the audio thread has finished with.
+    void setKernel(KernelPtr k)
     {
-       #if PUMP_SYNC_KERNELS
-        incoming = std::move(k);   // no other thread: the caller is the audio thread
-       #else
-        std::atomic_store(&incoming, std::move(k));
-       #endif
-        pendingReady.store(true, std::memory_order_release);
+        collect();
+        delete incoming.exchange(k.release(), std::memory_order_acq_rel);   // one the audio thread never took
     }
-    // Immediately install (not from the audio thread while it runs).
-    void setKernelNow(std::shared_ptr<Kernel> k) { cur = std::move(k); pending.reset(); pendingReady.store(false); }
+    // Immediately install (not while the audio thread runs).
+    void setKernelNow(KernelPtr k)
+    {
+        dropKernels();
+        cur = k.release();
+    }
+    // Free the kernels the audio thread has let go of (the thread that calls setKernel).
+    void collect() { Kernel* k = nullptr; while (retired.pop(k)) delete k; }
 
-    bool hasKernel() const { return cur != nullptr || pendingReady.load(); }
+    bool hasKernel() const { return cur != nullptr || incoming.load(std::memory_order_acquire) != nullptr; }
 
     // Process in place. Any block size; internally works in blocks of B.
     void process(float* L, float* R, int n)
@@ -154,6 +162,14 @@ public:
     }
 
 private:
+    void dropKernels()
+    {
+        collect();
+        delete incoming.exchange(nullptr, std::memory_order_acq_rel);
+        delete cur;
+        cur = nullptr;
+    }
+
     void convolveWith(const Kernel& k, int outCh, AlignedBuffer& dst)
     {
         dst.clear();
@@ -173,15 +189,11 @@ private:
     void runBlock()
     {
         // take a pending kernel (crossfade from the current one over this block)
-        std::shared_ptr<Kernel> fadeFrom;
-        if (pendingReady.exchange(false, std::memory_order_acquire))
+        // (only when the old one has somewhere to go; otherwise the swap waits a block)
+        Kernel* fadeFrom = nullptr;
+        if (retired.hasSpace() && incoming.load(std::memory_order_relaxed) != nullptr)
         {
-           #if PUMP_SYNC_KERNELS
-            std::shared_ptr<Kernel> k = std::move(incoming);
-           #else
-            std::shared_ptr<Kernel> k = std::atomic_load(&incoming);
-           #endif
-            if (k) { fadeFrom = cur; cur = k; }
+            if (Kernel* k = incoming.exchange(nullptr, std::memory_order_acq_rel)) { fadeFrom = cur; cur = k; }
         }
         // input spectra into the frequency-domain delay line
         fdlPos = (fdlPos + 1) % maxParts;
@@ -215,15 +227,17 @@ private:
         // slide the input window
         for (int ch = 0; ch < 2; ++ch)
             std::memcpy(inBuf[ch].data(), inBuf[ch].data() + B, sizeof(float) * (size_t)B);
-        // the old kernel is released here (shared_ptr): only deallocation, rare and small
+        // the old kernel goes back to the non-audio thread to be freed
+        if (fadeFrom) retired.push(fadeFrom);
     }
 
     RealFFT fft;
     int B = 512, N = 1024, maxParts = 1, fdlPos = 0, fill = 0;
     std::vector<AlignedBuffer> fdl[2];
-    AlignedBuffer inBuf[2], outBuf[2], prevOut[2], acc, acc2, tmp, spec;
-    std::shared_ptr<Kernel> cur, pending, incoming;
-    std::atomic<bool> pendingReady { false };
+    AlignedBuffer inBuf[2], outBuf[2], acc, acc2, tmp, spec;
+    Kernel* cur = nullptr;                        // owned; touched only by the audio thread while running
+    std::atomic<Kernel*> incoming { nullptr };    // owned; the next kernel, waiting for the audio thread
+    SpscPtrQueue<Kernel, 16> retired;             // kernels the audio thread let go of
 };
 
 // Short-time Fourier transform engine: sqrt-Hann analysis and synthesis windows, 75% overlap.

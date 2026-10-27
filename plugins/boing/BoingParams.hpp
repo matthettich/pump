@@ -44,9 +44,9 @@ static const PadInfo kPadInfo[kPads] = {
 
 inline const std::vector<ParamSpec>& params()
 {
-    static std::vector<ParamSpec> v;
     static std::deque<std::string> text;
-    if (!v.empty()) return v;
+    static const std::vector<ParamSpec> v = []() {
+    std::vector<ParamSpec> v;
     const unsigned A = kPAutomatable, I = kPAutomatable | kPInteger, B = kPAutomatable | kPBoolean;
     auto s = [&](const std::string& x) { text.push_back(x); return text.back().c_str(); };
     for (int p = 0; p < kPads; ++p)
@@ -80,13 +80,15 @@ inline const std::vector<ParamSpec>& params()
     v.push_back({ "volume", "Volume", "Volume", -48, 12, 0, PUnit::dB, PScale::Linear, A, nullptr, 1 });
     v.push_back({ "follow", "Edit the Pad Played", "Follow", 0, 1, 1, PUnit::None, PScale::Linear, kPBoolean | kPNoUndo, nullptr, 1 });   // appended
     return v;
+    }();
+    return v;
 }
 
 // Factory kits: changes from the default pads, as (pad, field, value) lists.
 inline const std::vector<Preset>& presets()
 {
-    static std::vector<Preset> v;
-    if (!v.empty()) return v;
+    static const std::vector<Preset> v = []() {
+    std::vector<Preset> v;
     static std::deque<std::string> keep;
     static const char* const field[kPerPad] = { "tank", "wave", "blend", "pitch", "decay", "harmonic", "spread", "drip", "bend", "bend_time", "noise", "noise_tone", "click", "hits", "level", "pan", "send" };
     struct C { int pad, f; float v; };
@@ -109,6 +111,8 @@ inline const std::vector<Preset>& presets()
     F("METAL", "Bell toms", { { 3, kWave, kMetal }, { 4, kWave, kMetal }, { 3, kSpread, 40 }, { 4, kSpread, 40 }, { 3, kDecay, 900 }, { 4, kDecay, 800 }, { 3, kBend, 0 }, { 4, kBend, 0 } });
     F("WILD", "Spring zaps", { { 0, kBend, 48 }, { 0, kBendTime, 200 }, { 1, kBend, 36 }, { 1, kBendTime, 150 }, { 3, kBend, 48 }, { 4, kBend, 48 }, { 3, kBendTime, 300 }, { 4, kBendTime, 250 } }, { { "drive", 30 } });
     F("WILD", "Crushed digital kit", { { 0, kTank, 5 }, { 1, kTank, 5 }, { 2, kTank, 5 }, { 3, kTank, 4 }, { 4, kTank, 4 }, { 0, kBlend, 80 }, { 1, kBlend, 85 } }, { { "drive", 60 } });
+    return v;
+    }();
     return v;
 }
 

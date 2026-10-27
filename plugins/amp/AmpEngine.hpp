@@ -125,8 +125,23 @@ public:
         latencyNow.store(kCabBlock);
     }
 
-    // Load a .nam file. Returns the info (error filled when it failed; the current model then stays).
+    // Load a .nam file. Returns the info (error filled when it failed; the current model then stays). Never throws:
+    // it runs inside the host's setState(), where an escaping exception takes the host down.
     ModelInfo loadModel(const std::string& path)
+    {
+        try { return loadModelOrThrow(path); }
+        catch (const std::exception& e) { ModelInfo i; i.path = path; i.error = std::string("couldn't load: ") + e.what(); return i; }
+        catch (...) { ModelInfo i; i.path = path; i.error = "couldn't load the model"; return i; }
+    }
+    // Load a cabinet impulse response (.wav, mono or stereo). Returns the info (error filled when it failed). Never throws.
+    IrInfo loadIr(const std::string& path)
+    {
+        try { return loadIrOrThrow(path); }
+        catch (const std::exception& e) { IrInfo i; i.path = path; i.error = std::string("couldn't load: ") + e.what(); return i; }
+        catch (...) { IrInfo i; i.path = path; i.error = "couldn't load the impulse response"; return i; }
+    }
+private:
+    ModelInfo loadModelOrThrow(const std::string& path)
     {
         ModelInfo info;
         info.path = path;
@@ -147,10 +162,10 @@ public:
         catch (const std::exception& e) { info.error = std::string("couldn't load: ") + e.what(); return info; }
         catch (...) { info.error = "couldn't load the model"; return info; }
         nam::DSP& d = *slot->dsp[0];
-        const double want = d.GetExpectedSampleRate() > 0.0 ? d.GetExpectedSampleRate() : 48000.0;
+        const double want = d.GetExpectedSampleRate() > 0.0 ? clampv(d.GetExpectedSampleRate(), 8000.0, 384000.0) : 48000.0;
         const double inner = d.SupportsArbitrarySampleRate() ? sr : want;
         slot->hasLoudness = d.HasLoudness();
-        slot->loudness = slot->hasLoudness ? d.GetLoudness() : 0.0;
+        slot->loudness = slot->hasLoudness ? clampv(d.GetLoudness(), -60.0, 60.0) : 0.0;
         for (int ch = 0; ch < 2; ++ch)
         {
             slot->bridge[ch].prepare(sr, inner, kChunk);
@@ -169,16 +184,7 @@ public:
         delete incoming.exchange(slot.release());   // (a load the audio thread never took is simply replaced)
         return info;
     }
-    void clearModel()
-    {
-        collect();
-        auto* empty = new Slot();
-        empty->empty = true;
-        delete incoming.exchange(empty);
-    }
-
-    // Load a cabinet impulse response (.wav, mono or stereo). Returns the info (error filled when it failed).
-    IrInfo loadIr(const std::string& path)
+    IrInfo loadIrOrThrow(const std::string& path)
     {
         IrInfo info;
         info.path = path;
@@ -188,6 +194,9 @@ public:
         info.rate = w.sampleRate;
         info.channels = (int)w.channels.size();
         info.seconds = w.channels[0].size() / w.sampleRate;
+        // only what can end up in the kernel is resampled (a long file at a low rate would otherwise ask for gigabytes)
+        const size_t keepIn = (size_t)std::ceil((double)kCabMaxTaps * w.sampleRate / sr) + 64;
+        for (auto& c : w.channels) if (c.size() > keepIn) c.resize(keepIn);
         std::vector<float> irL = resampleOffline(w.channels[0], w.sampleRate, sr);
         std::vector<float> irR = w.channels.size() > 1 ? resampleOffline(w.channels[1], w.sampleRate, sr) : irL;
         const int taps = (int)std::min<size_t>(irL.size(), (size_t)kCabMaxTaps);
@@ -212,6 +221,15 @@ public:
         info.loaded = true;
         return info;
     }
+public:
+    void clearModel()
+    {
+        collect();
+        auto* empty = new Slot();
+        empty->empty = true;
+        delete incoming.exchange(empty);
+    }
+
     void clearIr()
     {
         const float one = 1.0f;

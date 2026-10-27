@@ -47,8 +47,8 @@ enum Param : int {
 
 inline const std::vector<ParamSpec>& params()
 {
-    static std::vector<ParamSpec> v;
-    if (!v.empty()) return v;
+    static const std::vector<ParamSpec> v = []() {
+    std::vector<ParamSpec> v;
     const unsigned A = kPAutomatable, I = kPAutomatable | kPInteger;
     static std::vector<std::string> sym, nm;
     sym.reserve(64); nm.reserve(64);
@@ -112,12 +112,14 @@ inline const std::vector<ParamSpec>& params()
     v.push_back({ "octave", "Octave", "Oct", -3, 3, 0, PUnit::None, PScale::Linear, I, nullptr, 1 });
     v.push_back({ "volume", "Volume", "Volume", -48, 12, 0, PUnit::dB, PScale::Linear, A, nullptr, 1 });
     return v;
+    }();
+    return v;
 }
 
 inline const std::vector<Preset>& presets()
 {
-    static std::vector<Preset> v;
-    if (!v.empty()) return v;
+    static const std::vector<Preset> v = []() {
+    std::vector<Preset> v;
     auto P = [](int src, int f, float x) { return PresetValue { params()[(size_t)ps(src, f)].symbol, x }; };
     auto F = [&](const char* sec, const char* n, std::vector<PresetValue> p) { v.push_back({ n, std::move(p), sec }); };
     v.push_back({ "Default", {} });
@@ -139,6 +141,8 @@ inline const std::vector<Preset>& presets()
     // all of it
     F("HYBRID", "Scan meets sequence", { P(0, kType, kScanned), P(1, kType, kSequence), P(1, kWaveP, 8), P(2, kWaveP, 19), P(3, kType, kSequence), P(3, kWaveP, 22), { "vec_amount", 100 }, { "vec_time", 1500 }, { "vec_loop", kVecBounce }, { "seq_stride", 2 }, { "seq_rate", 250 }, { "attack", 400 }, { "release", 2000 }, { "volume", -1 } });
     F("HYBRID", "Vector bass", { P(0, kWaveP, 2), P(1, kWaveP, 24), P(2, kWaveP, 3), P(3, kWaveP, 22), P(0, kTune, -12), P(2, kTune, -12), { "vec_amount", 100 }, { "vec_time", 200 }, { "p1_x", 0 }, { "p1_y", 100 }, { "p2_x", 100 }, { "p2_y", 0 }, { "octave", -1 }, { "cutoff", 1200 }, { "env_cut", 60 }, { "voice_mode", 2 }, { "glide", 40 }, { "volume", 3 } });
+    return v;
+    }();
     return v;
 }
 

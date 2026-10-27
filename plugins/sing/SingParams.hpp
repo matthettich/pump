@@ -22,8 +22,8 @@ static const char* const kDefaultLyrics = "hello world, I am a singing machine. 
 
 inline const std::vector<ParamSpec>& params()
 {
-    static std::vector<ParamSpec> v;
-    if (!v.empty()) return v;
+    static const std::vector<ParamSpec> v = []() {
+    std::vector<ParamSpec> v;
     const unsigned A = kPAutomatable, I = kPAutomatable | kPInteger;
     v.push_back({ "mode", "Mode", "Mode", 0, kNumModes - 1, kModeMono, PUnit::None, PScale::Linear, I, kModeNames, 1 });
     v.push_back({ "choir", "Choir Voices", "Choir", 1, 8, 1, PUnit::None, PScale::Linear, I, nullptr, 1 });
@@ -53,13 +53,15 @@ inline const std::vector<ParamSpec>& params()
     v.push_back({ "engine", "Voice Engine", "Engine", 0, kNumEngineKinds - 1, kEngineFormant, PUnit::None, PScale::Linear, I, kEngineKindNames, 1 });
     v.push_back({ "gender", "Voicebank Gender", "Gender", -100, 100, 0, PUnit::Percent, PScale::Linear, A, nullptr, 1 });
     return v;
+    }();
+    return v;
 }
 
 // Factory voices (styles). Size: + smaller (younger, higher formants), - bigger.
 inline const std::vector<Preset>& presets()
 {
-    static std::vector<Preset> v;
-    if (!v.empty()) return v;
+    static const std::vector<Preset> v = []() {
+    std::vector<Preset> v;
     auto F = [&](const char* sec, const char* n, std::vector<PresetValue> p) { v.push_back({ n, std::move(p), sec }); };
     v.push_back({ "Default", {} });
     // singers
@@ -98,6 +100,8 @@ inline const std::vector<Preset>& presets()
     F("MACHINES", "Buzz box", { { "robot", 100 }, { "soft", 0 }, { "clarity", 100 }, { "bright", 85 }, { "choir", 2 }, { "spread", 15 }, { "vibrato", 0 } });
     F("MACHINES", "Monster", { { "octave", -1 }, { "size", -100 }, { "rough", 60 }, { "robot", 40 }, { "drive", 40 }, { "vibrato", 10 } });
     F("MACHINES", "Fairy", { { "size", 70 }, { "breath", 50 }, { "choir", 3 }, { "spread", 40 }, { "width", 80 }, { "vibrato", 40 }, { "robot", 10 } });
+    return v;
+    }();
     return v;
 }
 

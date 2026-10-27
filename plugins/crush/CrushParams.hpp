@@ -59,8 +59,8 @@ inline bool highCutActive(double f) { return f < kHighCutOff - 10.0; }
 
 inline const std::vector<ParamSpec>& params()
 {
-    static std::vector<ParamSpec> v;
-    if (!v.empty()) return v;
+    static const std::vector<ParamSpec> v = []() {
+    std::vector<ParamSpec> v;
     const unsigned A = kPAutomatable;
     v.push_back({ "mode", "Voicing", "Voicing", 0, kNumModes - 1, kGrit12, PUnit::None, PScale::Linear, A | kPInteger, kModeNames, 1 });
     v.push_back({ "drive", "Drive", "Drive", 0, 24, 0, PUnit::dB, PScale::Linear, A, nullptr, 1 });
@@ -80,13 +80,15 @@ inline const std::vector<ParamSpec>& params()
     v.push_back({ "out_gain", "Output Gain", "Output", -24, 24, 0, PUnit::dB, PScale::Linear, A, nullptr, 1 });
     v.push_back({ "bypass", "Bypass", "Bypass", 0, 1, 0, PUnit::None, PScale::Linear, A | kPBoolean | kPBypass, nullptr, 1 });
     return v;
+    }();
+    return v;
 }
 
 // Factory presets. Voicings: 0 clean 1 grit 12 2 hi-fi 12 3 dark 12 4 companded 8 5 toy 6 phone; order 0 after 1 before.
 inline const std::vector<Preset>& presets()
 {
-    static std::vector<Preset> v;
-    if (!v.empty()) return v;
+    static const std::vector<Preset> v = []() {
+    std::vector<Preset> v;
     auto F = [&](const char* n, std::vector<PresetValue> p) { v.push_back({ n, std::move(p) }); };
     auto S = [&](const char* n, std::vector<PresetValue> p) { v.push_back({ n, std::move(p), "SOURCES" }); };
     auto C = [&](const char* n, std::vector<PresetValue> p) { v.push_back({ n, std::move(p), "CREATIVE" }); };
@@ -117,6 +119,8 @@ inline const std::vector<Preset>& presets()
     C("Digital decay", { { "mode", 0 }, { "bits", 3 }, { "rate", 2500 }, { "jitter", 60 } });
     C("Radio from the next room", { { "mode", 6 }, { "bits", 8 }, { "rate", 6000 }, { "crackle", 30 }, { "hiss", 45 }, { "age", 60 }, { "high_cut", 2500 } });
     C("Memory of a song", { { "mode", 3 }, { "bits", 10 }, { "rate", 16000 }, { "order", 1 }, { "wow", 45 }, { "crackle", 35 }, { "hiss", 30 }, { "dropout", 30 }, { "age", 65 } });
+    return v;
+    }();
     return v;
 }
 

@@ -40,7 +40,7 @@ protected:
         if (std::strcmp(key, "notes") == 0)
         {
             notesText = value ? value : "";
-            auto list = std::make_shared<NoteList>();
+            std::unique_ptr<NoteList> list(new NoteList());
             list->notes = notesFromText(notesText.c_str());
             engine.setNotes(std::move(list));
             return;

@@ -38,8 +38,8 @@ inline bool hpfActive(double f) { return f > kHpfOff + 0.05; }
 
 inline const std::vector<ParamSpec>& params()
 {
-    static std::vector<ParamSpec> v;
-    if (!v.empty()) return v;
+    static const std::vector<ParamSpec> v = []() {
+    std::vector<ParamSpec> v;
     const unsigned A = kPAutomatable, I = kPAutomatable | kPInteger, B = kPAutomatable | kPBoolean;
     v.push_back({ "a_saw", "Osc A Saw", "Saw", 0, 1, 1, PUnit::None, PScale::Linear, B, nullptr, 1 });
     v.push_back({ "a_pulse", "Osc A Pulse", "Pulse", 0, 1, 0, PUnit::None, PScale::Linear, B, nullptr, 1 });
@@ -94,13 +94,15 @@ inline const std::vector<ParamSpec>& params()
     v.push_back({ "chorus", "Chorus", "Chorus", 0, kNumChorus - 1, kChorusOff, PUnit::None, PScale::Linear, I, kChorusNames, 1 });
     v.push_back({ "volume", "Volume", "Volume", -48, 12, 0, PUnit::dB, PScale::Linear, A, nullptr, 1 });
     return v;
+    }();
+    return v;
 }
 
 // Factory presets. Filters: 0 five24 1 eight24 2 eight12 3 ob12; chorus 0 off 1 I 2 II 3 I+II; modes 0 poly 1 unison 2 mono.
 inline const std::vector<Preset>& presets()
 {
-    static std::vector<Preset> v;
-    if (!v.empty()) return v;
+    static const std::vector<Preset> v = []() {
+    std::vector<Preset> v;
     auto F = [&](const char* sec, const char* n, std::vector<PresetValue> p) { v.push_back({ n, std::move(p), sec }); };
     v.push_back({ "Default", {} });
     F("BRASS", "Classic brass", { { "a_saw", 1 }, { "b_saw", 1 }, { "b_fine", 9 }, { "cutoff", 600 }, { "res", 10 }, { "filter_env", 60 }, { "f_a", 80 }, { "f_d", 900 }, { "f_s", 55 }, { "a_a", 40 }, { "a_r", 350 } });
@@ -119,6 +121,8 @@ inline const std::vector<Preset>& presets()
     F("BASS", "Sub pulse bass", { { "a_saw", 0 }, { "a_pulse", 1 }, { "a_pw", 40 }, { "sub", 70 }, { "level_b", 0 }, { "a_freq", -12 }, { "cutoff", 500 }, { "filter_env", 40 }, { "f_d", 300 } });
     F("FX", "Poly-mod growl", { { "pm_oscb", 60 }, { "pm_filter", 1 }, { "pm_freq_a", 1 }, { "b_low", 1 }, { "b_freq", -5 }, { "cutoff", 900 }, { "res", 40 } });
     F("FX", "Wind", { { "level_a", 0 }, { "level_b", 0 }, { "noise", 80 }, { "filter_type", 3 }, { "res", 75 }, { "lfo_filter", 50 }, { "lfo_shape", 3 }, { "lfo_rate", 0.4f }, { "a_a", 900 }, { "a_r", 2000 } });
+    return v;
+    }();
     return v;
 }
 

@@ -43,9 +43,9 @@ static constexpr int kNumParams = kToneBase + kTones * kToneFields;
 
 inline const std::vector<ParamSpec>& params()
 {
-    static std::vector<ParamSpec> v;
     static std::vector<std::string> names;
-    if (!v.empty()) return v;
+    static const std::vector<ParamSpec> v = []() {
+    std::vector<ParamSpec> v;
     const unsigned A = kPAutomatable, I = kPAutomatable | kPInteger, B = kPAutomatable | kPBoolean;
     v.push_back({ "volume", "Volume", "Volume", -48, 12, 0, PUnit::dB, PScale::Linear, A, nullptr, 1 });
     v.push_back({ "drive", "Drive", "Drive", 0, 100, 15, PUnit::Percent, PScale::Linear, A, nullptr, 1 });
@@ -101,13 +101,15 @@ inline const std::vector<ParamSpec>& params()
         p = nm("mute", "Mute");        v.push_back({ p.first, p.second, "Mute", 0, 1, 0, PUnit::None, PScale::Linear, B, kOnOff, 1 });
     }
     return v;
+    }();
+    return v;
 }
 
 // Factory sets: a pattern, a rule and a cycle, with a kit to match.
 inline const std::vector<Preset>& presets()
 {
-    static std::vector<Preset> v;
-    if (!v.empty()) return v;
+    static const std::vector<Preset> v = []() {
+    std::vector<Preset> v;
     using PV = std::vector<PresetValue>;
     static std::vector<std::string> keep;
     keep.reserve(1024);
@@ -146,6 +148,8 @@ inline const std::vector<Preset>& presets()
     F("FX", "Shimmer feedback", { { "pattern", 2 }, { "fx_shift", 12 }, { "fx_feedback", 80 }, { "fx_mix", 60 }, { "fx_time", 250 }, { "fx_filter", 40 } });
     F("FX", "Dark dub", { { "pattern", 1 }, { "fx_filter", -60 }, { "fx_feedback", 75 }, { "fx_mix", 50 }, { "fx_time", 375 }, { "drive", 40 } });
     F("FX", "Grain crush", { { "pattern", 12 }, { "mode", kModeEvolve }, { "fx_shift", -12 }, { "fx_grain", 15 }, { "fx_feedback", 60 }, { "fx_mix", 55 }, { "drive", 70 } });
+    return v;
+    }();
     return v;
 }
 

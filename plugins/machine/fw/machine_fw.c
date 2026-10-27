@@ -103,6 +103,7 @@ extern int16_t mixer_voice_samples[6];
 extern uint8_t midiParser_selectedLfoVoice[6];
 extern MidiMsg midiMsg_tmp;
 
+_Static_assert(OUTPUT_DMA_SIZE <= 64, "MachineEngine.hpp renders into 64-frame buffers (kMaxFwBlock)");
 int mfw_block(void){ return OUTPUT_DMA_SIZE; }
 float mfw_rate(void){ return REAL_FS; }
 int mfw_num_params(void){ return END_OF_SOUND_PARAMETERS; }

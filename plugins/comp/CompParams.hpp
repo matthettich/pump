@@ -26,8 +26,8 @@ inline bool lpfActive(double f) { return f < kLpfOff - 100.0; }
 
 inline const std::vector<ParamSpec>& params()
 {
-    static std::vector<ParamSpec> v;
-    if (!v.empty()) return v;
+    static const std::vector<ParamSpec> v = []() {
+    std::vector<ParamSpec> v;
     const unsigned A = kPAutomatable;
     // Lookahead and oversampling change the latency and channel mode the signal topology: not automatable.
     v.push_back({ "style", "Style", "Style", 0, 5, 0, PUnit::None, PScale::Linear, A | kPInteger, kStyleNames, 1 });
@@ -54,6 +54,8 @@ inline const std::vector<ParamSpec>& params()
     v.push_back({ "oversampling", "Oversampling", "Oversampling", 0, 2, 0, PUnit::None, PScale::Linear, kPInteger, kOsNames, 1 });
     v.push_back({ "bypass", "Bypass", "Bypass", 0, 1, 0, PUnit::None, PScale::Linear, A | kPBoolean | kPBypass, nullptr, 1 });
     return v;
+    }();
+    return v;
 }
 
 #include "CompPresetsSources.hpp"
@@ -61,8 +63,8 @@ inline const std::vector<ParamSpec>& params()
 
 inline const std::vector<Preset>& presets()
 {
-    static std::vector<Preset> v;
-    if (!v.empty()) return v;
+    static const std::vector<Preset> v = []() {
+    std::vector<Preset> v;
     // styles: 0 Clean 1 Glue 2 Opto 3 Punch 4 Vari-Mu 5 Pump; channel_mode: 0 St 1 M/S 2 Mid 3 Side; oversampling 0/1/2
     v.push_back({ "Default", {} });
     v.push_back({ "Master glue 2:1", { { "style", 1 }, { "threshold", -16 }, { "ratio", 2 }, { "knee", 12 }, { "attack", 30 },
@@ -91,6 +93,8 @@ inline const std::vector<Preset>& presets()
         { "release", 120 }, { "auto_release", 1 }, { "lookahead", 1.5f }, { "oversampling", 2 } } });
     addSourcePresets(v);   // CompPresetsSources.hpp: vocals, drums, bass, ... (SOURCES)
     addChainPresets(v);    // CompPresetsChains.hpp: matching mastering chains (CHAINS)
+    return v;
+    }();
     return v;
 }
 

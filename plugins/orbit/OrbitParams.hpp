@@ -29,8 +29,8 @@ enum Param : int {
 
 inline const std::vector<ParamSpec>& params()
 {
-    static std::vector<ParamSpec> v;
-    if (!v.empty()) return v;
+    static const std::vector<ParamSpec> v = []() {
+    std::vector<ParamSpec> v;
     const unsigned A = kPAutomatable, I = kPAutomatable | kPInteger;
     v.push_back({ "system", "System", "System", 0, kNumSystems - 1, kRossler, PUnit::None, PScale::Linear, I, kSystemNames, 1 });
     v.push_back({ "chaos", "Chaos", "Chaos", 0, 100, 25, PUnit::Percent, PScale::Linear, A, nullptr, 1 });
@@ -63,12 +63,14 @@ inline const std::vector<ParamSpec>& params()
     v.push_back({ "fine", "Fine Tune", "Fine", -100, 100, 0, PUnit::None, PScale::Linear, A, nullptr, 1 });
     v.push_back({ "volume", "Volume", "Volume", -48, 12, 0, PUnit::dB, PScale::Linear, A, nullptr, 1 });
     return v;
+    }();
+    return v;
 }
 
 inline const std::vector<Preset>& presets()
 {
-    static std::vector<Preset> v;
-    if (!v.empty()) return v;
+    static const std::vector<Preset> v = []() {
+    std::vector<Preset> v;
     auto F = [&](const char* sec, const char* n, std::vector<PresetValue> p) { v.push_back({ n, std::move(p), sec }); };
     v.push_back({ "Default", {} });
     F("BASS", "Rossler bass", { { "system", kRossler }, { "chaos", 10 }, { "sync", 90 }, { "octave", -1 }, { "cutoff", 1800 }, { "reso", 30 }, { "env_cut", 50 }, { "voice_mode", 2 }, { "glide", 50 }, { "drive", 45 }, { "volume", 3 } });
@@ -84,6 +86,8 @@ inline const std::vector<Preset>& presets()
     F("TEXTURE", "Strange noise", { { "system", kScroll }, { "chaos", 100 }, { "sync", 0 }, { "width", 100 }, { "drive", 80 }, { "cutoff", 9000 }, { "volume", 3 } });
     F("TEXTURE", "Period doubling", { { "system", kRossler }, { "chaos", 0 }, { "sync", 60 }, { "drift_chaos", 100 }, { "drift_rate", 0.08f }, { "attack", 400 }, { "release", 2000 }, { "width", 60 } });
     F("TEXTURE", "Duffing bells", { { "system", kDuffing }, { "chaos", 20 }, { "sync", 50 }, { "octave", 1 }, { "sustain", 0 }, { "decay", 1500 }, { "release", 1500 }, { "env_chaos", 60 }, { "width", 60 }, { "volume", 2 } });
+    return v;
+    }();
     return v;
 }
 

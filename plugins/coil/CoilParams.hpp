@@ -25,8 +25,8 @@ enum Param : int {
 
 inline const std::vector<ParamSpec>& params()
 {
-    static std::vector<ParamSpec> v;
-    if (!v.empty()) return v;
+    static const std::vector<ParamSpec> v = []() {
+    std::vector<ParamSpec> v;
     const unsigned A = kPAutomatable, I = kPAutomatable | kPInteger;
     v.push_back({ "model", "Spring Model", "Model", 0, 5, 0, PUnit::None, PScale::Linear, I, kModelNames, 1 });
     v.push_back({ "tension", "Tension", "Tension", -100, 100, 0, PUnit::Percent, PScale::Linear, A, nullptr, 1 });
@@ -46,13 +46,15 @@ inline const std::vector<ParamSpec>& params()
     v.push_back({ "velocity", "Velocity to Kick", "Velocity", 0, 100, 70, PUnit::Percent, PScale::Linear, A, nullptr, 1 });
     v.push_back({ "volume", "Volume", "Volume", -48, 12, 0, PUnit::dB, PScale::Linear, A, nullptr, 1 });
     return v;
+    }();
+    return v;
 }
 
 // Factory voices. Models: 0 two-spring 1 three-spring 2 short 3 long 4 digital 5 lo-fi digital.
 inline const std::vector<Preset>& presets()
 {
-    static std::vector<Preset> v;
-    if (!v.empty()) return v;
+    static const std::vector<Preset> v = []() {
+    std::vector<Preset> v;
     auto F = [&](const char* sec, const char* n, std::vector<PresetValue> p) { v.push_back({ n, std::move(p), sec }); };
     v.push_back({ "Default", {} });
     F("SPRINGS", "Two-spring boing", { { "model", 0 }, { "decay", 2.5f }, { "spread", 10 } });
@@ -77,6 +79,8 @@ inline const std::vector<Preset>& presets()
     F("DIGITAL", "Lo-fi bell", { { "model", 5 }, { "decay", 3.0f }, { "grit", 70 }, { "spread", 40 } });
     F("DIGITAL", "Crunchy pluck", { { "model", 5 }, { "harmonic", 70 }, { "decay", 1.2f }, { "grit", 90 } });
     F("DIGITAL", "Cheap reverb keys", { { "model", 4 }, { "harmonic", 50 }, { "tank", 50 }, { "decay", 2.0f } });
+    return v;
+    }();
     return v;
 }
 

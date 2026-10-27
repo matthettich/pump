@@ -33,8 +33,8 @@ static const char* const kXoverNames[] = { "Analog", "Linear Phase" };
 inline const std::vector<ParamSpec>& params()
 {
     static std::deque<std::string> pool;
-    static std::vector<ParamSpec> v;
-    if (!v.empty()) return v;
+    static const std::vector<ParamSpec> v = []() {
+    std::vector<ParamSpec> v;
     auto keep = [](const std::string& s) -> const char* { pool.push_back(s); return pool.back().c_str(); };
     const unsigned A = kPAutomatable;
     v.push_back({ "out_gain", "Output Gain", "Output", -24, 24, 0, PUnit::dB, PScale::Linear, A, nullptr, 1 });
@@ -60,6 +60,8 @@ inline const std::vector<ParamSpec>& params()
         v.push_back({ keep(p + "bypass"), keep(N + "Bypass"), keep(N + "Bypass"), 0, 1, 0, PUnit::None, PScale::Linear, A | kPBoolean, nullptr, 1 });
     }
     return v;
+    }();
+    return v;
 }
 
 // preset helpers: one band's settings
@@ -69,8 +71,8 @@ struct BP { int band; int mode; float drive, mix, level; };
 
 inline const std::vector<Preset>& presets()
 {
-    static std::vector<Preset> v;
-    if (!v.empty()) return v;
+    static const std::vector<Preset> v = []() {
+    std::vector<Preset> v;
     auto P = [&](const char* name, std::vector<PresetValue> globals, std::vector<BP> bands) {
         static std::deque<std::string> pool;
         Preset p { name, std::move(globals) };
@@ -110,6 +112,8 @@ inline const std::vector<Preset>& presets()
       { { 1, 1, 6, 60, 0 }, { 2, 0, 5, 50, 0 }, { 3, 2, 4, 40, 0 } });
     addSourcePresets(v);   // HeatPresetsSources.hpp: vocals, drums, bass, ... (SOURCES)
     addChainPresets(v);    // HeatPresetsChains.hpp: matching mastering chains (CHAINS)
+    return v;
+    }();
     return v;
 }
 

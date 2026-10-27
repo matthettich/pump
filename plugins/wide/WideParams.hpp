@@ -31,8 +31,8 @@ static const char* const kSlopeNames[] = { "24 dB/oct", "48 dB/oct" };
 inline const std::vector<ParamSpec>& params()
 {
     static std::deque<std::string> pool;
-    static std::vector<ParamSpec> v;
-    if (!v.empty()) return v;
+    static const std::vector<ParamSpec> v = []() {
+    std::vector<ParamSpec> v;
     auto keep = [](const std::string& s) -> const char* { pool.push_back(s); return pool.back().c_str(); };
     const unsigned A = kPAutomatable;
     v.push_back({ "out_gain", "Output Gain", "Output", -24, 24, 0, PUnit::dB, PScale::Linear, A, nullptr, 1 });
@@ -57,6 +57,8 @@ inline const std::vector<ParamSpec>& params()
         v.push_back({ keep(p + "bypass"), keep(N + "Bypass"), keep(N + "Bypass"), 0, 1, 0, PUnit::None, PScale::Linear, A | kPBoolean, nullptr, 1 });
     }
     return v;
+    }();
+    return v;
 }
 
 #include "WidePresetsSources.hpp"
@@ -64,8 +66,8 @@ inline const std::vector<ParamSpec>& params()
 
 inline const std::vector<Preset>& presets()
 {
-    static std::vector<Preset> v;
-    if (!v.empty()) return v;
+    static const std::vector<Preset> v = []() {
+    std::vector<Preset> v;
     // widths and stereoize amounts per band (4 values each), plus globals
     auto P = [&](const char* name, std::vector<PresetValue> globals, std::vector<float> w, std::vector<float> st = {}) {
         Preset p { name, std::move(globals) };
@@ -87,6 +89,8 @@ inline const std::vector<Preset>& presets()
     P("Linear phase: gentle", { { "xover_mode", 1 }, { "mono_bass", 1 }, { "mono_freq", 80 }, { "mono_slope", 1 } }, { 85, 100, 110, 118 });
     addSourcePresets(v);   // WidePresetsSources.hpp: vocals, drums, bass, ... (SOURCES)
     addChainPresets(v);    // WidePresetsChains.hpp: matching mastering chains (CHAINS)
+    return v;
+    }();
     return v;
 }
 

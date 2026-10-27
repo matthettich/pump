@@ -262,18 +262,17 @@ public:
     int latency() const { return psola.latencySamples(); }
     static int latencyFor(double sampleRate, int range) { return (int)std::ceil(1.25 * sampleRate / rangeMinHz(range)) + 64; }
 
-    // Graph notes from the UI (set from the main thread; swapped in at the next block)
-    void setNotes(std::shared_ptr<const NoteList> l)
+    // Graph notes from the UI (set from one non-audio thread; swapped in at the next block). Lock-free, and the
+    // audio thread never frees a list: the one it lets go of comes back through `retired` and is freed here.
+    void setNotes(std::unique_ptr<const NoteList> l)
     {
-       #if PUMP_SYNC_KERNELS
-        retired.reset();
-        incoming = std::move(l);
-       #else
-        std::atomic_store(&retired, std::shared_ptr<const NoteList>());   // the list the audio thread let go of: freed here
-        std::atomic_store(&incoming, std::move(l));
-       #endif
-        notesReady.store(true, std::memory_order_release);
+        collectNotes();
+        delete incoming.exchange(l.release(), std::memory_order_acq_rel);   // one the audio thread never took
     }
+    void collectNotes() { const NoteList* l = nullptr; while (retired.pop(l)) delete l; }
+    Engine(const Engine&) = delete;
+    Engine& operator=(const Engine&) = delete;
+    ~Engine() { collectNotes(); delete incoming.exchange(nullptr); delete notes; }
     // the host's timeline at the start of the next block
     void setTimeline(bool playing, double seconds)
     {
@@ -285,17 +284,14 @@ public:
 
     void process(const float* inL, const float* inR, float* outL, float* outR, int nFrames, const MidiMsg* ev = nullptr, int numEv = 0)
     {
-        if (notesReady.exchange(false, std::memory_order_acquire))
+        if (retired.hasSpace() && incoming.load(std::memory_order_relaxed) != nullptr)
         {
-           #if PUMP_SYNC_KERNELS
-            retired = std::move(notes);
-            notes = std::move(incoming);
-           #else
-            // never free a list on the audio thread: the old one waits in `retired` for the next setNotes()
-            std::atomic_store(&retired, std::move(notes));
-            notes = std::atomic_load(&incoming);
-           #endif
-            noteIdx = 0;
+            if (const NoteList* l = incoming.exchange(nullptr, std::memory_order_acq_rel))
+            {
+                if (notes) retired.push(notes);   // freed by the next setNotes(), never here
+                notes = l;
+                noteIdx = 0;
+            }
         }
         int e = 0;
         const double lv = clampv(cur.lead * 0.01, 0.0, 1.0), hl = dbToGain(cur.harmLevelDb), og = dbToGain(cur.outDb);
@@ -370,6 +366,7 @@ public:
             outL[i] = (float)(l * og);
             outR[i] = (float)(r * og);
         }
+        sanitizeBlock(outL, nFrames); sanitizeBlock(outR, nFrames);   // nothing non-finite reaches the host
         while (e < numEv) { midiIn(ev[e]); ++e; }
         tlSeconds += nFrames / sr;
         publish();
@@ -583,8 +580,10 @@ private:
     int noteIdx = 0;
     bool tlPlaying = false;
     double tlSeconds = 0.0;
-    std::shared_ptr<const NoteList> notes, incoming, retired;
-    std::atomic<bool> notesReady { false }, capture { false };
+    const NoteList* notes = nullptr;                    // owned; audio thread
+    std::atomic<const NoteList*> incoming { nullptr };  // owned; waiting for the audio thread
+    SpscPtrQueue<const NoteList, 8> retired;
+    std::atomic<bool> capture { false };
 };
 
 }} // namespace pump::tune

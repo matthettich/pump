@@ -50,8 +50,8 @@ constexpr float kGateOff = -90.0f;   // the gate's bottom end stop means "off"
 
 inline const std::vector<ParamSpec>& params()
 {
-    static std::vector<ParamSpec> v;
-    if (!v.empty()) return v;
+    static const std::vector<ParamSpec> v = []() {
+    std::vector<ParamSpec> v;
     const unsigned A = kPAutomatable;
     // mode, routing and FFT size change the signal path and the latency: not automatable (they fade out and back in)
     v.push_back({ "mode", "Mode", "Mode", 0, kNumModes - 1, kClassic, PUnit::None, PScale::Linear, kPInteger, kModeNames, 1 });
@@ -89,6 +89,8 @@ inline const std::vector<ParamSpec>& params()
     v.push_back({ "out_gain", "Output Gain", "Output", -24, 24, 0, PUnit::dB, PScale::Linear, A, nullptr, 1 });
     v.push_back({ "bypass", "Bypass", "Bypass", 0, 1, 0, PUnit::None, PScale::Linear, A | kPBoolean | kPBypass, nullptr, 1 });
     return v;
+    }();
+    return v;
 }
 
 // Factory presets. mode: 0 classic 1 spectral 2 talkbox 3 convolve; route: 0 synth 1 sidechain carrier 2 sidechain
@@ -96,8 +98,8 @@ inline const std::vector<ParamSpec>& params()
 // chord: 0 off 1 octave 2 fifth 3 triad 4 seventh 5 sus 6 stack; scale: 0 exact 1 chromatic 2 major 3 minor ...
 inline const std::vector<Preset>& presets()
 {
-    static std::vector<Preset> v;
-    if (!v.empty()) return v;
+    static const std::vector<Preset> v = []() {
+    std::vector<Preset> v;
     auto F = [&](const char* n, std::vector<PresetValue> p) { v.push_back({ n, std::move(p) }); };
     auto R = [&](const char* n, std::vector<PresetValue> p) { v.push_back({ n, std::move(p), "ROUTING" }); };
     auto C = [&](const char* n, std::vector<PresetValue> p) { v.push_back({ n, std::move(p), "CREATIVE" }); };
@@ -123,6 +125,8 @@ inline const std::vector<Preset>& presets()
     C("Frozen vowel pad", { { "mode", 1 }, { "attack", 60 }, { "release", 1000 }, { "wave", 2 }, { "chord", 4 }, { "ensemble", 60 } });
     C("Octave-up formants", { { "bands", 0 }, { "width", 2 }, { "formant", 12 }, { "glide", 0 }, { "scale", 1 }, { "out_gain", -4 } });
     C("Broken radio", { { "mode", 3 }, { "fft_size", 0 }, { "detail", 30 }, { "smear", 100 }, { "wave", 3 }, { "out_gain", 4 } });
+    return v;
+    }();
     return v;
 }
 

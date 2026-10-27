@@ -139,9 +139,9 @@ protected:
         if (!plug) return;
         // the next value must be above anything the DSP has seen (undo / A/B can bring lower values back)
         const float v = std::max(value(kReset), plug->engine.resetHighWater()) + 1.0f;
-        editParameter(kReset, true);   // a plain gesture, no undo step: a reset isn't a setting
+        openGesture(kReset);   // a plain gesture, no undo step: a reset isn't a setting
         setParam(kReset, v);
-        editParameter(kReset, false);
+        closeGesture(kReset);
         clearHolds();
         setStatus("All measurements reset");
     }

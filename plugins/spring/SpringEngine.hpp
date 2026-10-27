@@ -696,6 +696,9 @@ private:
 // ---- the engine ------------------------------------------------------------------------------------------------------
 class Engine {
 public:
+    // after a non-finite output: silence the tank without reallocating (safe on the audio thread)
+    void recover() { clearState(); }
+
     void prepare(double sampleRate, int /*maxBlock*/)
     {
         sr = sampleRate;

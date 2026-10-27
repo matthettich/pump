@@ -32,8 +32,8 @@ inline bool highCutActive(double f) { return f < kHighCutOff - 10.0; }
 
 inline const std::vector<ParamSpec>& params()
 {
-    static std::vector<ParamSpec> v;
-    if (!v.empty()) return v;
+    static const std::vector<ParamSpec> v = []() {
+    std::vector<ParamSpec> v;
     const unsigned A = kPAutomatable;
     // every control glides or crossfades (modes, routings and pitch modes crossfade; times move by crossfading read
     // heads or by a tape-like glide), so all of them stay automatable
@@ -63,14 +63,16 @@ inline const std::vector<ParamSpec>& params()
     v.push_back({ "out_gain", "Output Gain", "Output", -24, 24, 0, PUnit::dB, PScale::Linear, A, nullptr, 1 });
     v.push_back({ "bypass", "Bypass", "Bypass", 0, 1, 0, PUnit::None, PScale::Linear, A | kPBoolean | kPBypass, nullptr, 1 });
     return v;
+    }();
+    return v;
 }
 
 // Factory presets. Modes: 0 digital 1 tape 2 bbd 3 pitch 4 reverse; stereo: 0 stereo 1 ping-pong 2 wide; pitch_mode:
 // 0 once 1 climb. Notes: 5 1/16, 6 1/16D, 8 1/8, 9 1/8D, 10 1/4T, 11 1/4, 12 1/4D, 14 1/2, 16 1/1.
 inline const std::vector<Preset>& presets()
 {
-    static std::vector<Preset> v;
-    if (!v.empty()) return v;
+    static const std::vector<Preset> v = []() {
+    std::vector<Preset> v;
     auto F = [&](const char* n, std::vector<PresetValue> p) { v.push_back({ n, std::move(p) }); };
     auto S = [&](const char* n, std::vector<PresetValue> p) { v.push_back({ n, std::move(p), "SOURCES" }); };
     auto C = [&](const char* n, std::vector<PresetValue> p) { v.push_back({ n, std::move(p), "CREATIVE" }); };
@@ -104,6 +106,8 @@ inline const std::vector<Preset>& presets()
     C("Reverse ping-pong", { { "mode", 4 }, { "stereo", 1 }, { "note_l", 11 }, { "link", 1 }, { "feedback", 40 }, { "low_cut", 150 }, { "mix", 35 } });
     C("Broken BBD", { { "mode", 2 }, { "note_l", 11 }, { "note_r", 12 }, { "feedback", 60 }, { "age", 100 }, { "mod_depth", 40 }, { "mod_rate", 2.5f }, { "mix", 35 } });
     C("Lo-fi digital", { { "note_l", 9 }, { "link", 1 }, { "feedback", 50 }, { "age", 80 }, { "high_cut", 5000 }, { "mix", 32 } });
+    return v;
+    }();
     return v;
 }
 

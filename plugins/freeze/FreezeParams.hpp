@@ -27,8 +27,8 @@ enum Param : int {
 
 inline const std::vector<ParamSpec>& params()
 {
-    static std::vector<ParamSpec> v;
-    if (!v.empty()) return v;
+    static const std::vector<ParamSpec> v = []() {
+    std::vector<ParamSpec> v;
     const unsigned A = kPAutomatable, I = kPAutomatable | kPInteger;
     v.push_back({ "source", "Source", "Source", 0, kNumSources - 1, 1, PUnit::None, PScale::Linear, I, kSourceNames, 1 });
     v.push_back({ "position", "Position", "Position", 0, 100, 30, PUnit::Percent, PScale::Linear, A, nullptr, 1 });
@@ -56,12 +56,14 @@ inline const std::vector<ParamSpec>& params()
     v.push_back({ "octave", "Octave", "Oct", -3, 3, 0, PUnit::None, PScale::Linear, I, nullptr, 1 });
     v.push_back({ "volume", "Volume", "Volume", -48, 12, 0, PUnit::dB, PScale::Linear, A, nullptr, 1 });
     return v;
+    }();
+    return v;
 }
 
 inline const std::vector<Preset>& presets()
 {
-    static std::vector<Preset> v;
-    if (!v.empty()) return v;
+    static const std::vector<Preset> v = []() {
+    std::vector<Preset> v;
     auto F = [&](const char* sec, const char* n, std::vector<PresetValue> p) { v.push_back({ n, std::move(p), sec }); };
     v.push_back({ "Default", {} });
     F("FROZEN", "Frozen choir", { { "source", 1 }, { "position", 35 }, { "grains", 4 }, { "blur", 40 }, { "phase", 0 } });
@@ -76,6 +78,8 @@ inline const std::vector<Preset>& presets()
     F("STRANGE", "Squeezed choir", { { "source", 1 }, { "stretch", -35 }, { "position", 50 }, { "blur", 60 } });
     F("STRANGE", "Dark drone", { { "source", 7 }, { "tilt", -60 }, { "track", 30 }, { "octave", -1 }, { "attack", 2000 }, { "release", 5000 }, { "blur", 90 } });
     F("STRANGE", "Air only", { { "source", 6 }, { "low", 900 }, { "tilt", 40 }, { "high", 16000 }, { "shimmer", 70 }, { "spray", 30 }, { "phase", 0 }, { "volume", 12 } });
+    return v;
+    }();
     return v;
 }
 

@@ -37,8 +37,8 @@ static const char* const kDetectNames[] = { "Peak", "RMS" };
 inline const std::vector<ParamSpec>& params()
 {
     static std::deque<std::string> pool;
-    static std::vector<ParamSpec> v;
-    if (!v.empty()) return v;
+    static const std::vector<ParamSpec> v = []() {
+    std::vector<ParamSpec> v;
     auto keep = [](const std::string& s) -> const char* { pool.push_back(s); return pool.back().c_str(); };
     const unsigned A = kPAutomatable;
     v.push_back({ "out_gain", "Output Gain", "Output", -24, 24, 0, PUnit::dB, PScale::Linear, A, nullptr, 1 });
@@ -70,6 +70,8 @@ inline const std::vector<ParamSpec>& params()
         v.push_back({ keep(p + "bypass"), keep(N + "Bypass"), keep(N + "Bypass"), 0, 1, 0, PUnit::None, PScale::Linear, A | kPBoolean, nullptr, 1 });
     }
     return v;
+    }();
+    return v;
 }
 
 // preset helpers: one band's settings
@@ -93,8 +95,8 @@ inline void addBand(Preset& p, const BP& b)
 
 inline const std::vector<Preset>& presets()
 {
-    static std::vector<Preset> v;
-    if (!v.empty()) return v;
+    static const std::vector<Preset> v = []() {
+    std::vector<Preset> v;
     auto P = [&](const char* name, std::vector<PresetValue> globals, std::vector<BP> bands) {
         Preset p { name, std::move(globals) };
         for (const BP& b : bands) addBand(p, b);
@@ -130,6 +132,8 @@ inline const std::vector<Preset>& presets()
       { { 1, 1, -30, 1.5f, 1, 90, 6, 6, 0.0f }, { 2, 0, -30, 3.0f, 20, 90, 4, 10, 2.0f }, { 3, 2, -44, 1.8f, 5, 120, 8, 6, 0.0f } });
     addSourcePresets(v);   // BandPresetsSources.hpp: vocals, drums, bass, ... (SOURCES)
     addChainPresets(v);    // BandPresetsChains.hpp: matching mastering chains (CHAINS)
+    return v;
+    }();
     return v;
 }
 

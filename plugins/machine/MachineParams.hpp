@@ -22,8 +22,8 @@ inline int voiceOfSound(int s) { return s >= 6 ? 5 : s; }
 
 inline const std::vector<ParamSpec>& params()
 {
-    static std::vector<ParamSpec> v;
-    if (!v.empty()) return v;
+    static const std::vector<ParamSpec> v = []() {
+    std::vector<ParamSpec> v;
     const unsigned I = kPAutomatable | kPInteger, B = kPAutomatable | kPBoolean;
     for (int i = 0; i < kNumFw; ++i)
     {
@@ -32,6 +32,8 @@ inline const std::vector<ParamSpec>& params()
     }
     v.push_back({ "volume", "Volume", "Volume", -48, 12, 0, PUnit::dB, PScale::Linear, kPAutomatable, nullptr, 1 });
     v.push_back({ "follow", "Edit the Pad Played", "Follow", 0, 1, 1, PUnit::None, PScale::Linear, kPBoolean | kPNoUndo, nullptr, 1 });   // appended
+    return v;
+    }();
     return v;
 }
 
@@ -64,9 +66,9 @@ inline std::string knobSymbol(int voice, const std::string& a)
 // Factory kits, each voice a Thunder Plus firmware-voice preset; knobs a preset doesn't name keep the init kit's.
 inline const std::vector<Preset>& presets()
 {
-    static std::vector<Preset> v;
     static std::deque<std::string> text;
-    if (!v.empty()) return v;
+    static const std::vector<Preset> v = []() {
+    std::vector<Preset> v;
     using Knobs = std::vector<std::pair<const char*, float>>;
     auto kit = [&](const char* name, const std::vector<Knobs>& voices) {
         Preset p { name, {}, "KITS" };
@@ -123,6 +125,8 @@ inline const std::vector<Preset>& presets()
         { { "dec", 6 }, { "noiseMix", 100 }, { "ftype", 1 }, { "cut", 70 }, { "tWave", 13 }, { "tLvl", 90 } },
         { { "atk", 95 }, { "dec", 114 }, { "ftype", 1 }, { "cut", 66 }, { "vol", 112 } },
         { { "wave", 4 }, { "atk", 16 }, { "dec", 10 }, { "ftype", 1 }, { "cut", 100 }, { "decO", 20 } } });
+    return v;
+    }();
     return v;
 }
 

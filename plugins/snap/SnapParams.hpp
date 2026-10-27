@@ -22,8 +22,8 @@ constexpr float kMaxLookaheadMs = 5.0f;
 
 inline const std::vector<ParamSpec>& params()
 {
-    static std::vector<ParamSpec> v;
-    if (!v.empty()) return v;
+    static const std::vector<ParamSpec> v = []() {
+    std::vector<ParamSpec> v;
     const unsigned A = kPAutomatable;
     v.push_back({ "attack", "Attack", "Attack", -100, 100, 0, PUnit::Percent, PScale::Linear, A, nullptr, 1 });
     v.push_back({ "sustain", "Sustain", "Sustain", -100, 100, 0, PUnit::Percent, PScale::Linear, A, nullptr, 1 });
@@ -42,13 +42,15 @@ inline const std::vector<ParamSpec>& params()
     v.push_back({ "out_gain", "Output Gain", "Output", -24, 24, 0, PUnit::dB, PScale::Linear, A, nullptr, 1 });
     v.push_back({ "bypass", "Bypass", "Bypass", 0, 1, 0, PUnit::None, PScale::Linear, A | kPBoolean | kPBypass, nullptr, 1 });
     return v;
+    }();
+    return v;
 }
 
 // Factory presets. Focus: 0 full 1 low 2 mid 3 high; band: 0 full 1 low 2 high.
 inline const std::vector<Preset>& presets()
 {
-    static std::vector<Preset> v;
-    if (!v.empty()) return v;
+    static const std::vector<Preset> v = []() {
+    std::vector<Preset> v;
     auto F = [&](const char* n, std::vector<PresetValue> p) { v.push_back({ n, std::move(p) }); };
     auto S = [&](const char* n, std::vector<PresetValue> p) { v.push_back({ n, std::move(p), "SOURCES" }); };
     auto C = [&](const char* n, std::vector<PresetValue> p) { v.push_back({ n, std::move(p), "CREATIVE" }); };
@@ -83,6 +85,8 @@ inline const std::vector<Preset>& presets()
     C("Endless room", { { "sustain", 100 }, { "release", 2000 } });
     C("Click machine", { { "attack", 100 }, { "attack_time", 1 }, { "clip", 1 }, { "ceiling", -3 } });
     C("Swell", { { "attack", -100 }, { "sustain", 60 }, { "attack_time", 60 }, { "release", 800 } });
+    return v;
+    }();
     return v;
 }
 

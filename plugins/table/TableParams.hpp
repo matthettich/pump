@@ -44,8 +44,8 @@ static const char* const kVoiceModeNames[] = { "Poly", "Mono", "Legato" };
 
 inline const std::vector<ParamSpec>& params()
 {
-    static std::vector<ParamSpec> v;
-    if (!v.empty()) return v;
+    static const std::vector<ParamSpec> v = []() {
+    std::vector<ParamSpec> v;
     const unsigned A = kPAutomatable, I = kPAutomatable | kPInteger;
     for (int o = 0; o < 2; ++o)
     {
@@ -102,6 +102,8 @@ inline const std::vector<ParamSpec>& params()
     v.push_back({ "bend_range", "Pitch Bend Range", "Bend", 0, 24, 2, PUnit::None, PScale::Linear, I, nullptr, 1 });
     v.push_back({ "volume", "Volume", "Volume", -48, 12, 0, PUnit::dB, PScale::Linear, A, nullptr, 1 });
     return v;
+    }();
+    return v;
 }
 
 // Factory presets. Tables: 0 analog 1 harmonic 2 formant 3 sync 4 pwm 5 fm 6 fold 7 digital 8 odd/even 9 spectral.
@@ -109,8 +111,8 @@ inline const std::vector<ParamSpec>& params()
 // 3 cutoff 4 res 5 levelA 6 levelB 7 pan 8 detune 9 lfo1 rate.
 inline const std::vector<Preset>& presets()
 {
-    static std::vector<Preset> v;
-    if (!v.empty()) return v;
+    static const std::vector<Preset> v = []() {
+    std::vector<Preset> v;
     auto F = [&](const char* sec, const char* n, std::vector<PresetValue> p) { v.push_back({ n, std::move(p), sec }); };
     v.push_back({ "Default", {} });
     // BASS
@@ -136,6 +138,8 @@ inline const std::vector<Preset>& presets()
     F("PLUCKS", "PWM pluck", { { "table_a", 4 }, { "pos_a", 30 }, { "src2", 3 }, { "dst2", 0 }, { "amt2", 50 }, { "mod_d", 300 }, { "mod_s", 0 }, { "amp_d", 400 }, { "amp_s", 0 }, { "amp_r", 300 }, { "cutoff", 4000 }, { "filter_env", 40 } });
     F("PLUCKS", "Fold pluck", { { "table_a", 6 }, { "pos_a", 0 }, { "src2", 3 }, { "dst2", 0 }, { "amt2", 80 }, { "mod_d", 220 }, { "mod_s", 0 }, { "amp_d", 350 }, { "amp_s", 0 } });
     F("PLUCKS", "Random sparkle", { { "table_a", 9 }, { "src1", 8 }, { "dst1", 0 }, { "amt1", 100 }, { "oct_a", 1 }, { "amp_d", 250 }, { "amp_s", 0 }, { "amp_r", 400 } });
+    return v;
+    }();
     return v;
 }
 

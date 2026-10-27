@@ -30,8 +30,8 @@ enum Param : int {
 
 inline const std::vector<ParamSpec>& params()
 {
-    static std::vector<ParamSpec> v;
-    if (!v.empty()) return v;
+    static const std::vector<ParamSpec> v = []() {
+    std::vector<ParamSpec> v;
     const unsigned A = kPAutomatable, I = kPAutomatable | kPInteger;
     v.push_back({ "model", "Object", "Object", 0, kNumModels - 1, kMarimba, PUnit::None, PScale::Linear, I, kModelNames, 1 });
     v.push_back({ "modes", "Modes", "Modes", 4, 48, 24, PUnit::None, PScale::Linear, I, nullptr, 1 });
@@ -55,12 +55,14 @@ inline const std::vector<ParamSpec>& params()
     v.push_back({ "octave", "Octave", "Oct", -3, 3, 0, PUnit::None, PScale::Linear, I, nullptr, 1 });
     v.push_back({ "volume", "Volume", "Volume", -48, 12, 0, PUnit::dB, PScale::Linear, A, nullptr, 1 });
     return v;
+    }();
+    return v;
 }
 
 inline const std::vector<Preset>& presets()
 {
-    static std::vector<Preset> v;
-    if (!v.empty()) return v;
+    static const std::vector<Preset> v = []() {
+    std::vector<Preset> v;
     auto F = [&](const char* sec, const char* n, std::vector<PresetValue> p) { v.push_back({ n, std::move(p), sec }); };
     v.push_back({ "Default", {} });
     F("STRUCK", "Marimba", { { "model", kMarimba }, { "material", 20 }, { "decay", 1.2f }, { "hardness", 50 }, { "position", 22 } });
@@ -80,6 +82,8 @@ inline const std::vector<Preset>& presets()
     F("BLOWN", "Breath tube", { { "model", kTube }, { "exciter", kBlow }, { "material", 50 }, { "decay", 0.6f }, { "pressure", 70 }, { "noise", 40 }, { "vibrato", 18 }, { "damp", 0.15f } });
     F("BLOWN", "Bottle", { { "model", kTube }, { "exciter", kBlow }, { "material", 80 }, { "decay", 1.0f }, { "pressure", 55 }, { "noise", 60 }, { "modes", 8 }, { "damp", 0.2f } });
     F("BLOWN", "Wind plate", { { "model", kPlate }, { "exciter", kBlow }, { "material", 90 }, { "decay", 3.0f }, { "pressure", 45 }, { "noise", 80 }, { "damp", 1.5f }, { "spread", 90 }, { "volume", 7 } });
+    return v;
+    }();
     return v;
 }
 

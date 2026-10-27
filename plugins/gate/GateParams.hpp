@@ -43,8 +43,8 @@ inline float defaultLevel(int k)
 
 inline const std::vector<ParamSpec>& params()
 {
-    static std::vector<ParamSpec> v;
-    if (!v.empty()) return v;
+    static const std::vector<ParamSpec> v = []() {
+    std::vector<ParamSpec> v;
     const unsigned A = kPAutomatable;
     v.push_back({ "steps", "Steps", "Steps", 1, kMaxSteps, 16, PUnit::None, PScale::Linear, A | kPInteger, nullptr, 1 });
     v.push_back({ "rate", "Rate", "Rate", 0, kNumNotes - 1, kNote16, PUnit::None, PScale::Linear, A | kPInteger, kNoteNames, 1 });
@@ -64,6 +64,8 @@ inline const std::vector<ParamSpec>& params()
     v.push_back({ "bypass", "Bypass", "Bypass", 0, 1, 0, PUnit::None, PScale::Linear, A | kPBoolean | kPBypass, nullptr, 1 });
     for (int k = 0; k < kMaxSteps; ++k)
         v.push_back({ kStepSymbols[k], kStepNames[k], kStepNames[k], 0, 100, defaultLevel(k), PUnit::Percent, PScale::Linear, A, nullptr, 1 });
+    return v;
+    }();
     return v;
 }
 
@@ -88,8 +90,8 @@ inline std::vector<PresetValue> pattern(const char* text, std::vector<PresetValu
 // Factory presets. Rates are indices into kNoteNames (kNote16 = 1/16, ...); modes: 0 volume 1 filter 2 both.
 inline const std::vector<Preset>& presets()
 {
-    static std::vector<Preset> v;
-    if (!v.empty()) return v;
+    static const std::vector<Preset> v = []() {
+    std::vector<Preset> v;
     auto F = [&](const char* n, std::vector<PresetValue> p) { v.push_back({ n, std::move(p) }); };
     auto S = [&](const char* n, std::vector<PresetValue> p) { v.push_back({ n, std::move(p), "SOURCES" }); };
     auto C = [&](const char* n, std::vector<PresetValue> p) { v.push_back({ n, std::move(p), "CREATIVE" }); };
@@ -122,6 +124,8 @@ inline const std::vector<Preset>& presets()
     C("Wah steps", pattern("38x5 x29x", { { "rate", kNote8 }, { "mode", kFilter }, { "length", 100 }, { "smooth", 45 }, { "resonance", 75 },
                                          { "filter_low", 300 }, { "filter_high", 5000 } }));
     C("Wide shimmer", pattern("xx.x x.xx .xx. x.x.", { { "rate", kNote32 }, { "stereo_offset", 3 }, { "length", 50 }, { "release", 10 }, { "depth", 85 } }));
+    return v;
+    }();
     return v;
 }
 

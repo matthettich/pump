@@ -37,8 +37,8 @@ inline void scaleRange(int scale, float target, float& lo, float& hi)
 
 inline const std::vector<ParamSpec>& params()
 {
-    static std::vector<ParamSpec> v;
-    if (!v.empty()) return v;
+    static const std::vector<ParamSpec> v = []() {
+    std::vector<ParamSpec> v;
     const unsigned A = kPAutomatable;
     v.push_back({ "target", "Loudness Target", "Target", 0, 7, 0, PUnit::None, PScale::Linear, A | kPInteger, kTargetNames, 1 });
     v.push_back({ "custom_lufs", "Custom Target Loudness", "Custom LUFS", -36, -5, -14, PUnit::LU, PScale::Linear, A, nullptr, 1 });
@@ -49,6 +49,8 @@ inline const std::vector<ParamSpec>& params()
     // (so undo, A/B and presets, which restore older values, never trigger a reset). Not automatable.
     v.push_back({ "reset", "Reset Count", "Reset", 0, 1000000, 0, PUnit::None, PScale::Linear, kPInteger | kPHidden, nullptr, 1 });
     return v;
+    }();
+    return v;
 }
 
 #include "MeterPresetsSources.hpp"
@@ -56,8 +58,8 @@ inline const std::vector<ParamSpec>& params()
 
 inline const std::vector<Preset>& presets()
 {
-    static std::vector<Preset> v;
-    if (!v.empty()) return v;
+    static const std::vector<Preset> v = []() {
+    std::vector<Preset> v;
     v.push_back({ "Default", {} });
     v.push_back({ "Streaming -14 LUFS", { { "target", 0 } } });
     v.push_back({ "Apple Music -16 LUFS", { { "target", 1 } } });
@@ -72,6 +74,8 @@ inline const std::vector<Preset>& presets()
     v.push_back({ "Full range -60..0", { { "scale", 2 }, { "history", 0 } } });
     addSourcePresets(v);   // MeterPresetsSources.hpp: vocals, drums, bass, ... (SOURCES)
     addChainPresets(v);    // MeterPresetsChains.hpp: matching mastering chains (CHAINS)
+    return v;
+    }();
     return v;
 }
 

@@ -194,7 +194,7 @@ protected:
         const int f = (p - kToneBase) % kToneFields;
         int row = 0; for (int k = 0; k < 6; ++k) if (rowField[k] == f) row = k;
         const Rect& rr = barRow[row];
-        if (std::find(editing.begin(), editing.end(), p) == editing.end()) { editParameter((uint32_t)p, true); editing.push_back(p); }
+        if (std::find(editing.begin(), editing.end(), p) == editing.end()) { openGesture((uint32_t)p); editing.push_back(p); }
         setParamNorm(p, pump::clampv((rr.b() - y) / rr.h, 0.0f, 1.0f));
     }
     bool cellAt(float x, float y, int& cx, int& cy) const
@@ -258,7 +258,7 @@ protected:
     void bodyMouseUp(float, float) override
     {
         if (painting) { painting = false; endGroup(); }
-        if (dragBars) { dragBars = false; for (int p : editing) editParameter((uint32_t)p, false); editing.clear(); endGroup(); }
+        if (dragBars) { dragBars = false; for (int p : editing) closeGesture((uint32_t)p); editing.clear(); endGroup(); }
         pressedBtn = -1;
     }
     void bodyHover(float x, float y) override

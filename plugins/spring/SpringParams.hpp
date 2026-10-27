@@ -23,8 +23,8 @@ inline bool lowCutActive(double f) { return f > kLowCutOff + 0.05; }
 
 inline const std::vector<ParamSpec>& params()
 {
-    static std::vector<ParamSpec> v;
-    if (!v.empty()) return v;
+    static const std::vector<ParamSpec> v = []() {
+    std::vector<ParamSpec> v;
     const unsigned A = kPAutomatable;
     // the model switch crossfades two voices (the old tank rings out while the new one takes the input): automatable
     v.push_back({ "model", "Model", "Model", 0, kNumModels - 1, kTwoSpring, PUnit::None, PScale::Linear, A | kPInteger, kModelNames, 1 });
@@ -42,13 +42,15 @@ inline const std::vector<ParamSpec>& params()
     v.push_back({ "out_gain", "Output Gain", "Output", -24, 24, 0, PUnit::dB, PScale::Linear, A, nullptr, 1 });
     v.push_back({ "bypass", "Bypass", "Bypass", 0, 1, 0, PUnit::None, PScale::Linear, A | kPBoolean | kPBypass, nullptr, 1 });
     return v;
+    }();
+    return v;
 }
 
 // Factory presets. Models: 0 two-spring 1 three-spring 2 short 3 long 4 digital 5 lo-fi digital.
 inline const std::vector<Preset>& presets()
 {
-    static std::vector<Preset> v;
-    if (!v.empty()) return v;
+    static const std::vector<Preset> v = []() {
+    std::vector<Preset> v;
     auto F = [&](const char* n, std::vector<PresetValue> p) { v.push_back({ n, std::move(p) }); };
     auto S = [&](const char* n, std::vector<PresetValue> p) { v.push_back({ n, std::move(p), "SOURCES" }); };
     auto C = [&](const char* n, std::vector<PresetValue> p) { v.push_back({ n, std::move(p), "CREATIVE" }); };
@@ -81,6 +83,8 @@ inline const std::vector<Preset>& presets()
     C("Broken effects unit", { { "model", 5 }, { "grit", 100 }, { "decay", 2.5f }, { "wobble", 50 }, { "mix", 40 } });
     C("Endless boing", { { "model", 3 }, { "decay", 8.0f }, { "drip", 100 }, { "tension", -60 }, { "mix", 50 } });
     C("Pre-delayed drip", { { "model", 0 }, { "pre_delay", 180 }, { "drip", 80 }, { "decay", 3.0f }, { "mix", 35 } });
+    return v;
+    }();
     return v;
 }
 

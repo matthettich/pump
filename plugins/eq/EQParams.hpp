@@ -42,8 +42,8 @@ enum Place : int { kStereo = 0, kLeft, kRight, kMid, kSide };
 inline const std::vector<ParamSpec>& params()
 {
     static std::deque<std::string> pool;   // stable storage for generated names
-    static std::vector<ParamSpec> v;
-    if (!v.empty()) return v;
+    static const std::vector<ParamSpec> v = []() {
+    std::vector<ParamSpec> v;
     auto keep = [](const std::string& s) -> const char* { pool.push_back(s); return pool.back().c_str(); };
     const unsigned A = kPAutomatable;
     v.push_back({ "out_gain", "Output Gain", "Output", -36, 36, 0, PUnit::dB, PScale::Linear, A, nullptr, 1 });
@@ -75,6 +75,8 @@ inline const std::vector<ParamSpec>& params()
         v.push_back({ keep(p + "dyn_thresh"), keep(N + "Threshold"), keep(N + "Thresh"), -80, 0, -30, PUnit::dB, PScale::Linear, A, nullptr, 1 });
     }
     return v;
+    }();
+    return v;
 }
 
 // helpers for preset tables
@@ -100,8 +102,8 @@ inline void addBand(Preset& p, const B& b)
 
 inline const std::vector<Preset>& presets()
 {
-    static std::vector<Preset> v;
-    if (!v.empty()) return v;
+    static const std::vector<Preset> v = []() {
+    std::vector<Preset> v;
     // shapes: 0 bell 1 lowshelf 2 highshelf 3 lowcut 4 highcut 5 notch 6 bandpass 7 tilt
     // slope index: 0=6 1=12 2=18 3=24 4=30 5=36 6=48 7=72 8=96 9=brickwall
     auto P = [&](const char* name, std::vector<B> bands, std::vector<PresetValue> extra = {}) {
@@ -134,6 +136,8 @@ inline const std::vector<Preset>& presets()
     P("Linear: master low cut", { { 1, 3, 30, 0, 0.71f, 4, 0, 0, -6, -30 } }, { { "phase", 1 }, { "lin_quality", 2 } });
     addSourcePresets(v);   // EQPresetsSources.hpp: vocals, drums, bass, ... (SOURCES)
     addChainPresets(v);    // EQPresetsChains.hpp: matching mastering chains (CHAINS)
+    return v;
+    }();
     return v;
 }
 

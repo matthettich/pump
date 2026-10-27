@@ -29,8 +29,8 @@ inline float targetLufs(int target, float custom)
 
 inline const std::vector<ParamSpec>& params()
 {
-    static std::vector<ParamSpec> v;
-    if (!v.empty()) return v;
+    static const std::vector<ParamSpec> v = []() {
+    std::vector<ParamSpec> v;
     const unsigned A = kPAutomatable;
     v.push_back({ "gain", "Gain", "Gain", 0, 30, 0, PUnit::dB, PScale::Linear, A, nullptr, 1 });
     v.push_back({ "ceiling", "Output Ceiling", "Ceiling", -12, 0, -1, PUnit::dB, PScale::Linear, A, nullptr, 1 });
@@ -51,6 +51,8 @@ inline const std::vector<ParamSpec>& params()
     v.push_back({ "target", "Loudness Target", "Target", 0, 6, 1, PUnit::None, PScale::Linear, kPInteger, kTargetNames, 1 });
     v.push_back({ "target_custom", "Custom Target", "Custom", -30, -5, -14, PUnit::LU, PScale::Linear, 0, nullptr, 1 });
     return v;
+    }();
+    return v;
 }
 
 #include "LimitPresetsSources.hpp"
@@ -58,8 +60,8 @@ inline const std::vector<ParamSpec>& params()
 
 inline const std::vector<Preset>& presets()
 {
-    static std::vector<Preset> v;
-    if (!v.empty()) return v;
+    static const std::vector<Preset> v = []() {
+    std::vector<Preset> v;
     v.push_back({ "Default", {} });
     v.push_back({ "Streaming -14 LUFS", { { "gain", 4 }, { "ceiling", -1 }, { "style", kTransparent }, { "lookahead", 5 }, { "attack", 60 }, { "release", 160 }, { "target", 1 } } });
     v.push_back({ "Apple Music -16 LUFS", { { "gain", 2.5f }, { "ceiling", -1 }, { "style", kTransparent }, { "release", 200 }, { "target", 2 } } });
@@ -76,6 +78,8 @@ inline const std::vector<Preset>& presets()
     v.push_back({ "YouTube -14 LUFS", { { "gain", 5 }, { "ceiling", -1 }, { "style", kAllround }, { "target", 5 } } });
     addSourcePresets(v);   // LimitPresetsSources.hpp: vocals, drums, bass, ... (SOURCES)
     addChainPresets(v);    // LimitPresetsChains.hpp: matching mastering chains (CHAINS)
+    return v;
+    }();
     return v;
 }
 

@@ -42,9 +42,9 @@ static const PadInfo kPadInfo[kPads] = {
 
 inline const std::vector<ParamSpec>& params()
 {
-    static std::vector<ParamSpec> v;
     static std::deque<std::string> text;
-    if (!v.empty()) return v;
+    static const std::vector<ParamSpec> v = []() {
+    std::vector<ParamSpec> v;
     const unsigned A = kPAutomatable, I = kPAutomatable | kPInteger;
     auto s = [&](const std::string& x) { text.push_back(x); return text.back().c_str(); };
     for (int p = 0; p < kPads; ++p)
@@ -70,13 +70,15 @@ inline const std::vector<ParamSpec>& params()
     v.push_back({ "volume", "Volume", "Volume", -48, 12, 0, PUnit::dB, PScale::Linear, A, nullptr, 1 });
     v.push_back({ "follow", "Edit the Pad Played", "Follow", 0, 1, 1, PUnit::None, PScale::Linear, kPBoolean | kPNoUndo, nullptr, 1 });   // appended
     return v;
+    }();
+    return v;
 }
 
 // Factory kits. Models: 0 kick 1 snare 2 clap 3 hat 4 tom 5 metal 6 FM 7 noise.
 inline const std::vector<Preset>& presets()
 {
-    static std::vector<Preset> v;
-    if (!v.empty()) return v;
+    static const std::vector<Preset> v = []() {
+    std::vector<Preset> v;
     auto F = [&](const char* sec, const char* n, std::vector<PresetValue> p) { v.push_back({ n, std::move(p), sec }); };
     v.push_back({ "Default", {} });
     F("KITS", "Long boom", { { "kick_decay", 1800 }, { "kick_pitch", 22 }, { "kick_pdecay", 70 }, { "kick_click", 15 }, { "kick_drive", 25 }, { "kick_tune", -3 },
@@ -105,6 +107,8 @@ inline const std::vector<Preset>& presets()
         { "snare_tune", 5 }, { "snare_decay", 160 }, { "snare_noise", 55 }, { "clap_char", 40 }, { "chat_decay", 30 }, { "chat_tone", 70 }, { "ohat_decay", 250 } });
     F("KITS", "Zaps and blips", { { "kick_model", 7 }, { "kick_pitch", 40 }, { "kick_pdecay", 80 }, { "kick_char", 80 }, { "snare_model", 7 }, { "snare_pitch", 30 }, { "snare_char", 60 },
         { "clap_model", 6 }, { "clap_char", 75 }, { "tom_model", 7 }, { "tom_pitch", 44 }, { "tom_char", 85 }, { "perc_pitch", 48 }, { "perc_pdecay", 6 }, { "cym_model", 7 }, { "cym_tone", 80 }, { "volume", 8 } });
+    return v;
+    }();
     return v;
 }
 

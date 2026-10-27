@@ -32,8 +32,8 @@ constexpr int kMaxPartials = 256;
 
 inline const std::vector<ParamSpec>& params()
 {
-    static std::vector<ParamSpec> v;
-    if (!v.empty()) return v;
+    static const std::vector<ParamSpec> v = []() {
+    std::vector<ParamSpec> v;
     const unsigned A = kPAutomatable, I = kPAutomatable | kPInteger, B = kPAutomatable | kPBoolean;
     v.push_back({ "octave", "Octave", "Oct", -3, 2, -1, PUnit::None, PScale::Linear, I, nullptr, 1 });
     v.push_back({ "tune", "Tune", "Tune", -12, 12, 0, PUnit::None, PScale::Linear, A, nullptr, 1 });
@@ -89,13 +89,15 @@ inline const std::vector<ParamSpec>& params()
     v.push_back({ "drift", "Drift", "Drift", 0, 100, 0, PUnit::Percent, PScale::Linear, A, nullptr, 1 });
     v.push_back({ "drift_rate", "Drift Rate", "Rate", 0.05f, 12, 0.6f, PUnit::Hz, PScale::Log, A, nullptr, 1 });
     return v;
+    }();
+    return v;
 }
 
 // Factory presets. Divisions are kNoteIndex (1/16 = 5, 1/8T = 7, 1/8 = 8, 1/4T = 10, 1/4 = 11, 1/2 = 14, 1/1 = 16).
 inline const std::vector<Preset>& presets()
 {
-    static std::vector<Preset> v;
-    if (!v.empty()) return v;
+    static const std::vector<Preset> v = []() {
+    std::vector<Preset> v;
     auto F = [&](const char* sec, const char* n, std::vector<PresetValue> p) { v.push_back({ n, std::move(p), sec }); };
     v.push_back({ "Default", {} });
     F("WOBBLE", "Classic wobble", { { "wob_div", kNote8 }, { "wob_cut", 3.5f }, { "cutoff", 180 }, { "res", 55 }, { "filter_env", 0 }, { "sub", 60 } });
@@ -123,6 +125,8 @@ inline const std::vector<Preset>& presets()
     F("DENSE", "Inharmonic gong bass", { { "partials", 128 }, { "inharm", 40 }, { "cutoff", 1800 }, { "filter_env", 0 }, { "decay", 2500 }, { "sustain", 20 }, { "release", 1200 }, { "drift", 20 } });
     F("DENSE", "Living reese", { { "partials", 192 }, { "detune", 24 }, { "width", 75 }, { "drift", 50 }, { "drift_rate", 0.4f }, { "morph", 35 }, { "cutoff", 900 }, { "res", 25 } });
     F("DENSE", "Metallic morph", { { "partials", 180 }, { "inharm", 25 }, { "spray", 20 }, { "wob_sync", 0 }, { "wob_rate", 0.25f }, { "wob_morph", 80 }, { "cutoff", 3000 }, { "filter_env", 0 } });
+    return v;
+    }();
     return v;
 }
 

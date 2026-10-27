@@ -55,9 +55,13 @@ protected:
             std::string msg;
             if (!bankPath.empty())
             {
-                b = Bank::load(bankPath);
-                if (!b->ok()) { msg = "couldn't load: " + b->error; b.reset(); }
-                else msg = b->name + " (" + std::to_string(b->entries.size()) + " syllables)";
+                try   // setState() must never throw into the host
+                {
+                    b = Bank::load(bankPath);
+                    if (!b->ok()) { msg = "couldn't load: " + b->error; b.reset(); }
+                    else msg = b->name + " (" + std::to_string(b->entries.size()) + " syllables)";
+                }
+                catch (...) { b.reset(); msg = "couldn't load the voicebank"; }
             }
             std::lock_guard<std::mutex> g(bankLock);
             if (b) keepBanks.push_back(b);

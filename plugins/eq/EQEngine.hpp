@@ -574,7 +574,7 @@ private:
         if (cross) { make(1, irs[1]); make(2, irs[2]); }
         const float* p[4] = { irs[0].data(), cross ? irs[1].data() : nullptr, cross ? irs[2].data() : nullptr, irs[3].data() };
         auto k = target.makeKernel(p, taps);
-        if (now) target.setKernelNow(k); else target.setKernel(k);
+        if (now) target.setKernelNow(std::move(k)); else target.setKernel(std::move(k));
     }
 
 #if PUMP_SYNC_KERNELS

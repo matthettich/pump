@@ -25,8 +25,8 @@ constexpr double kTargetLoudness = -18.0;   // NORMALIZE brings every model's "t
 
 inline const std::vector<ParamSpec>& params()
 {
-    static std::vector<ParamSpec> v;
-    if (!v.empty()) return v;
+    static const std::vector<ParamSpec> v = []() {
+    std::vector<ParamSpec> v;
     const unsigned A = kPAutomatable;
     v.push_back({ "input", "Input Gain", "Input", -24, 24, 0, PUnit::dB, PScale::Linear, A, nullptr, 1 });
     v.push_back({ "gate", "Gate Threshold", "Gate", kGateOff, -20, kGateOff, PUnit::dB, PScale::Linear, A, nullptr, 1 });
@@ -42,13 +42,15 @@ inline const std::vector<ParamSpec>& params()
     v.push_back({ "out_gain", "Output Gain", "Output", -24, 24, 0, PUnit::dB, PScale::Linear, A, nullptr, 1 });
     v.push_back({ "bypass", "Bypass", "Bypass", 0, 1, 0, PUnit::None, PScale::Linear, A | kPBoolean | kPBypass, nullptr, 1 });
     return v;
+    }();
+    return v;
 }
 
 // Factory presets: input, gate and tone shapes that suit most models (the model and cab stay as they are).
 inline const std::vector<Preset>& presets()
 {
-    static std::vector<Preset> v;
-    if (!v.empty()) return v;
+    static const std::vector<Preset> v = []() {
+    std::vector<Preset> v;
     auto F = [&](const char* n, std::vector<PresetValue> p) { v.push_back({ n, std::move(p) }); };
     auto S = [&](const char* n, std::vector<PresetValue> p) { v.push_back({ n, std::move(p), "SOURCES" }); };
     F("Default", {});
@@ -65,6 +67,8 @@ inline const std::vector<Preset>& presets()
     S("Bass: amp", { { "bass", 2 }, { "treble", -2 }, { "presence", -3 } });
     S("Synths and keys: amp colour", { { "input", -6 }, { "cab_high_cut", 12000 } });
     S("Drums: smashed", { { "input", 6 }, { "gate", -55 }, { "cab_low_cut", 60 } });
+    return v;
+    }();
     return v;
 }
 

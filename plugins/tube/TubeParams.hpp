@@ -27,8 +27,8 @@ inline bool highCutActive(double f) { return f < kHighCutOff - 10.0; }
 
 inline const std::vector<ParamSpec>& params()
 {
-    static std::vector<ParamSpec> v;
-    if (!v.empty()) return v;
+    static const std::vector<ParamSpec> v = []() {
+    std::vector<ParamSpec> v;
     const unsigned A = kPAutomatable;
     // stages and oversampling change the signal path (and the latency): not automatable
     v.push_back({ "mode", "Circuit", "Circuit", 0, kNumModes - 1, kTriode, PUnit::None, PScale::Linear, A | kPInteger, kModeNames, 1 });
@@ -47,13 +47,15 @@ inline const std::vector<ParamSpec>& params()
     v.push_back({ "oversampling", "Oversampling", "Oversampling", 0, 3, 2, PUnit::None, PScale::Linear, kPInteger, kOsNames, 1 });
     v.push_back({ "bypass", "Bypass", "Bypass", 0, 1, 0, PUnit::None, PScale::Linear, A | kPBoolean | kPBypass, nullptr, 1 });
     return v;
+    }();
+    return v;
 }
 
 // Factory presets. Circuits: 0 glow 1 triode 2 pentode 3 push-pull 4 starve 5 fuzz; focus: 0 full 1 low 2 mid 3 high.
 inline const std::vector<Preset>& presets()
 {
-    static std::vector<Preset> v;
-    if (!v.empty()) return v;
+    static const std::vector<Preset> v = []() {
+    std::vector<Preset> v;
     auto F = [&](const char* n, std::vector<PresetValue> p) { v.push_back({ n, std::move(p) }); };
     auto S = [&](const char* n, std::vector<PresetValue> p) { v.push_back({ n, std::move(p), "SOURCES" }); };
     auto C = [&](const char* n, std::vector<PresetValue> p) { v.push_back({ n, std::move(p), "CREATIVE" }); };
@@ -84,6 +86,8 @@ inline const std::vector<Preset>& presets()
     C("Crossover crackle", { { "mode", 3 }, { "drive", 6 }, { "bias", -100 }, { "sag", 0 } });
     C("Telephone tube", { { "mode", 2 }, { "drive", 24 }, { "low_cut", 450 }, { "high_cut", 3200 }, { "focus", 2 } });
     C("Three-stage scream", { { "mode", 1 }, { "drive", 30 }, { "stages", 3 }, { "low_cut", 100 }, { "high_cut", 8000 }, { "tone", -15 } });
+    return v;
+    }();
     return v;
 }
 

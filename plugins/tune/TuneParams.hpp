@@ -36,8 +36,8 @@ constexpr int kVoices = 4;
 
 inline const std::vector<ParamSpec>& params()
 {
-    static std::vector<ParamSpec> v;
-    if (!v.empty()) return v;
+    static const std::vector<ParamSpec> v = []() {
+    std::vector<ParamSpec> v;
     const unsigned A = kPAutomatable;
     v.push_back({ "mode", "Mode", "Mode", 0, kNumModes - 1, kLive, PUnit::None, PScale::Linear, A | kPInteger, kModeNames, 1 });
     v.push_back({ "key", "Key", "Key", 0, 11, 0, PUnit::None, PScale::Linear, A | kPInteger, pitch::kKeyNames, 1 });
@@ -74,14 +74,16 @@ inline const std::vector<ParamSpec>& params()
     v.push_back({ "out_gain", "Output Gain", "Output", -24, 24, 0, PUnit::dB, PScale::Linear, A, nullptr, 1 });
     v.push_back({ "bypass", "Bypass", "Bypass", 0, 1, 0, PUnit::None, PScale::Linear, A | kPBoolean | kPBypass, nullptr, 1 });
     return v;
+    }();
+    return v;
 }
 
 // Factory presets. scale: 0 chromatic 1 major 2 minor 3 harmonic minor ...; harm_mode: 0 off 1 scale 2 fixed;
 // midi: 0 off 1 lead 2 harmony
 inline const std::vector<Preset>& presets()
 {
-    static std::vector<Preset> v;
-    if (!v.empty()) return v;
+    static const std::vector<Preset> v = []() {
+    std::vector<Preset> v;
     auto F = [&](const char* n, std::vector<PresetValue> p) { v.push_back({ n, std::move(p) }); };
     auto H = [&](const char* n, std::vector<PresetValue> p) { v.push_back({ n, std::move(p), "HARMONY" }); };
     auto C = [&](const char* n, std::vector<PresetValue> p) { v.push_back({ n, std::move(p), "CREATIVE" }); };
@@ -105,6 +107,8 @@ inline const std::vector<Preset>& presets()
     C("Gender flip up", { { "transpose", 5 }, { "formant", 4 } });
     C("Gender flip down", { { "transpose", -5 }, { "formant", -4 } });
     C("Wide vibrato", { { "retune", 0 }, { "vib_depth", 60 }, { "vib_rate", 6 }, { "scale", 1 } });
+    return v;
+    }();
     return v;
 }
 

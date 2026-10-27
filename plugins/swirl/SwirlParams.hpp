@@ -58,8 +58,8 @@ inline bool toneActive(double f) { return f < kToneOff - 10.0; }
 
 inline const std::vector<ParamSpec>& params()
 {
-    static std::vector<ParamSpec> v;
-    if (!v.empty()) return v;
+    static const std::vector<ParamSpec> v = []() {
+    std::vector<ParamSpec> v;
     const unsigned A = kPAutomatable;
     v.push_back({ "mode", "Type", "Type", 0, kNumModes - 1, kAnalog, PUnit::None, PScale::Linear, A | kPInteger, kModeNames, 1 });
     v.push_back({ "variant", "Variant", "Variant", 0, 3, 0, PUnit::None, PScale::Linear, A | kPInteger, kVariantNames, 1 });
@@ -76,13 +76,15 @@ inline const std::vector<ParamSpec>& params()
     v.push_back({ "out_gain", "Output Gain", "Output", -24, 24, 0, PUnit::dB, PScale::Linear, A, nullptr, 1 });
     v.push_back({ "bypass", "Bypass", "Bypass", 0, 1, 0, PUnit::None, PScale::Linear, A | kPBoolean | kPBypass, nullptr, 1 });
     return v;
+    }();
+    return v;
 }
 
 // Factory presets. Types: 0 ensemble 1 analog 2 rack 3 flanger 4 phaser 5 lamp; variants 0..3.
 inline const std::vector<Preset>& presets()
 {
-    static std::vector<Preset> v;
-    if (!v.empty()) return v;
+    static const std::vector<Preset> v = []() {
+    std::vector<Preset> v;
     auto P = [&](const char* sec, const char* n, int mode, int var, std::vector<PresetValue> extra) {
         const Classic c = classic(mode, var);
         std::vector<PresetValue> p = { { "mode", (float)mode }, { "variant", (float)var }, { "rate", c.rate }, { "depth", c.depth },
@@ -129,6 +131,8 @@ inline const std::vector<Preset>& presets()
     P("CREATIVE", "Bar-synced phaser", 4, 2, { { "sync", 1 }, { "division", (float)kNote1 } });
     P("CREATIVE", "Underwater", 5, 2, { { "tone", 2500 }, { "rate", 0.3f } });
     P("CREATIVE", "Seasick", 2, 3, { { "rate", 2.4f }, { "depth", 100 }, { "mix", 100 } });
+    return v;
+    }();
     return v;
 }
 

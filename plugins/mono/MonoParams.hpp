@@ -38,8 +38,8 @@ static const char* const kPriorityNames[] = { "Last", "Low", "High" };
 
 inline const std::vector<ParamSpec>& params()
 {
-    static std::vector<ParamSpec> v;
-    if (!v.empty()) return v;
+    static const std::vector<ParamSpec> v = []() {
+    std::vector<ParamSpec> v;
     const unsigned A = kPAutomatable, I = kPAutomatable | kPInteger, B = kPAutomatable | kPBoolean;
     v.push_back({ "osc1_wave", "Osc 1 Wave", "Wave", 0, kNumWaves - 1, kSaw, PUnit::None, PScale::Linear, I, kWaveNames, 1 });
     v.push_back({ "osc1_oct", "Osc 1 Range", "Range", 0, 4, 1, PUnit::None, PScale::Linear, I, kFootNames, 1 });
@@ -87,14 +87,16 @@ inline const std::vector<ParamSpec>& params()
     v.push_back({ "bend_range", "Pitch Bend Range", "Bend", 0, 24, 2, PUnit::None, PScale::Linear, kPInteger, nullptr, 1 });
     v.push_back({ "volume", "Volume", "Volume", -48, 12, 0, PUnit::dB, PScale::Linear, A, nullptr, 1 });
     return v;
+    }();
+    return v;
 }
 
 // Factory presets. Waves: 0 tri 1 saw 2 square 3 pulse; ranges 0..4 = 32' 16' 8' 4' 2'; filters: 0 ladder 1 svf
 // 2 diode 3 sallen.
 inline const std::vector<Preset>& presets()
 {
-    static std::vector<Preset> v;
-    if (!v.empty()) return v;
+    static const std::vector<Preset> v = []() {
+    std::vector<Preset> v;
     auto F = [&](const char* sec, const char* n, std::vector<PresetValue> p) { v.push_back({ n, std::move(p), sec }); };
     v.push_back({ "Default", {} });
     F("BASS", "Three-oscillator bass", { { "osc1_oct", 0 }, { "osc2_oct", 0 }, { "osc3_level", 60 }, { "osc3_oct", 0 }, { "osc3_wave", 1 }, { "cutoff", 450 }, { "res", 15 }, { "filter_env", 55 }, { "f_d", 300 }, { "f_s", 15 }, { "overdrive", 6 } });
@@ -113,6 +115,8 @@ inline const std::vector<Preset>& presets()
     F("FX", "Siren", { { "lfo_pitch", 80 }, { "lfo_rate", 0.4f }, { "osc1_oct", 2 }, { "osc2_level", 0 }, { "cutoff", 3000 } });
     F("FX", "Self-oscillating filter", { { "volume", -9 }, { "osc1_level", 0 }, { "osc2_level", 0 }, { "res", 100 }, { "key_track", 100 }, { "cutoff", 260 }, { "filter_env", 0 } });
     F("FX", "Noise sweep", { { "osc1_level", 0 }, { "osc2_level", 0 }, { "noise", 90 }, { "filter_type", 1 }, { "res", 70 }, { "lfo_filter", 60 }, { "lfo_rate", 0.2f } });
+    return v;
+    }();
     return v;
 }
 

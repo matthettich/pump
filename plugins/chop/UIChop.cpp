@@ -225,8 +225,8 @@ protected:
         if (was == on) return;
         heldBits = on ? (heldBits | 1u << p) : (heldBits & ~(1u << p));
         const uint32_t i = (uint32_t)(kTrigger0 + p);
-        if (on) { editParameter(i, true); setParam((int)i, 1.0f); }
-        else { setParam((int)i, 0.0f); editParameter(i, false); }
+        if (on) { openGesture(i); setParam((int)i, 1.0f); }
+        else { setParam((int)i, 0.0f); closeGesture(i); }
     }
     bool bodyMouseDown(float x, float y, int button, uint, bool) override
     {

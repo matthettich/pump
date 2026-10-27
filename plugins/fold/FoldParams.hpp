@@ -34,8 +34,8 @@ enum Param : int {
 
 inline const std::vector<ParamSpec>& params()
 {
-    static std::vector<ParamSpec> v;
-    if (!v.empty()) return v;
+    static const std::vector<ParamSpec> v = []() {
+    std::vector<ParamSpec> v;
     const unsigned A = kPAutomatable, I = kPAutomatable | kPInteger;
     v.push_back({ "shape", "Principal Shape", "Shape", 0, 100, 0, PUnit::Percent, PScale::Linear, A, nullptr, 1 });
     v.push_back({ "mod_wave", "Modulator Wave", "Mod Wave", 0, kNumModWaves - 1, kModSine, PUnit::None, PScale::Linear, I, kModWaveNames, 1 });
@@ -73,12 +73,14 @@ inline const std::vector<ParamSpec>& params()
     v.push_back({ "fine", "Fine Tune", "Fine", -100, 100, 0, PUnit::None, PScale::Linear, A, nullptr, 1 });
     v.push_back({ "volume", "Volume", "Volume", -48, 12, 0, PUnit::dB, PScale::Linear, A, nullptr, 1 });
     return v;
+    }();
+    return v;
 }
 
 inline const std::vector<Preset>& presets()
 {
-    static std::vector<Preset> v;
-    if (!v.empty()) return v;
+    static const std::vector<Preset> v = []() {
+    std::vector<Preset> v;
     auto F = [&](const char* sec, const char* n, std::vector<PresetValue> p) { v.push_back({ n, std::move(p), sec }); };
     v.push_back({ "Default", {} });
     F("STRUCK", "Bongo ping", { { "fold", 20 }, { "rise", 0.3f }, { "fall", 20 }, { "vactrol", 55 }, { "fm_index", 10 }, { "mod_ratio", 1.5f }, { "volume", 5 } });
@@ -96,6 +98,8 @@ inline const std::vector<Preset>& presets()
     F("MOTION", "Drifting complex", { { "func_mode", kFuncSustain }, { "rise", 600 }, { "fall", 1500 }, { "fold", 30 }, { "fm_index", 25 }, { "mod_ratio", 0.501f }, { "rand_fold", 30 }, { "rand_fm", 30 }, { "rand_smooth", 100 }, { "rand_rate", 0.4f }, { "spread", 80 }, { "volume", -2 } });
     F("DRONE", "Folded drone", { { "func_mode", kFuncSustain }, { "rise", 1500 }, { "fall", 3000 }, { "fold", 60 }, { "mod_fold", 40 }, { "mod_ratio", 0.125f }, { "am_depth", 30 }, { "spread", 90 }, { "volume", -2 } });
     F("DRONE", "Gong of folds", { { "rise", 0.5f }, { "fall", 2500 }, { "vactrol", 90 }, { "fold", 50 }, { "fm_index", 35 }, { "mod_ratio", 1.414f }, { "func_fold", 50 }, { "octave", -1 }, { "volume", -4 } });
+    return v;
+    }();
     return v;
 }
 

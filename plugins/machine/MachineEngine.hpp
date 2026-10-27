@@ -8,7 +8,8 @@
 //
 // The firmware keeps its state in global variables: it was written for one machine. Each Engine owns a copy of that
 // state; whichever instance runs puts its copy in place (under a process-wide lock) and takes it back out when another
-// instance needs the firmware. With one instance nothing is ever copied. Every instance powers on from the same
+// instance needs the firmware. The audio thread only ever try-locks: when another instance holds the firmware (it is
+// powering on), this block is silent rather than the audio thread waiting. With one instance nothing is ever copied. Every instance powers on from the same
 // start-up memory, so the same settings and hits always sound the same.
 //
 // MIDI: the General MIDI drum notes on any channel play the voices at their own pitch (36 35 drum 1; 41 43 45 47
@@ -42,6 +43,9 @@ inline int soundForNote(int note)
     default: return -1;
     }
 }
+// the firmware renders OUTPUT_DMA_SIZE frames per block (64 in this build; machine_fw.c checks it at compile time)
+constexpr int kMaxFwBlock = 64;
+
 inline int noteForSound(int s) { static const int n[kSounds] = { 36, 45, 37, 38, 49, 42, 46 }; return n[clampv(s, 0, kSounds - 1)]; }
 
 class Engine {
@@ -60,6 +64,7 @@ public:
         sr = hostRate;
         const double fwRate = mfw_rate();
         for (int c = 0; c < 2; ++c) rs[c].prepare(fwRate, sr, mfw_block() + 8, 24);
+        state.resize(mfw_state_size());   // sized here, so handing the firmware over never allocates on the audio thread
         std::lock_guard<std::mutex> g(lock());
         takeFirmware();
         // power on from the firmware's start-up memory: its init functions don't reset everything (a voice's phase,
@@ -72,7 +77,7 @@ public:
         uint8_t* kit = mfw_params();
         for (int p = 0; p < kFwNumParams; ++p) if (fwValues[p] >= 0) kit[p] = (uint8_t)fwValues[p];
         mfw_load();
-        float l[64], r[64];
+        float l[kMaxFwBlock], r[kMaxFwBlock];
         for (int b = 0; b < (int)(0.35 * fwRate / mfw_block()); ++b) mfw_render(l, r);   // the knobs' smoothing settles
         for (int p = 0; p < kFwNumParams; ++p) { applied[(size_t)p] = fwValues[p]; values[(size_t)p].store(fwValues[p]); }
         volS.setRamp(std::max(1, (int)(0.02 * sr)));
@@ -91,7 +96,14 @@ public:
 
     void process(float* L, float* R, int n, const synth::Midi* ev, int nev, const std::pair<int, int>* hits = nullptr, int nhits = 0)
     {
-        std::lock_guard<std::mutex> g(lock());
+        std::unique_lock<std::mutex> g(lock(), std::try_to_lock);
+        if (!g.owns_lock())
+        {
+            // another instance is powering on (a moment, at load): this block is silent and its hits are skipped
+            std::fill(L, L + n, 0.0f); std::fill(R, R + n, 0.0f);
+            for (int i = 0; i < n; ++i) outRing.push(0.0f);
+            return;
+        }
         takeFirmware();
         mfw_set_bpm((int)std::lround(clampv(tempo, 20.0, 400.0)));
         if (dirty.exchange(false))
@@ -123,13 +135,13 @@ private:
     {
         Engine*& o = owner();
         if (o == this) return;
-        if (o) { o->state.resize(mfw_state_size()); mfw_state_save(o->state.data()); }
-        if (!state.empty()) mfw_state_load(state.data());
+        if (o && o->state.size() >= mfw_state_size()) { mfw_state_save(o->state.data()); o->hasState = true; }
+        if (hasState) mfw_state_load(state.data());
         o = this;
     }
     void renderBlock()
     {
-        float l[64], r[64];
+        float l[kMaxFwBlock], r[kMaxFwBlock];
         mfw_render(l, r);
         for (int i = 0; i < mfw_block(); ++i) { rs[0].push(l[i]); rs[1].push(r[i]); }
     }
@@ -151,7 +163,8 @@ private:
     double sr = 48000.0, volumeDb = 0.0, tempo = 120.0;
     StreamResampler rs[2];
     LinearSmoother volS;
-    std::vector<uint8_t> state;
+    std::vector<uint8_t> state;   // this instance's firmware memory while another instance runs
+    bool hasState = false;
     std::array<std::atomic<int>, kFwNumParams> values {};
     std::array<int, kFwNumParams> applied {};
     std::atomic<bool> dirty { false };

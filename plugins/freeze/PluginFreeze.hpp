@@ -51,21 +51,25 @@ protected:
         path = value ? value : "";
         std::shared_ptr<Spectra> s;
         std::string inf;
-        if (!path.empty())
+        try   // setState() must never throw into the host
         {
-            const pump::WavData w = pump::readWav(path, (size_t)(48000.0 * 30.0));
-            if (!w.ok()) inf = "couldn't load: " + w.error;
-            else
+            if (!path.empty())
             {
-                const size_t n = std::min(w.channels[0].size(), (size_t)(w.sampleRate * 20.0));
-                std::vector<float> mono(n, 0.0f);
-                for (const auto& c : w.channels) for (size_t i = 0; i < n; ++i) mono[i] += c[i] / (float)w.channels.size();
-                std::string nm = path;
-                const size_t sl = nm.find_last_of("/\\"); if (sl != std::string::npos) nm = nm.substr(sl + 1);
-                s = makeSpectra(mono, w.sampleRate, nm, (int)pv(kRoot));
-                inf = nm;
+                const pump::WavData w = pump::readWav(path, (size_t)(48000.0 * 30.0));
+                if (!w.ok()) inf = "couldn't load: " + w.error;
+                else
+                {
+                    const size_t n = std::min(w.channels[0].size(), (size_t)(w.sampleRate * 20.0));
+                    std::vector<float> mono(n, 0.0f);
+                    for (const auto& c : w.channels) for (size_t i = 0; i < n; ++i) mono[i] += c[i] / (float)w.channels.size();
+                    std::string nm = path;
+                    const size_t sl = nm.find_last_of("/\\"); if (sl != std::string::npos) nm = nm.substr(sl + 1);
+                    s = makeSpectra(mono, w.sampleRate, nm, (int)pv(kRoot));
+                    inf = nm;
+                }
             }
         }
+        catch (...) { s.reset(); inf = "couldn't load the file"; }
         std::lock_guard<std::mutex> g(lock);
         if (s) keep.push_back(s);
         file.store(s.get(), std::memory_order_release);

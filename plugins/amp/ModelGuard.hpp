@@ -95,6 +95,19 @@ inline std::string checkModelFile(const std::string& path)
     if (!e.empty()) return "damaged .nam file (" + e + ")";
     const std::string c = checkConfigNumbers(j["config"]);
     if (!c.empty()) return "damaged .nam file (" + c + ")";
+    // the rate sizes the resampler: a wild one would ask for gigabytes
+    if (const auto it = j.find("sample_rate"); it != j.end() && !it->is_null())
+    {
+        if (!it->is_number()) return "damaged .nam file (sample rate)";
+        const double r = it->get<double>();
+        if (!(r >= 8000.0 && r <= 384000.0)) return "unsupported sample rate in the model";
+    }
+    if (const auto m = j.find("metadata"); m != j.end() && m->is_object())
+        if (const auto l = m->find("loudness"); l != m->end() && l->is_number())
+        {
+            const double v = l->get<double>();
+            if (!(v > -100.0 && v < 100.0)) return "damaged .nam file (loudness)";
+        }
     return "";
 }
 

@@ -49,7 +49,7 @@ struct Settings {
     double dwell = 50.0, mix = 0.5;
 };
 
-constexpr int kMaxVoices = 8, kMaxSections = spring::kSections, kRows = 16;
+constexpr int kMaxVoices = 8, kMaxSections = spring::kSections;
 constexpr double kMinHz = 20.0;
 
 // phase lag (radians) at w of one stretched section, D(z) = z^-K T(z), A = (a + D) / (1 + a D)
@@ -88,7 +88,9 @@ public:
     {
         sr = sampleRate;
         kint = spring::stretchInt(sr);
-        ring.assign((size_t)(kRows * kMaxSections), splat(0.0f));
+        rows = 4;
+        while (rows < kint + 2) rows <<= 1;   // the history must reach kint + 1 back (17 at 192 kHz), as in SPRING
+        ring.assign((size_t)(rows * kMaxSections), splat(0.0f));
         vprev.assign((size_t)kMaxSections, splat(0.0f));
         const int maxP = (int)(sr / kMinHz * 1.35) + 64;   // the lowest note, the longest spread
         for (auto& d : line) d.setMax(maxP);
@@ -334,8 +336,8 @@ private:
     {
         if (sections <= 0) return;
         f4* __restrict rw = ring.data() + (size_t)(wpos * kMaxSections);
-        const f4* __restrict ra = ring.data() + (size_t)(((wpos - kint) & (kRows - 1)) * kMaxSections);
-        const f4* __restrict rb = ring.data() + (size_t)(((wpos - kint - 1) & (kRows - 1)) * kMaxSections);
+        const f4* __restrict ra = ring.data() + (size_t)(((wpos - kint) & (rows - 1)) * kMaxSections);
+        const f4* __restrict rb = ring.data() + (size_t)(((wpos - kint - 1) & (rows - 1)) * kMaxSections);
         f4* __restrict vp = vprev.data();
         const f4 a = a4, e = e4;
         for (int m = 0; m < sections; ++m)
@@ -346,7 +348,7 @@ private:
             rw[m] = w;
             x = a * w + v;
         }
-        wpos = (wpos + 1) & (kRows - 1);
+        wpos = (wpos + 1) & (rows - 1);
     }
 
     inline void digitalStep(double x, double k, double frac, double& L, double& R)
@@ -402,7 +404,7 @@ private:
     static constexpr int kChirp = 6;
     static constexpr double kHfLevel = 0.35, kLoopOut = 0.6, kDigitalOut = 0.5;
     double sr = 48000.0, freq = 220.0, glideK = 0.05, wobDepth = 0.0, energy = 0.0;
-    int kint = 4, lanes = 2, sections = -1, wpos = 0, model = 0, note = -1, silentFor = 0;
+    int kint = 4, rows = 16, lanes = 2, sections = -1, wpos = 0, model = 0, note = -1, silentFor = 0;
     bool active = false, held = false, digital = false;
     std::vector<f4> ring, vprev;
     f4 hfState[spring::kHfSections] = {};
@@ -547,7 +549,7 @@ public:
         }
         for (int i = 0; i < n; ++i) { const double vol = volS.next(); L[i] = (float)(L[i] * vol); R[i] = (float)(R[i] * vol); }
         double chk = 0.0; for (int i = 0; i < n; ++i) chk += L[i] + R[i];
-        if (!std::isfinite(chk)) { for (auto& v : voices) v.reset(); body.prepare(sr, n); sanitizeBlock(L, n); sanitizeBlock(R, n); }
+        if (!std::isfinite(chk)) { for (auto& v : voices) v.reset(); body.recover(); sanitizeBlock(L, n); sanitizeBlock(R, n); }
         // feeds
         int act = 0; uint64_t lit[2] = { 0, 0 };
         for (int i = 0; i < kMaxVoices; ++i)

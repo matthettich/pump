@@ -95,8 +95,8 @@ inline Pattern patternFromText(const char* t)
 
 inline const std::vector<ParamSpec>& params()
 {
-    static std::vector<ParamSpec> v;
-    if (!v.empty()) return v;
+    static const std::vector<ParamSpec> v = []() {
+    std::vector<ParamSpec> v;
     const unsigned A = kPAutomatable;
     v.push_back({ "trigger", "Trigger", "Trigger", 0, kNumTriggers - 1, kAuto, PUnit::None, PScale::Linear, A | kPInteger, kTriggerNames, 1 });
     v.push_back({ "interval", "Interval", "Interval", 0, kNumNotes - 1, kNote1, PUnit::None, PScale::Linear, A | kPInteger, kNoteNames, 1 });
@@ -118,13 +118,15 @@ inline const std::vector<ParamSpec>& params()
     v.push_back({ "pattern", "Pattern Select", "Pattern", 0, kUserPattern, 1, PUnit::None, PScale::Linear, A | kPInteger, kPatternNames, 1 });
     v.push_back({ "pattern_step", "Pattern Step", "Step", 0, kNumNotes - 1, kNote16, PUnit::None, PScale::Linear, A | kPInteger, kNoteNames, 1 });
     return v;
+    }();
+    return v;
 }
 
 // Factory presets. Moves: 0 repeat 1 roll 2 reverse 3 tape 4 half 5 shuffle 6 gate 7 glitch.
 inline const std::vector<Preset>& presets()
 {
-    static std::vector<Preset> v;
-    if (!v.empty()) return v;
+    static const std::vector<Preset> v = []() {
+    std::vector<Preset> v;
     // which moves auto may pick (the rest off)
     auto uses = [](std::vector<int> on, std::vector<PresetValue> p) {
         for (int m = 0; m < kNumMoves; ++m)
@@ -174,6 +176,8 @@ inline const std::vector<Preset>& presets()
     P("Pattern: gate the bar", 9, { { "gate", 50 } });
     P("Pattern: shuffle chop", 10, {});
     P("Pattern: fill", 11, { { "filter", -25 } });
+    return v;
+    }();
     return v;
 }
 

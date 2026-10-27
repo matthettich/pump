@@ -56,9 +56,9 @@ enum PdParam : int {
 
 inline const std::vector<ParamSpec>& params()
 {
-    static std::vector<ParamSpec> v;
     static std::vector<std::string> names;   // keeps the operators' names alive
-    if (!v.empty()) return v;
+    static const std::vector<ParamSpec> v = []() {
+    std::vector<ParamSpec> v;
     const unsigned A = kPAutomatable, I = kPAutomatable | kPInteger, B = kPAutomatable | kPBoolean;
     v.push_back({ "engine", "Engine", "Engine", 0, kNumEngines - 1, kConsole, PUnit::None, PScale::Linear, I, kEngineNames, 1 });
     v.push_back({ "algorithm", "Algorithm", "Algo", 0, 17, 0, PUnit::None, PScale::Linear, I, nullptr, 1 });
@@ -115,14 +115,16 @@ inline const std::vector<ParamSpec>& params()
     v.push_back({ "pd_octave", "PD Line 2 Octave", "Oct", -2, 2, 0, PUnit::None, PScale::Linear, I, nullptr, 1 });
     v.push_back({ "pd_mod", "PD Line 2 Modulation", "Mod", 0, 2, 0, PUnit::None, PScale::Linear, I, kPdModNames, 1 });
     return v;
+    }();
+    return v;
 }
 
 // Factory voices. A voice is a list of (symbol, value). The helpers below keep them readable:
 //   o(k, ratio, level, a, d, s, r)  operator k (1-based) with its envelope (ms, ms, %, ms)
 inline const std::vector<Preset>& presets()
 {
-    static std::vector<Preset> v;
-    if (!v.empty()) return v;
+    static const std::vector<Preset> v = []() {
+    std::vector<Preset> v;
     using PV = std::vector<PresetValue>;
     static std::vector<std::string> keep;
     keep.reserve(4096);
@@ -217,6 +219,8 @@ inline const std::vector<Preset>& presets()
       o(p, 1, 1, 90, 1, 1800, 30, 500); o(p, 2, 1, 80, 1, 1200, 20, 500); p.push_back({ "volume", 9 }); F("PHASE DIST", "Ring bell", p); }
     { PV p { { "engine", kPd }, { "algorithm", 2 }, { "pd_wave1", kPdSquare }, { "pd_dcw1", 60 }, { "pd_detune", 4 }, { "pd_attack", 20 }, { "pd_sustain", 70 }, { "chip", 0 } };
       o(p, 1, 1, 90, 10, 1000, 95, 150); F("PHASE DIST", "Clean organ", p); }
+    return v;
+    }();
     return v;
 }
 

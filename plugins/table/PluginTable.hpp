@@ -51,7 +51,11 @@ protected:
         path[o] = value ? value : "";
         std::string err;
         std::shared_ptr<Table> t;
-        if (!path[o].empty()) t = loadUserTable(path[o], err);
+        try   // setState() must never throw into the host
+        {
+            if (!path[o].empty()) t = loadUserTable(path[o], err);
+        }
+        catch (...) { t.reset(); err = "couldn't load the file"; }
         std::lock_guard<std::mutex> g(lock);
         if (t) { keep.push_back(t); userNow[o] = t.get(); }   // kept until the plugin goes (the audio thread may still read the old one)
         else userNow[o] = nullptr;

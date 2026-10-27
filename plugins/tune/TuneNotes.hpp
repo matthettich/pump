@@ -59,7 +59,7 @@ inline std::vector<GraphNote> notesFromText(const char* text)
             while (*p == ' ') ++p;
         }
         while (*p && *p != '\n') ++p;
-        if (k < 8 || !(v[1] > v[0]) || !std::isfinite(v[0]) || !std::isfinite(v[1])) continue;
+        if (k < 8 || !(v[1] > v[0]) || !std::all_of(v, v + 8, [](double x) { return std::isfinite(x); })) continue;
         GraphNote n;
         n.t0 = v[0]; n.t1 = v[1];
         n.src = (float)clampv(v[2], 0.0, 127.0); n.dst = (float)clampv(v[3], 0.0, 127.0);

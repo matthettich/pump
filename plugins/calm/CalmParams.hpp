@@ -41,8 +41,8 @@ static const float kNodeDefQ[kNumNodes] = { 0.71f, 1.0f, 1.0f, 1.0f, 1.0f, 0.71f
 inline const std::vector<ParamSpec>& params()
 {
     static std::deque<std::string> pool;
-    static std::vector<ParamSpec> v;
-    if (!v.empty()) return v;
+    static const std::vector<ParamSpec> v = []() {
+    std::vector<ParamSpec> v;
     auto keep = [](const std::string& s) -> const char* { pool.push_back(s); return pool.back().c_str(); };
     const unsigned A = kPAutomatable;
     v.push_back({ "depth", "Depth", "Depth", 0, 100, 50, PUnit::Percent, PScale::Linear, A, nullptr, 1 });
@@ -72,6 +72,8 @@ inline const std::vector<ParamSpec>& params()
         v.push_back({ keep(p + "q"), keep(N + "Width (Q)"), keep("S" + i + " Q"), 0.1f, 10, kNodeDefQ[n], PUnit::None, PScale::Log, A, nullptr, 1 });
     }
     return v;
+    }();
+    return v;
 }
 
 #include "CalmPresetsSources.hpp"
@@ -79,8 +81,8 @@ inline const std::vector<ParamSpec>& params()
 
 inline const std::vector<Preset>& presets()
 {
-    static std::vector<Preset> v;
-    if (!v.empty()) return v;
+    static const std::vector<Preset> v = []() {
+    std::vector<Preset> v;
     v.push_back({ "Default", {} });
     v.push_back({ "Gentle master de-harsh", {
         { "depth", 32 }, { "sharpness", 55 }, { "selectivity", 58 }, { "attack", 12 }, { "release", 160 },
@@ -111,6 +113,8 @@ inline const std::vector<Preset>& presets()
         { "focus_low", 300 } } });
     addSourcePresets(v);   // CalmPresetsSources.hpp: vocals, drums, bass, ... (SOURCES)
     addChainPresets(v);    // CalmPresetsChains.hpp: matching mastering chains (CHAINS)
+    return v;
+    }();
     return v;
 }
 

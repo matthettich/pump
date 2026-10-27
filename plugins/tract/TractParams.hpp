@@ -24,8 +24,8 @@ enum Param : int {
 
 inline const std::vector<ParamSpec>& params()
 {
-    static std::vector<ParamSpec> v;
-    if (!v.empty()) return v;
+    static const std::vector<ParamSpec> v = []() {
+    std::vector<ParamSpec> v;
     const unsigned A = kPAutomatable, I = kPAutomatable | kPInteger;
     v.push_back({ "vowel", "Vowel", "Vowel", 0, 100, 0, PUnit::Percent, PScale::Linear, A, nullptr, 1 });
     v.push_back({ "motion", "Vowel Motion", "Motion", 0, 100, 10, PUnit::Percent, PScale::Linear, A, nullptr, 1 });
@@ -53,12 +53,14 @@ inline const std::vector<ParamSpec>& params()
     v.push_back({ "octave", "Octave", "Oct", -3, 3, 0, PUnit::None, PScale::Linear, I, nullptr, 1 });
     v.push_back({ "volume", "Volume", "Volume", -48, 12, 0, PUnit::dB, PScale::Linear, A, nullptr, 1 });
     return v;
+    }();
+    return v;
 }
 
 inline const std::vector<Preset>& presets()
 {
-    static std::vector<Preset> v;
-    if (!v.empty()) return v;
+    static const std::vector<Preset> v = []() {
+    std::vector<Preset> v;
     auto F = [&](const char* sec, const char* n, std::vector<PresetValue> p) { v.push_back({ n, std::move(p), sec }); };
     v.push_back({ "Default", {} });
     F("CHOIR", "Ah choir", { { "vowel", 0 }, { "singers", 4 }, { "detune", 15 }, { "size_spread", 40 }, { "motion", 5 } });
@@ -72,6 +74,8 @@ inline const std::vector<Preset>& presets()
     F("LEAD", "Solo voice", { { "singers", 1 }, { "vowel", 30 }, { "voice_mode", 2 }, { "glide", 80 }, { "vibrato", 35 }, { "attack", 80 }, { "tense", 65 } });
     F("LEAD", "Talking lead", { { "singers", 1 }, { "motion", 100 }, { "motion_rate", 3.0f }, { "voice_mode", 1 }, { "tense", 75 }, { "bright", 80 }, { "attack", 20 } });
     F("LEAD", "Pressed voice", { { "singers", 2 }, { "tense", 95 }, { "breath", 5 }, { "vowel", 20 }, { "voice_mode", 2 }, { "glide", 40 }, { "attack", 30 } });
+    return v;
+    }();
     return v;
 }
 

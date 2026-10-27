@@ -18,8 +18,8 @@ static const int kQualitySizes[] = { 2048, 4096 };
 
 inline const std::vector<ParamSpec>& params()
 {
-    static std::vector<ParamSpec> v;
-    if (!v.empty()) return v;
+    static const std::vector<ParamSpec> v = []() {
+    std::vector<ParamSpec> v;
     const unsigned A = kPAutomatable;
     v.push_back({ "recover", "Recover", "Recover", 0, 100, 30, PUnit::Percent, PScale::Linear, A, nullptr, 1 });
     v.push_back({ "tame", "Tame", "Tame", 0, 100, 30, PUnit::Percent, PScale::Linear, A, nullptr, 1 });
@@ -38,6 +38,8 @@ inline const std::vector<ParamSpec>& params()
     v.push_back({ "audition_freq", "Audition Frequency", "Aud Freq", 20, 20000, 1000, PUnit::Hz, PScale::Log, kPHidden | kPNoUndo, nullptr, 1 });
     v.push_back({ "audition_q", "Audition Q", "Aud Q", 0.3f, 12, 2, PUnit::None, PScale::Log, kPHidden | kPNoUndo, nullptr, 1 });
     return v;
+    }();
+    return v;
 }
 
 #include "TonePresetsSources.hpp"
@@ -45,8 +47,8 @@ inline const std::vector<ParamSpec>& params()
 
 inline const std::vector<Preset>& presets()
 {
-    static std::vector<Preset> v;
-    if (!v.empty()) return v;
+    static const std::vector<Preset> v = []() {
+    std::vector<Preset> v;
     v.push_back({ "Default", {} });
     v.push_back({ "Subtle master balance", { { "recover", 18 }, { "tame", 22 }, { "speed", 25 } } });
     v.push_back({ "Recover masked mids", { { "recover", 65 }, { "tame", 15 }, { "bias", -35 }, { "speed", 35 } } });
@@ -59,6 +61,8 @@ inline const std::vector<Preset>& presets()
     v.push_back({ "Heavy rebalance", { { "recover", 80 }, { "tame", 80 }, { "speed", 40 }, { "quality", 1 } } });
     addSourcePresets(v);   // TonePresetsSources.hpp: vocals, drums, bass, ... (SOURCES)
     addChainPresets(v);    // TonePresetsChains.hpp: matching mastering chains (CHAINS)
+    return v;
+    }();
     return v;
 }
 

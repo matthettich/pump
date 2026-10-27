@@ -35,8 +35,8 @@ enum KitParam : int { kSlices = kPads * kPerPad, kLengthP, kQuantise, kHold, kLo
 
 inline const std::vector<ParamSpec>& params()
 {
-    static std::vector<ParamSpec> v;
-    if (!v.empty()) return v;
+    static const std::vector<ParamSpec> v = []() {
+    std::vector<ParamSpec> v;
     static std::vector<std::string> keep;
     keep.reserve(kPads * kPerPad * 2 + kPads * 3 + 8);
     auto s = [&](std::string x) { keep.push_back(std::move(x)); return keep.back().c_str(); };
@@ -67,12 +67,14 @@ inline const std::vector<ParamSpec>& params()
         v.push_back({ s("pad" + std::to_string(p + 1) + "_trigger"), s("Pad " + std::to_string(p + 1) + " Trigger"), s("Pad " + std::to_string(p + 1)), 0, 1, 0, PUnit::None, PScale::Linear, B | kPNoUndo, nullptr, 1 });
     v.push_back({ "midi_notes", "Pads Answer MIDI Notes", "Notes", 0, 1, 1, PUnit::None, PScale::Linear, B, nullptr, 1 });
     return v;
+    }();
+    return v;
 }
 
 inline const std::vector<Preset>& presets()
 {
-    static std::vector<Preset> v;
-    if (!v.empty()) return v;
+    static const std::vector<Preset> v = []() {
+    std::vector<Preset> v;
     static std::vector<std::string> keep;
     keep.reserve(512);
     static const char* const field[kPerPad] = { "slice", "pitch", "reverse", "fx", "fx_amount", "level", "note", "key" };
@@ -94,6 +96,8 @@ inline const std::vector<Preset>& presets()
     K("PLAY", "Low and slow", { { 0, kPitch, -12 }, { 1, kPitch, -12 }, { 2, kPitch, -7 }, { 3, kPitch, -7 }, { 4, kPitch, -5 }, { 5, kPitch, -5 }, { 6, kFx, kFxLowpass }, { 7, kFx, kFxLowpass } });
     K("PLAY", "Crushed and gated", { { 0, kFx, kFxCrush }, { 1, kFx, kFxGate }, { 2, kFx, kFxCrush }, { 3, kFx, kFxGate }, { 4, kFx, kFxCrush }, { 5, kFx, kFxGate }, { 6, kFx, kFxCrush }, { 7, kFx, kFxGate }, { 0, kFxAmount, 70 }, { 2, kFxAmount, 85 } });
     K("HOLD", "Hold a bar, chop it", {}, { { "hold", 1 } });
+    return v;
+    }();
     return v;
 }
 

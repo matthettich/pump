@@ -50,8 +50,8 @@ static const PadInfo kPadInfo[kPads] = {
 
 inline const std::vector<ParamSpec>& params()
 {
-    static std::vector<ParamSpec> v;
-    if (!v.empty()) return v;
+    static const std::vector<ParamSpec> v = []() {
+    std::vector<ParamSpec> v;
     static std::vector<std::string> keep;
     keep.reserve(kPads * kPerPad * 2 + 8);
     auto s = [&](std::string x) { keep.push_back(std::move(x)); return keep.back().c_str(); };
@@ -78,12 +78,14 @@ inline const std::vector<ParamSpec>& params()
     v.push_back({ "volume", "Volume", "Volume", -48, 12, 0, PUnit::dB, PScale::Linear, A, nullptr, 1 });
     v.push_back({ "follow", "Edit the Pad Played", "Follow", 0, 1, 1, PUnit::None, PScale::Linear, kPBoolean | kPNoUndo, nullptr, 1 });   // appended
     return v;
+    }();
+    return v;
 }
 
 inline const std::vector<Preset>& presets()
 {
-    static std::vector<Preset> v;
-    if (!v.empty()) return v;
+    static const std::vector<Preset> v = []() {
+    std::vector<Preset> v;
     static std::vector<std::string> keep;
     keep.reserve(1024);
     static const char* const field[kPerPad] = { "engine", "pitch", "decay", "tone", "char_a", "char_b", "bend", "bend_time", "noise", "level", "pan" };
@@ -117,6 +119,8 @@ inline const std::vector<Preset>& presets()
                                          { 7, kEngine, kAdditive }, { 7, kCharA, 40 }, { 7, kPitch, 41 }, { 7, kDecay, 6000 }, { 7, kCharB, 80 }, { 2, kEngine, kFm }, { 2, kCharA, 63 }, { 2, kPitch, 84 }, { 2, kDecay, 1500 } });
     K("PERCUSSION", "Plucked strings", { { 0, kEngine, kString }, { 0, kPitch, 28 }, { 0, kCharA, 0 }, { 0, kBend, 5 }, { 1, kEngine, kString }, { 1, kCharB, 100 }, { 1, kNoise, 50 }, { 2, kEngine, kString }, { 2, kPitch, 79 }, { 2, kCharA, 80 },
                                          { 3, kEngine, kString }, { 3, kPitch, 48 }, { 4, kEngine, kString }, { 4, kPitch, 60 }, { 7, kEngine, kString }, { 7, kCharA, 100 }, { 7, kPitch, 72 }, { 7, kDecay, 3000 } });
+    return v;
+    }();
     return v;
 }
 

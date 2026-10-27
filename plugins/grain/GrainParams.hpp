@@ -25,8 +25,8 @@ static const char* const kFilterNames[] = { "Off", "Low Pass", "Band Pass", "Hig
 
 inline const std::vector<ParamSpec>& params()
 {
-    static std::vector<ParamSpec> v;
-    if (!v.empty()) return v;
+    static const std::vector<ParamSpec> v = []() {
+    std::vector<ParamSpec> v;
     const unsigned A = kPAutomatable;
     // every control here is sampled per grain or smoothed, so all of them are automatable
     v.push_back({ "position", "Position", "Position", 0, 4000, 250, PUnit::ms, PScale::Power, A, nullptr, 2.5f });
@@ -55,14 +55,16 @@ inline const std::vector<ParamSpec>& params()
     v.push_back({ "out_gain", "Output Gain", "Output", -24, 24, 0, PUnit::dB, PScale::Linear, A, nullptr, 1 });
     v.push_back({ "bypass", "Bypass", "Bypass", 0, 1, 0, PUnit::None, PScale::Linear, A | kPBoolean | kPBypass, nullptr, 1 });
     return v;
+    }();
+    return v;
 }
 
 // Factory presets. Envelope: 0 smooth 1 soft 2 percussive 3 swell 4 square; quantize: 0 off 1 chromatic 2 major
 // 3 minor 4 pentatonic 5 octaves 6 fifths; filter: 0 off 1 LP 2 BP 3 HP; division: 5 = 1/16, 8 = 1/8, 11 = 1/4.
 inline const std::vector<Preset>& presets()
 {
-    static std::vector<Preset> v;
-    if (!v.empty()) return v;
+    static const std::vector<Preset> v = []() {
+    std::vector<Preset> v;
     auto F = [&](const char* n, std::vector<PresetValue> p) { v.push_back({ n, std::move(p) }); };
     auto S = [&](const char* n, std::vector<PresetValue> p) { v.push_back({ n, std::move(p), "SOURCES" }); };
     auto C = [&](const char* n, std::vector<PresetValue> p) { v.push_back({ n, std::move(p), "CREATIVE" }); };
@@ -106,6 +108,8 @@ inline const std::vector<Preset>& presets()
                           { "motion_depth", 60 }, { "stereo", 100 }, { "mix", 60 } });
     C("Time smear", { { "position", 2000 }, { "spray", 100 }, { "size", 600 }, { "density", 16 }, { "space", 50 }, { "mix", 60 } });
     C("Wild corner", { { "morph_x", 70 }, { "morph_y", 85 }, { "quantize", 2 }, { "space", 40 }, { "mix", 55 } });
+    return v;
+    }();
     return v;
 }
 

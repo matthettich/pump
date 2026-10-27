@@ -283,6 +283,7 @@ public:
     {
         fValues.resize(numParams);
         fLocalSet.assign(numParams, -1.0);
+        fGestureOpen.assign(numParams, 0);
         for (uint32_t i = 0; i < numParams; ++i) fValues[i] = specs[i].def;
         const double sf = getScaleFactor();
         if (sf != 1.0) setSize((uint)(W * sf), (uint)(H * sf));
@@ -319,8 +320,12 @@ public:
     }
     void setParamNorm(int i, float n) { setParam(i, fSpecs[i].fromNorm(n)); }
     // Gestures: every begin/end pair (and group) becomes one undo step (automation doesn't).
-    void beginEdit(int i) { beginGroup(); if (i >= 0) editParameter((uint32_t)i, true); }
-    void endEdit(int i) { if (i >= 0) editParameter((uint32_t)i, false); endGroup(); }
+    void beginEdit(int i) { beginGroup(); if (i >= 0) openGesture((uint32_t)i); }
+    void endEdit(int i) { if (i >= 0) closeGesture((uint32_t)i); endGroup(); }
+    // The host gesture on one parameter (use these, never editParameter directly: the UI has to know which gestures
+    // are open, so it doesn't close one of them from parameterChanged)
+    void openGesture(uint32_t i) { if (i < fNum && fGestureOpen[i]++ == 0) editParameter(i, true); }
+    void closeGesture(uint32_t i) { if (i < fNum && fGestureOpen[i] > 0 && --fGestureOpen[i] == 0) editParameter(i, false); }
     void setParamGesture(int i, float v)
     {
         if (i < 0 || i >= (int)fNum || fSpecs[i].clamp(v) == fValues[(size_t)i]) return;
@@ -664,9 +669,10 @@ protected:
         // not accepted but answered: re-send our value so host, DSP and UI agree again.
         if (value != fValues[index] && nowSeconds() - fLocalSet[index] < 0.3)
         {
-            editParameter(index, true);   // VST3 wants every perform-edit inside begin/end
-            setParameterValue(index, fValues[index]);
-            editParameter(index, false);
+            // VST3 wants every perform-edit inside begin/end; while our own gesture is open (a drag) we are already
+            // inside one, and opening and closing another would end the host's gesture under the mouse
+            if (fGestureOpen[index] > 0) setParameterValue(index, fValues[index]);
+            else { editParameter(index, true); setParameterValue(index, fValues[index]); editParameter(index, false); }
             return;
         }
         fValues[index] = value;
@@ -1603,6 +1609,7 @@ protected:
     int fBypass;
     std::vector<float> fValues;
     std::vector<double> fLocalSet;   // when this UI last changed each parameter (seconds)
+    std::vector<int> fGestureOpen;   // open host gestures per parameter (openGesture / closeGesture)
     std::vector<std::unique_ptr<Control>> fControls;
     Control* fActive = nullptr;
     bool fBodyActive = false;

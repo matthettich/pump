@@ -30,8 +30,8 @@ enum Param : int {
 
 inline const std::vector<ParamSpec>& params()
 {
-    static std::vector<ParamSpec> v;
-    if (!v.empty()) return v;
+    static const std::vector<ParamSpec> v = []() {
+    std::vector<ParamSpec> v;
     const unsigned A = kPAutomatable, I = kPAutomatable | kPInteger;
     v.push_back({ "source_a", "Source A", "Source", 0, kNumSources - 1, 1, PUnit::None, PScale::Linear, I, kSourceNames, 1 });
     v.push_back({ "source_b", "Source B", "Source B", 0, kNumSources, 0, PUnit::None, PScale::Linear, I, kSourceBNames, 1 });
@@ -62,12 +62,14 @@ inline const std::vector<ParamSpec>& params()
     v.push_back({ "octave", "Octave", "Oct", -3, 3, 0, PUnit::None, PScale::Linear, I, nullptr, 1 });
     v.push_back({ "volume", "Volume", "Volume", -48, 12, 0, PUnit::dB, PScale::Linear, A, nullptr, 1 });
     return v;
+    }();
+    return v;
 }
 
 inline const std::vector<Preset>& presets()
 {
-    static std::vector<Preset> v;
-    if (!v.empty()) return v;
+    static const std::vector<Preset> v = []() {
+    std::vector<Preset> v;
     auto F = [&](const char* sec, const char* n, std::vector<PresetValue> p) { v.push_back({ n, std::move(p), sec }); };
     v.push_back({ "Default", {} });
     F("VOICES", "Sung pad", { { "source_a", 1 }, { "speed", 40 }, { "attack", 400 }, { "release", 1500 }, { "blur", 30 }, { "formant", 100 } });
@@ -84,6 +86,8 @@ inline const std::vector<Preset>& presets()
     F("TEXTURE", "Odd glass", { { "source_a", 3 }, { "source_b", 7 }, { "morph", 60 }, { "odd_even", 70 }, { "inharm", 20 }, { "mode", kFreeze }, { "scan", 25 }, { "attack", 300 }, { "release", 2000 } });
     F("TEXTURE", "Blurred sweep", { { "source_a", 5 }, { "blur", 80 }, { "speed", 25 }, { "mode", kBounce }, { "attack", 300 }, { "release", 1500 }, { "width", 80 } });
     F("TEXTURE", "Spring choir", { { "source_a", 2 }, { "source_b", 2 }, { "morph", 50 }, { "formant", 60 }, { "mode", kFreeze }, { "scan", 10 }, { "attack", 400 }, { "release", 2000 } });
+    return v;
+    }();
     return v;
 }
 

@@ -310,4 +310,35 @@ private:
    #endif
 };
 
+// Single-producer single-consumer queue of pointers, fixed capacity, lock-free and allocation-free. The audio
+// thread uses it to hand objects it has finished with back to a non-real-time thread, which frees them.
+template <typename T, int Cap>
+class SpscPtrQueue {
+    static_assert((Cap & (Cap - 1)) == 0, "capacity must be a power of two");
+public:
+    bool push(T* p)   // producer
+    {
+        const unsigned w = wpos.load(std::memory_order_relaxed);
+        if (w - rpos.load(std::memory_order_acquire) >= (unsigned)Cap) return false;
+        slots[w & (Cap - 1)] = p;
+        wpos.store(w + 1, std::memory_order_release);
+        return true;
+    }
+    bool pop(T*& p)   // consumer
+    {
+        const unsigned r = rpos.load(std::memory_order_relaxed);
+        if (r == wpos.load(std::memory_order_acquire)) return false;
+        p = slots[r & (Cap - 1)];
+        rpos.store(r + 1, std::memory_order_release);
+        return true;
+    }
+    bool hasSpace() const   // producer
+    {
+        return wpos.load(std::memory_order_relaxed) - rpos.load(std::memory_order_acquire) < (unsigned)Cap;
+    }
+private:
+    T* slots[Cap] = {};
+    std::atomic<unsigned> wpos { 0 }, rpos { 0 };
+};
+
 } // namespace pump
