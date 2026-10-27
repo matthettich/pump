@@ -141,7 +141,14 @@ jobs:
             cp -R $2 "root-$1/" 2>/dev/null || return 0
             pkgbuild --analyze --root "root-$1" "comp-$1.plist"
             n=$(plutil -convert json -o - "comp-$1.plist" | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))')
-            for i in $(seq 0 $((n-1))); do plutil -replace "$i.BundleIsRelocatable" -bool NO "comp-$1.plist"; done
+            # not relocatable (never redirected to an older copy elsewhere); not version-checked and always overwritten:
+            # Installer decides what to skip before any script runs, and every build has the same bundle version, so
+            # with version checks it skipped every plugin that was installed (which the clean-out then moved away)
+            for i in $(seq 0 $((n-1))); do
+              plutil -replace "$i.BundleIsRelocatable" -bool NO "comp-$1.plist"
+              plutil -replace "$i.BundleIsVersionChecked" -bool NO "comp-$1.plist"
+              plutil -replace "$i.BundleOverwriteAction" -string upgrade "comp-$1.plist"
+            done
             pkgbuild --root "root-$1" --component-plist "comp-$1.plist" --install-location "$3" \
               --identifier "com.wake.pump.$1" --version "$VERSION" "pkgs/pump-$1.pkg"
           }
@@ -149,10 +156,12 @@ jobs:
           build_component au "bin/*.component" "/Library/Audio/Plug-Ins/Components"
           build_component clap "bin/*.clap" "/Library/Audio/Plug-Ins/CLAP"
           build_component app "bin/*.app" "/Applications"
-          # first: the installed pump plugins move to /Library/Audio/Plug-Ins/pump-previous (renamed or removed ones
-          # don't stay); last: the Audio Unit cache is refreshed
+          # first: installed pump plugins this version doesn't have (renamed or removed) move to
+          # /Library/Audio/Plug-Ins/pump-previous, as do copies in the user's ~/Library; last: the Audio Unit cache
+          # is refreshed
           mkdir -p scripts-cleanup scripts-refresh
           cp installer/macos/pump-cleanup.sh scripts-cleanup/postinstall
+          (cd bin && ls -d *.vst3 *.component *.clap 2>/dev/null) > scripts-cleanup/pump-plugins.txt
           printf '#!/bin/sh\nkillall -9 AudioComponentRegistrar >/dev/null 2>&1\nexit 0\n' > scripts-refresh/postinstall
           chmod +x scripts-cleanup/postinstall scripts-refresh/postinstall
           pkgbuild --nopayload --scripts scripts-cleanup --identifier com.wake.pump.cleanup --version "$VERSION" pkgs-cleanup.pkg
