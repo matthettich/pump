@@ -63,6 +63,7 @@ namespace accents {
     inline Accent twang()  { return { "twang",  hexColor(0x2BD9C2), hexColor(0x055A50), hexColor(0xFF8A4D) }; }   // lagoon
     inline Accent phase()  { return { "phase",  hexColor(0x6B85FF), hexColor(0x1A2A99), hexColor(0xFFB43D) }; }   // cobalt
     inline Accent life()   { return { "life",   hexColor(0xADFF2F), hexColor(0x3A6600), hexColor(0xC24DFF) }; }   // acid
+    inline Accent boing()  { return { "boing",  hexColor(0xFF6FB5), hexColor(0x8C1257), hexColor(0x3DD6C4) }; }   // flamingo
 }
 
 struct Theme {

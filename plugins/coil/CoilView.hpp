@@ -27,6 +27,16 @@ public:
         }
         visRate = e->visRate();
     }
+    // the same for any instrument whose voices are springs (BOING's pads): one row's wave, level and note
+    void updateRow(int i, const ScopeRing& ring, float level, int noteNum, double rate, float dt)
+    {
+        if (i < 0 || i >= kMaxVoices) return;
+        ring.readSmooth(wave[i], kWaveN);
+        energy[i] = std::max(std::min(1.0f, std::sqrt(std::max(0.0f, level)) * 3.0f), energy[i] * std::exp(-dt / 0.25f));
+        note[i] = noteNum; if (noteNum >= 0) lastNote[i] = noteNum;
+        visRate = rate;
+    }
+    const char* const* labels = nullptr;   // a name per row (else the note it plays)
 
     void draw(DISTRHO::PumpUI& ui, const Rect& r, float kickAgeS, const char* title, const char* right)
     {
@@ -57,12 +67,13 @@ public:
             if (on) ++shown;
             const int nv = lastNote[i] >= 0 ? (lastNote[i] >= 1000 ? lastNote[i] - 1000 : lastNote[i]) : 48 + 5 * i;
             // the note, then the hooks
-            if (on)
+            if (labels) ui.textAt(p.x, yc, labels[i], P::kLabel, 8.5f, on ? th.ink : th.ink2, NanoVG::ALIGN_LEFT | NanoVG::ALIGN_MIDDLE, 0.4f);
+            else if (on)
             {
                 char b[12]; std::snprintf(b, sizeof b, "%s%d", nn[((nv % 12) + 12) % 12], nv / 12 - 1);
                 ui.textAt(p.x, yc, b, P::kMono, 9.5f, th.ink, NanoVG::ALIGN_LEFT | NanoVG::ALIGN_MIDDLE);
             }
-            const float hookX0 = p.x + 34, hookX1 = p.r() - 4;
+            const float hookX0 = p.x + (labels ? 52 : 34), hookX1 = p.r() - 4;
             // lower notes: longer springs (the drawing spans the screen; length shows as the number of coils)
             const double f0 = 440.0 * std::exp2((nv - 69) / 12.0);
             const double travel = 0.5 / std::max(20.0, f0);   // one way along the spring: half the period

@@ -36,9 +36,10 @@ Instruments (MIDI in, stereo out):
   modulation, decay, level), global FM / drive / decay, an LFO, a multi-FX (pitch shifter with grain and delay, a
   bipolar low/high-pass, feedback), and a Game of Life grid as the sequencer: cells trigger the voice of their colour,
   loop / evolve / free-run modes, cycle length and offset, sensitivity, draw / randomise / load patterns, host sync.
-- **Volume pass** (next): every instrument at 0 dB by default, its internal gain set so a typical factory voice peaks
-  near -6 dBFS (chords on the poly ones keep their headroom).
-- **BOING** drum machine: COIL's springs as drum voices (kick: a long tank with a pitch drop and a sub; snare: a short
+- **Volume pass** — done (2026-10-26): every instrument at 0 dB by default, trimmed to about -20 dBFS RMS on its
+  factory voices (tools/render_presets.cpp measures them), with a safety limiter above -1 dBFS. Re-run it for every new
+  instrument.
+- **BOING** drum machine — done (2026-10-26): COIL's springs as drum voices (kick: a long tank with the analog layer's pitch drop under it; snare: a short
   tank with noise; toms; hats and cymbals from the digital tanks, spread and grit, with a choke; claps as bursts of
   kicks), next to a second engine of resonant analog-style drum voices (a tone with pitch bend, a filtered noise
   source, a click, a resonator); per pad model, tune, decay, harmonic, spread, drip, pitch drop, noise, level, pan,

@@ -49,6 +49,7 @@ offset block, Share Tech Mono, one light-neon colour per plugin, light or dark. 
 | **pump COIL** Spring Synth | coral | SPRING's six tanks played as tuned springs: every note a set of springs whose loop is tuned to it, kicked with the velocity, sounding like the reverb's own springs; HARMONIC pulls them from clang and drip to a clean pluck; tension, drip, decay, release, spread, wobble, tone, excite, grit for the digital ones, SPRING's tank around them, width; 8 voices; KICK re-kicks whatever is ringing; 22 voices: springs, tuned, bass, metal, digital |
 | **pump PHASE** FM Synth | cobalt | six engines, each with its chip's integer sine and exponent tables, envelope steps, own sample rate and DAC (CHIP), or clean: the 4-operator chips of 16-bit consoles (9-bit DAC grit) and arcade boards (noise on op 4), the PC sound card chip in 2- and 4-operator modes with its eight waveforms, a studio engine of 2 to 6 operators (eighteen algorithms, every waveform), and phase distortion (eight bent shapes incl. three resonant ones, two alternating per line, a bend envelope, lines 1 / 2 / 1+1' / 1+2', ring or noise mod); fixed-frequency operators, feedback, pitch envelope, LFO to level and pitch; up to 16 voices, mono or legato with glide; 27 factory voices |
 | **pump LIFE** Groovebox | acid | a groovebox played by a Game of Life: eight tone voices (a parabolic sine with pitch, kick, FM from the next voice, ring from the previous, decay, level) set as bar charts, global FM / drive / decay, an LFO; a pitch-shifting delay with a low/high-pass in its loop, fed per hit by its own envelope; the grid (up to 16 x 16, six rules, fourteen patterns or your drawing): each generation the born, living or dying cells play the voice of their colour; LOOP repeats with the song, EVOLVE and FREE run on (reseeding when the board stalls); MIDI 36-43 play the voices; 16 factory sets |
+| **pump BOING** Spring Drums | flamingo | a drum machine of springs: eight pads on the General MIDI drum notes, each a tuned spring (SPRING's six tanks, kicked by the hit: harmonic, spread, drip) blended with an analog-style drum voice (sine, triangle, fold, square, saw or metallic partials, with a pitch drop; resonant noise that also runs through the spring; a click), decay, hits (claps), level, pan and a send into a real spring tank shared by the kit; choke, velocity, drive; the pads' springs drawn ringing; 13 kits |
 
 ## Download
 
@@ -109,6 +110,8 @@ In your host they sit in three folders (the vendor): **wake mastering**, **wake 
 - PHASE: pick an ENGINE, then click the ALGORITHM screen's halves (or scroll) to step through its algorithms; click an
   operator (or keys 1-6) to edit it. A carrier's LEVEL is its loudness, a modulator's is the FM depth. CHIP off plays
   the same voice clean
+- BOING: click a pad (or 1-8) to play and edit it; BLEND goes from the analog voice (0) to the spring (100). The kick
+  and toms get their thump from BEND (the analog layer's pitch drop) and their boing from the spring
 - LIFE: press play in the host (LOOP and EVOLVE follow the song; FREE runs on its own). Draw on the grid, pick a
   PATTERN, or RANDOM; the cell colours are the voices (X-WRAP, Y-WRAP and COLOUR change which); SENSITIVITY sets how few
   cells it takes to play one. Drag across the TONES bars to shape the kit
