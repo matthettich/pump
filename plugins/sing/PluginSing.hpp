@@ -3,6 +3,7 @@
 #include "PumpPlugin.hpp"
 #include "SingParams.hpp"
 #include "SingEngine.hpp"
+#include <mutex>
 
 START_NAMESPACE_DISTRHO
 
@@ -10,13 +11,14 @@ using namespace pump::sing;
 
 class PluginSing : public PumpPlugin {
 public:
-    PluginSing() : PumpPlugin(params().data(), kNumParams, &presets(), 1)
+    PluginSing() : PumpPlugin(params().data(), kNumParams, &presets(), 2)
     {
         sync();
         engine.prepare(getSampleRate(), (int)getBufferSize()); outLimit.prepare(getSampleRate());
         if (const char* t = std::getenv("PUMP_TEST_LYRICS")) lyrics = t;
         engine.setLyrics(lyrics);
         if (const char* n = std::getenv("PUMP_TEST_NOTES")) testNotes = n;   // headless screenshots: notes to hold (after 0.5 s)
+        if (const char* b = std::getenv("PUMP_TEST_BANK")) setState("voicebank", b);        // headless screenshots: a voicebank
     }
 
     // gain staging (the volume pass, 2026-10-26): VOLUME 0 dB is a typical voice at about -20 dBFS RMS
@@ -26,6 +28,9 @@ public:
     pump::synth::NoteQueue keys;
     pump::MeterValue outPeak[2];
     std::atomic<bool> restartRequest { false };
+    // the voicebank loaded (nullptr: none) and what to say about it
+    const Bank* bankNow() const { return bankPtr.load(std::memory_order_acquire); }
+    std::string bankInfo() const { std::lock_guard<std::mutex> g(bankLock); return bankMsg; }
 
 protected:
     const char* getLabel() const override { return "pump_sing"; }
@@ -34,6 +39,7 @@ protected:
     void initState(uint32_t index, State& state) override
     {
         if (index < kPumpNumStates) { PumpPlugin::initState(index, state); return; }
+        if (index - kPumpNumStates == 1) { state.key = "voicebank"; state.label = "Voicebank"; state.defaultValue = ""; state.hints = kStateIsFilenamePath; return; }
         state.key = "lyrics";
         state.label = "Lyrics";
         state.defaultValue = kDefaultLyrics;
@@ -41,11 +47,30 @@ protected:
     void setState(const char* key, const char* value) override
     {
         if (std::strcmp(key, "lyrics") == 0) { lyrics = value ? value : ""; engine.setLyrics(lyrics); return; }
+        if (std::strcmp(key, "voicebank") == 0)
+        {
+            // read here (not on the audio thread); every bank loaded is kept until the plugin goes
+            bankPath = value ? value : "";
+            std::shared_ptr<Bank> b;
+            std::string msg;
+            if (!bankPath.empty())
+            {
+                b = Bank::load(bankPath);
+                if (!b->ok()) { msg = "couldn't load: " + b->error; b.reset(); }
+                else msg = b->name + " (" + std::to_string(b->entries.size()) + " syllables)";
+            }
+            std::lock_guard<std::mutex> g(bankLock);
+            if (b) keepBanks.push_back(b);
+            bankPtr.store(b.get(), std::memory_order_release);
+            bankMsg = msg;
+            return;
+        }
         PumpPlugin::setState(key, value);
     }
     String getState(const char* key) const override
     {
         if (std::strcmp(key, "lyrics") == 0) return String(lyrics.c_str());
+        if (std::strcmp(key, "voicebank") == 0) return String(bankPath.c_str());
         return PumpPlugin::getState(key);
     }
 
@@ -62,6 +87,7 @@ protected:
         s.hiss = pv(kHiss) * 0.01; s.diction = pv(kDiction) * 0.01; s.attack = pv(kAttack); s.release = pv(kRelease);
         s.spread = pv(kSpread) * 0.01; s.width = pv(kWidth) * 0.01; s.velocity = pv(kVelocity) * 0.01; s.drive = pv(kDrive) * 0.01;
         s.volumeDb = pv(kVolume) + kTrimDb;
+        s.engine = (int)pv(kEngine); s.gender = pv(kGender) * 0.01;
         engine.setSettings(s);
     }
 
@@ -74,6 +100,7 @@ protected:
             sync();
         }
         engine.setTransport(transport().playing);
+        engine.setBank(bankPtr.load(std::memory_order_acquire));
         if (restartRequest.exchange(false)) engine.restart();
         if (!testNotes.empty() && (testWait += frames) > getSampleRate() * 0.5)
         {
@@ -108,7 +135,10 @@ protected:
 
 private:
     pump::synth::Midi midi[512 + 64] = {}, uiKeys[64] = {};
-    std::string lyrics = kDefaultLyrics, testNotes;
+    std::string lyrics = kDefaultLyrics, testNotes, bankPath, bankMsg;
+    std::atomic<const Bank*> bankPtr { nullptr };
+    std::vector<std::shared_ptr<Bank>> keepBanks;
+    mutable std::mutex bankLock;
     double testWait = 0.0;
 
     DISTRHO_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PluginSing)

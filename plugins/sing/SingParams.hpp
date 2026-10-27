@@ -11,8 +11,11 @@ enum Param : int {
     kMode = 0, kChoir, kOctave, kSize, kRobot, kVoice, kBreath, kBright, kSoft, kClarity, kRough,
     kVib, kVibRate, kVibDelay, kGlide, kWheel, kHiss, kDiction, kAttack, kRelease,
     kSpread, kWidth, kVelocity, kDrive, kVolume,
+    kEngine, kGender,   // the voicebank engine (added 2026-10-27)
     kNumParams
 };
+enum EngineKind : int { kEngineFormant = 0, kEngineBank, kNumEngineKinds };
+static const char* const kEngineKindNames[] = { "Formant", "Voicebank" };
 enum Mode : int { kModeMono = 0, kModePoly, kNumModes };
 static const char* const kModeNames[] = { "Mono", "Poly" };
 static const char* const kDefaultLyrics = "hello world, I am a singing machine. la la la ooh ~ yeah";
@@ -47,6 +50,8 @@ inline const std::vector<ParamSpec>& params()
     v.push_back({ "velocity", "Velocity to Level", "Velocity", 0, 100, 40, PUnit::Percent, PScale::Linear, A, nullptr, 1 });
     v.push_back({ "drive", "Drive", "Drive", 0, 100, 0, PUnit::Percent, PScale::Linear, A, nullptr, 1 });
     v.push_back({ "volume", "Volume", "Volume", -48, 12, 0, PUnit::dB, PScale::Linear, A, nullptr, 1 });
+    v.push_back({ "engine", "Voice Engine", "Engine", 0, kNumEngineKinds - 1, kEngineFormant, PUnit::None, PScale::Linear, I, kEngineKindNames, 1 });
+    v.push_back({ "gender", "Voicebank Gender", "Gender", -100, 100, 0, PUnit::Percent, PScale::Linear, A, nullptr, 1 });
     return v;
 }
 

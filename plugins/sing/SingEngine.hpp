@@ -17,6 +17,7 @@
 #include "dsp/Synth.hpp"
 #include "SingText.hpp"
 #include "SingParams.hpp"
+#include "SingBank.hpp"
 #include <array>
 #include <atomic>
 #include <mutex>
@@ -29,6 +30,8 @@ struct Settings {
     double vib = 0.3, vibRate = 5.5, vibDelay = 280.0, glide = 50.0, wheel = 0.5;
     double hiss = 0.5, diction = 1.0, attack = 12.0, release = 160.0;
     double spread = 0.4, width = 0.5, velocity = 0.5, drive = 0.0, volumeDb = -6.0;
+    int engine = kEngineFormant;
+    double gender = 0.0;
 };
 
 class Voice {
@@ -280,7 +283,8 @@ public:
     void prepare(double sampleRate, int /*maxBlock*/)
     {
         sr = sampleRate;
-        for (int i = 0; i < kMaxVoices; ++i) voices[(size_t)i].prepare(sr, (uint32_t)(i + 1));
+        for (int i = 0; i < kMaxVoices; ++i) { voices[(size_t)i].prepare(sr, (uint32_t)(i + 1)); bvoices[(size_t)i].prepare(sr); bv[(size_t)i] = BankState(); }
+        lastVowel = 0;
         vm.setup(1, synth::kMono); vm.reset();
         heldN = 0; pos = 0;
         volS.setRamp(std::max(1, (int)(0.02 * sr))); volS.reset(dbToGain(set.volumeDb));
@@ -295,6 +299,9 @@ public:
         hasPending = true;
     }
     void restart() { restartFlag.store(true); }
+    // the voicebank to sing with (nullptr: none); it must stay alive while it may be in use
+    void setBank(const Bank* b) { if (b != bank) { for (auto& v : bvoices) v.reset(); } bank = b; }
+    int entryNow() const { return entryFeed.load(std::memory_order_relaxed); }   // the bank entry sung last (-1: none / formant)
     void setTransport(bool playing) { if (playing && !wasPlaying) restartFlag.store(true); wasPlaying = playing; }
 
     // ---- feeds (UI) ----
@@ -326,6 +333,7 @@ public:
             if (m > 0)
             {
                 for (auto& v : voices) if (v.active()) v.render(L + done, R + done, m, set, vm.wheel(), vm.pitchBend() * 2.0);
+                renderBank(L + done, R + done, m);
                 done = until;
             }
         }
@@ -344,6 +352,7 @@ public:
         // feeds
         int act = 0; float lv = 0; uint64_t lit[2] = { 0, 0 };
         const Voice* lead = nullptr;
+        for (const auto& v : bvoices) if (v.active) { ++act; lv = std::max(lv, (float)v.level()); if (v.held && v.note >= 0) lit[(v.note >> 6) & 1] |= 1ull << (v.note & 63); }
         for (const auto& v : voices)
         {
             if (!v.active()) continue;
@@ -367,7 +376,7 @@ private:
         if (st == 0x90 && m.d2 > 0) noteOn(m.d1, m.d2 / 127.0);
         else if (st == 0x80 || (st == 0x90 && m.d2 == 0)) noteOff(m.d1);
         else vm.midi(m.status, m.d1, m.d2, [](const synth::VoiceCmd&) {});   // bend, wheel
-        if (st == 0xB0 && (m.d1 == 120 || m.d1 == 123)) { for (auto& v : voices) { v.held = false; if (m.d1 == 120) v.reset(); else if (v.active()) v.off(); } heldN = 0; }
+        if (st == 0xB0 && (m.d1 == 120 || m.d1 == 123)) { for (auto& v : voices) { v.held = false; if (m.d1 == 120) v.reset(); else if (v.active()) v.off(); } for (auto& b : bvoices) { if (m.d1 == 120) b.reset(); else if (b.active) b.off(); } heldN = 0; }
     }
     // the next syllable to sing (and move on), or the one being sung (a chord)
     const Syllable* take(bool advance, bool& extend)
@@ -396,10 +405,89 @@ private:
     }
     double hzOf(int note) const { return synth::midiToHz(note); }
 
+    // the bank's entry for a syllable (and the vowel it ends on), or nullptr: then the formant voice sings it
+    const Entry* bankEntry(const Syllable* s)
+    {
+        if (set.engine != kEngineBank || !bank || !s || s->rest) return nullptr;
+        const Entry* e = bank->lookup(*s, lastVowel);
+        char vw = 0; syllableRomaji(*s, vw);
+        if (e) { lastVowel = vw; entryFeed.store((int)(e - bank->entries.data())); }
+        return e;
+    }
+    void bankOn(int i, const Entry* e, int note, const Voice& shape)
+    {
+        BankVoice& b = bvoices[(size_t)i];
+        if (b.active) { b.kill(); }   // the last syllable crossfades out (30 ms) while this one starts
+        // a free one for the new syllable (the killed one fades on its own slot when another is free)
+        BankVoice* nb = &b;
+        if (b.active) for (int k = kMaxVoices - 1; k >= 0; --k) if (!bvoices[(size_t)k].active) { nb = &bvoices[(size_t)k]; i = k; break; }
+        nb->detune = shape.detune; nb->gl = shape.gl; nb->gr = shape.gr; nb->gain = shape.gain;
+        nb->note = note; nb->age = ++counter;
+        nb->on(bank, e, hzOf(note));
+        bv[(size_t)i] = BankState(); bv[(size_t)i].semis = note;
+    }
+    void renderBank(float* L, float* R, int m)
+    {
+        const double dt = m / sr;
+        for (int i = 0; i < kMaxVoices; ++i)
+        {
+            BankVoice& b = bvoices[(size_t)i];
+            if (!b.active) continue;
+            BankState& q = bv[(size_t)i];
+            // glide toward the note, vibrato after its delay (as the formant voice does)
+            const double gk = set.glide > 0.0 ? 1.0 - std::exp(-dt * 1000.0 / set.glide) : 1.0;
+            q.semis += (b.note - q.semis) * gk;
+            q.t += dt; q.ph += set.vibRate * dt; q.ph -= std::floor(q.ph);
+            const double vd = clampv((q.t * 1000.0 - set.vibDelay) / 300.0, 0.0, 1.0);
+            const double vib = clampv(set.vib + vm.wheel() * set.wheel, 0.0, 1.5) * vd * 0.72 * std::sin(kTwoPi * q.ph);
+            b.setPitch(synth::midiToHz(q.semis + 12.0 * set.octave));
+            b.render(L, R, m, vm.pitchBend() * 2.0, vib, set.gender, set.attack * 0.001, set.release * 0.001);
+        }
+    }
+
     void noteOn(int note, double vel)
     {
         pushHeld(note);
         const int count = clampv(set.choir, 1, 8);
+        if (set.engine == kEngineBank && bank)
+        {
+            // the voicebank: the syllable from the bank when it has it, else from the formant voice
+            const bool chord = set.mode != kModeMono && heldN > 1;
+            bool extend = false;
+            const Syllable* s = take(!chord, extend);
+            const Entry* e = extend ? nullptr : bankEntry(s);
+            if (extend && set.mode == kModeMono)
+            {   // a melisma on a bank syllable: its vowel slides to the new note
+                bool anyB = false;
+                for (auto& b : bvoices) if (b.active && b.held) { b.note = note; anyB = true; }
+                if (anyB) return;
+            }
+            if (e)
+            {
+                if (set.mode == kModeMono) for (auto& b : bvoices) if (b.active && b.held) { b.held = false; b.kill(); }
+                for (auto& v : voices) if (v.active() && set.mode == kModeMono) { v.held = false; v.off(); }
+                for (int k = 0; k < count; ++k)
+                {
+                    Voice shape; unisonShape(shape, k, count, vel);
+                    int slot = 0; for (int i = 0; i < kMaxVoices; ++i) if (!bvoices[(size_t)i].active) { slot = i; break; }
+                    bankOn(slot, e, note, shape);
+                }
+                return;
+            }
+            entryFeed.store(-1);
+            // no entry: the formant voice sings it (below), from the syllable already taken
+            if (set.mode == kModeMono) for (auto& b : bvoices) if (b.active && b.held) { b.held = false; b.off(); }
+            bool legato = false;
+            for (int i = 0; i < count; ++i) if (voices[(size_t)i].active() && voices[(size_t)i].held && !voices[(size_t)i].closing()) legato = true;
+            for (int k = 0; k < count; ++k)
+            {
+                Voice& v = set.mode == kModeMono ? voices[(size_t)k] : pick();
+                if (!legato || !v.active()) unisonShape(v, k, count, vel);
+                v.note = note; v.held = true; v.age = ++counter;
+                v.on(s, hzOf(note), legato && set.mode == kModeMono, extend, 0);
+            }
+            return;
+        }
         if (set.mode == kModeMono)
         {
             bool legato = false;
@@ -433,6 +521,17 @@ private:
         if (set.mode == kModeMono)
         {
             bool any = false;
+            for (auto& b : bvoices) if (b.active && b.held && b.note == note) any = true;
+            if (any)
+            {
+                if (heldN > 0) { for (auto& b : bvoices) if (b.active && b.held) b.note = held[heldN - 1]; }
+                else for (auto& b : bvoices) if (b.active && b.held) { b.held = false; b.off(); }
+            }
+        }
+        else for (auto& b : bvoices) if (b.active && b.held && b.note == note) { b.held = false; b.off(); }
+        if (set.mode == kModeMono)
+        {
+            bool any = false;
             for (auto& v : voices) if (v.held && v.note == note) any = true;
             if (!any) return;
             if (heldN > 0)
@@ -460,6 +559,12 @@ private:
 
     Settings set;
     std::array<Voice, kMaxVoices> voices {};
+    struct BankState { double semis = 60.0, t = 0.0, ph = 0.0; };
+    std::array<BankVoice, kMaxVoices> bvoices {};
+    std::array<BankState, kMaxVoices> bv {};
+    const Bank* bank = nullptr;
+    char lastVowel = 0;
+    std::atomic<int> entryFeed { -1 };
     synth::VoiceManager vm;   // bend, wheel
     fx::Rng rng { 0x5106u };
     std::vector<Syllable> syl, pending;

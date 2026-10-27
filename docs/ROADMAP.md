@@ -68,8 +68,9 @@ Instruments (MIDI in, stereo out):
     transposition, twelve factory patterns plus a user one saved with the session.
   - **A live-stream chopper** — done (2026-10-27) as **CHOP**: the last bar of the input in 8 / 16 slices on 8 momentary
     pads, two-pad loops, per-pad pitch, reverse, effect and level, MIDI-note and computer-key mapping with learn.
-  - **SING voicebanks** (last of all): a second SING engine that plays sampled voicebanks (oto.ini format), the formant
-    engine staying as its classic voice.
+  - **SING voicebanks** — done (2026-10-27): ENGINE: VOICEBANK reads oto.ini voicebanks (oto.ini in Shift-JIS or UTF-8,
+    subfolders), finds each syllable's alias (kana / romaji, VCV / CV, then the vowel) and sings it by PSOLA (formants
+    kept, GENDER shifts them); the formant voice sings what the bank lacks.
 
 ## Instance List — planned, nice to have
 

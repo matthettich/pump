@@ -40,6 +40,11 @@ public:
         glideD = dial(kGlide, "GLIDE", false, "How long a slide between legato notes takes");
         velD = dial(kVelocity, "VELOCITY", false, "How much velocity changes the level");
         volD = dial(kVolume, "VOLUME", true);
+        engSeg = addSegmented(kEngine, { "FORMANT", "VOICEBANK" });
+        engSeg->tip = "Formant: SING's own voice. Voicebank: a recorded singer (the oto.ini voicebank layout) sings what it has, the formant voice the rest";
+        genderD = dial(kGender, "GENDER", true, "Voicebank: moves the singer's formants up (+) or down (-) without changing the pitch");
+        loadBank = addButton("LOAD BANK", [this] { FileBrowserOptions op; op.title = "A voicebank: choose its oto.ini (or any file in its folder)"; openFileBrowser(op); });
+        loadBank->tip = "Load a voicebank: a folder of recorded syllables with an oto.ini (the oto.ini voicebank layout)";
         editBtn = addButton("EDIT", [this]() { editLyrics(); });
         editBtn->small = true; editBtn->tip = "Type new lyrics (Enter keeps them, Esc cancels; Cmd/Ctrl+V pastes)";
         restartBtn = addButton("RESTART", [this]() { if (plug) plug->restartRequest.store(true); });
@@ -102,7 +107,9 @@ protected:
         Dial* ee[4] = { atkD, relD, glideD, velD };
         for (int k = 0; k < 4; ++k) ee[k]->r = Rect(354 + k * 76, y2 + 64, 76, hs);
         outPanel = Rect(678, y2, 308, ph2);
-        volD->r = Rect(690, y2 + 64, 90, hs);
+        engSeg->r = Rect(690, y2 + 26, 284, 22);
+        loadBank->r = Rect(690, y2 + 54, 96, 20);
+        volD->r = Rect(684, y2 + 82, 74, hs); genderD->r = Rect(756, y2 + 82, 74, hs);
         keyboard.r = Rect(14, 650, 966, 56);
     }
 
@@ -149,11 +156,20 @@ protected:
             if (s.nu >= 0) { now += '['; now += kPhones[s.nu].name; now += "] "; }
             for (int p : s.co) { now += kPhones[p].name; now += ' '; }
         }
-        textAt(outPanel.x + 110, outPanel.y + 76, "SINGING", kLabel, 9.0f, theme.ink2, ALIGN_LEFT | ALIGN_MIDDLE, 0.8f);
-        textAt(outPanel.x + 110, outPanel.y + 96, now, kMono, 12.0f, theme.ink, ALIGN_LEFT | ALIGN_MIDDLE);
+        // the voicebank: which, and the recording sung now
+        const pump::sing::Bank* bk = plug ? plug->bankNow() : nullptr;
+        {
+            std::string info = plug ? plug->bankInfo() : std::string();
+            if (info.empty()) info = "NO VOICEBANK";
+            textAt(outPanel.x + 116, outPanel.y + 64, info, kLabel, 8.5f, bk ? theme.ink : theme.ink2, ALIGN_LEFT | ALIGN_MIDDLE, 0.3f);
+            const int en = plug ? plug->engine.entryNow() : -1;
+            if (bk && value(kEngine) >= 0.5f) now = en >= 0 && en < (int)bk->entries.size() ? "\"" + bk->entries[(size_t)en].alias + "\"" : now + "(FORMANT)";
+        }
+        textAt(outPanel.x + 168, outPanel.y + 96, "SINGING", kLabel, 9.0f, theme.ink2, ALIGN_LEFT | ALIGN_MIDDLE, 0.8f);
+        textAt(outPanel.x + 168, outPanel.y + 114, now, kMono, 10.5f, theme.ink, ALIGN_LEFT | ALIGN_MIDDLE);
         char b[64];
         std::snprintf(b, sizeof b, "SYLLABLE %d OF %d", cur >= 0 ? cur + 1 : 0, (int)syl.size());
-        textAt(outPanel.x + 110, outPanel.y + 120, b, kLabel, 9.0f, theme.ink2, ALIGN_LEFT | ALIGN_MIDDLE, 0.6f);
+        textAt(outPanel.x + 168, outPanel.y + 134, b, kLabel, 8.5f, theme.ink2, ALIGN_LEFT | ALIGN_MIDDLE, 0.4f);
         textAt(outPanel.x + 12, outPanel.b() - 16, "KEYS: EVERY NOTE SINGS THE NEXT SYLLABLE", kLabel, 8.5f, theme.ink2, ALIGN_LEFT | ALIGN_MIDDLE, 0.5f);
         keyboard.draw(*this);
     }
@@ -291,12 +307,21 @@ protected:
         return b;
     }
 
+    void uiFileBrowserSelected(const char* filename) override
+    {
+        if (!filename) return;
+        setState("voicebank", filename);
+        setParamGesture(kEngine, (float)kEngineBank);
+    }
+
 private:
     static constexpr int kScopeN = 4096, kTrail = 48;
     PluginSing* plug = nullptr;
     Rect lyrR, vowR, scopeR, meterL, meterR, voicePanel, tonePanel, choirPanel, vibPanel, envPanel, outPanel;
     Dial *octD, *sizeD, *robotD, *voiceD, *breathD, *roughD, *brightD, *softD, *clarD, *hissD, *dictD, *driveD;
-    Dial *choirD, *spreadD, *widthD, *vibD, *vibRateD, *vibDelayD, *wheelD, *atkD, *relD, *glideD, *velD, *volD;
+    Dial *choirD, *spreadD, *widthD, *vibD, *vibRateD, *vibDelayD, *wheelD, *atkD, *relD, *glideD, *velD, *volD, *genderD;
+    Segmented* engSeg;
+    Button* loadBank;
     Segmented* modeSeg;
     Button *editBtn, *restartBtn;
     KeyboardUI keyboard;
