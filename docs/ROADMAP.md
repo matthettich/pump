@@ -60,9 +60,8 @@ Instruments (MIDI in, stereo out):
 - Ideas the user liked, in order:
   **granular spectral-freeze** synth, **formant / vocal-tract** pad.
 - Asked for on 2026-10-26 (after those):
-  - **A multi-engine drum synth**: per channel a tone
-    engine (subtractive, FM, resonant / physical models), a noise engine with its own filter and envelope, a click
-    engine, blended, with pitch bend envelopes; more engines than BOING's analog layer.
+  - **A multi-engine drum synth** — done (2026-10-26) as **STRIKE**, the engines pump's drum machines lacked: modal,
+    waveguide, analog bridged-T circuit, three-operator FM, west-coast fold and gate, additive cymbals, chaos.
   - **STUTTER pattern editor**: program and edit the retrigger patterns (steps, lengths, moves per step) instead of only
     the dice and pads.
   - **A live-stream chopper** (grid-chopping a live input): the input is always streaming into a buffer; 8 slice / retrigger
