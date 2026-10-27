@@ -4,6 +4,7 @@
 // and faint, front strands in ink. A lower note is a longer, looser spring with more coils. A kick shakes the screen.
 // Resting voices are drawn as still, dim springs.
 #pragma once
+#include <algorithm>
 #include "ui/PumpUI.hpp"
 #include "CoilEngine.hpp"
 
@@ -134,13 +135,19 @@ private:
         drawTransducer(ui, inT, clampv(eMax, 0.0f, 1.0f), "IN");
         drawTransducer(ui, outT, clampv(eMax, 0.0f, 1.0f), "OUT");
         const float x0 = inT.r() + 22.0f, x1 = outT.x - 22.0f;
-        const float gap = std::min(78.0f, (pan.h - 20.0f) / kMaxVoices);
+        // only the voices sounding get a spring, highest note on top (a voice keeps its colour while it rings)
+        int order[kMaxVoices], n = 0;
+        auto pitch = [&](int i) { return note[i] >= 1000 ? note[i] - 1000 : note[i]; };
+        for (int i = 0; i < kMaxVoices; ++i) if (note[i] >= 0) order[n++] = i;
+        std::sort(order, order + n, [&](int a, int b) { return pitch(a) != pitch(b) ? pitch(a) > pitch(b) : a < b; });
+        const float gap = std::min(78.0f, (pan.h - 20.0f) / std::max(1, n));
         const float R = std::min(11.0f, gap * 0.29f);
-        for (int i = 0; i < kMaxVoices; ++i)
+        for (int k = 0; k < n; ++k)
         {
-            const float yc = pan.cy() + gap * ((float)i - 0.5f * (float)(kMaxVoices - 1));
-            const bool on = note[i] >= 0;
-            const int nv = lastNote[i] >= 0 ? (lastNote[i] >= 1000 ? lastNote[i] - 1000 : lastNote[i]) : 48 + 5 * i;
+            const int i = order[k];
+            const float yc = pan.cy() + gap * ((float)k - 0.5f * (float)(n - 1));
+            const bool on = true;
+            const int nv = pitch(i);
             const double f0 = 440.0 * std::exp2((nv - 69) / 12.0);
             const double travel = 0.5 / std::max(20.0, f0);
             const int coils = clampv((int)std::lround(46.0 - 0.42 * (nv - 24)), 16, 43);   // SPRING's spacing of turns
@@ -155,10 +162,10 @@ private:
         static const char* const nn[12] = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
         float x = r.x + 10;
         int shown = 0;
-        for (int i = 0; i < kMaxVoices; ++i)
+        for (int k = n - 1; k >= 0; --k)
         {
-            if (note[i] < 0) continue;
-            const int nv = note[i] >= 1000 ? note[i] - 1000 : note[i];
+            const int i = order[k];
+            const int nv = pitch(i);
             char b[12]; std::snprintf(b, sizeof b, "%s%d", nn[((nv % 12) + 12) % 12], nv / 12 - 1);
             ui.fillRect(Rect(x, r.b() - 17, 8, 8), springColour(i, false));
             ui.strokeRect(Rect(x, r.b() - 17, 8, 8), strandColour(th, i), 1.0f);
@@ -167,7 +174,7 @@ private:
             ++shown;
         }
         if (!shown) ui.textAt(r.x + 10, r.b() - 13, "PLAY A NOTE (OR KICK)", P::kLabel, 9.5f, th.ink2, NanoVG::ALIGN_LEFT | NanoVG::ALIGN_MIDDLE, 1.0f);
-        char t[32]; std::snprintf(t, sizeof t, "%d SPRINGS SOUNDING", shown);
+        char t[32]; std::snprintf(t, sizeof t, shown == 1 ? "%d SPRING SOUNDING" : "%d SPRINGS SOUNDING", shown);
         ui.textAt(r.r() - 10, r.b() - 13, t, P::kMono, 10.0f, th.ink2, NanoVG::ALIGN_RIGHT | NanoVG::ALIGN_MIDDLE);
     }
     // SPRING's transducer: a magnet in a coil, lit by the drive
@@ -201,7 +208,7 @@ private:
         const float e = on ? clampv(energy[l], 0.0f, 1.0f) : 0.0f;
         // the sleeve lights up as it rings
         ui.beginPath();
-        const float pad = tank ? 3.0f : 3.0f;
+        const float pad = (tank && R >= 10.0f) ? 4.0f : 3.0f;
         ui.roundedRect(x0 - 4.0f, yc - R - pad, len + 8.0f, 2.0f * R + 2.0f * pad, R + pad);
         if (tank) ui.fillColor(P::withAlpha2(springColour(l, false), (th.dark ? 0.10f : 0.22f) + (th.dark ? 0.32f : 0.55f) * e));
         else ui.fillColor(P::withAlpha2(th.neon, (th.dark ? 0.04f : 0.08f) + (th.dark ? 0.38f : 0.62f) * e));
