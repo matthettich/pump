@@ -25,7 +25,6 @@ public:
     pump::ScopeRing preRing { pump::kAnalyzerRing }, postRing { pump::kAnalyzerRing };
     pump::MeterValue outPeak[2];
     Engine engine;
-    int latencyNow() const { return engine.latency(); }
 
     // Alt-hold listen, set by the UI while the mouse is held (direct access). Never a host parameter, so a host
     // can't save it with the session or echo a stale value back; the UI clears it when it closes. (The audition*

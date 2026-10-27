@@ -335,7 +335,7 @@ private:
                 o.downsample(wl, wr, n);
             }
             // ---- base rate: DC, auto gain, band mix / level, global mix, solo weighting
-            double eIn = 0, eOut = 0, chk = 0;
+            double eOut = 0, chk = 0;
             for (int i = 0; i < n; ++i)
             {
                 const double asym = s.asym.next();
@@ -376,7 +376,7 @@ private:
                     const double band = lv * (bm > 0.0 ? d[ch] + bm * (wet - d[ch]) : d[ch]);
                     const double o = wt * (gm[i] > 0.0f ? d[ch] + gm[i] * (band - d[ch]) : d[ch]);
                     (ch ? R : L)[i] += (float)o;
-                    eIn += d[ch] * d[ch]; eOut += o * o;
+                    eOut += o * o;
                     chk += d[ch];
                 }
             }

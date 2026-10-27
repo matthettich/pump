@@ -11,6 +11,8 @@ class PluginCalm : public pump::calm::CalmDsp<PumpPlugin> {
 public:
     PluginCalm() : CalmDsp(params().data(), kNumParams, &presets()) {}
 
+    int latencyNow() const { return engine.latency(); }
+
 protected:
     const char* getLabel() const override { return "pump_calm"; }
     const char* getDescription() const override { return PUMP_PLUGIN_ABOUT; }

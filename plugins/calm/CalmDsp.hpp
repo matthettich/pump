@@ -25,7 +25,6 @@ public:
     pump::ScopeRing preRing { pump::kAnalyzerRing }, postRing { pump::kAnalyzerRing };
     pump::MeterValue outPeak[2], inPeak[2];
     Engine engine;
-    int latencyNow() const { return engine.latency(); }
     int stereoMode() const { return engine.settings().stereo; }
 
     // Alt-hold listen and node solo, driven by the editor while the mouse button is held (never host parameters:

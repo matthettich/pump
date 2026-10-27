@@ -27,7 +27,6 @@ public:
     pump::ScopeRing preRing { pump::kAnalyzerRing }, postRing { pump::kAnalyzerRing };
     pump::MeterValue outPeak[2];
     Engine engine;
-    int latencyNow() const { return engine.latency(); }
 
     // The editor's Alt-hold listen (never a host parameter: not saved with the session, not undone, not touched by
     // host gesture echoes). -1 = off, 0..3 = hear only that band (a band >= the band count counts as off).

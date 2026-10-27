@@ -45,7 +45,6 @@ struct BandState {
 // Design the detector filter(s) for a band's dynamic sidechain (and for solo/audition).
 inline void designDetector(const BandSpec& s, double sr, BiquadCoeffs* out, int& n)
 {
-    AnalogBand a;
     const double w0 = kTwoPi * clampv(s.freq, 10.0, 0.45 * sr) / sr;
     AnalogSection sec;
     switch (s.shape)

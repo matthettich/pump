@@ -11,6 +11,8 @@ class PluginWide : public pump::wide::WideDsp<PumpPlugin> {
 public:
     PluginWide() : WideDsp(params().data(), kNumParams, &presets()) {}
 
+    int latencyNow() const { return engine.latency(); }
+
 protected:
     const char* getLabel() const override { return "pump_wide"; }
     const char* getDescription() const override { return PUMP_PLUGIN_ABOUT; }

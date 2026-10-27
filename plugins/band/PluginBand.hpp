@@ -11,6 +11,8 @@ class PluginBand : public pump::band::BandDsp<PumpPlugin> {
 public:
     PluginBand() : BandDsp(params().data(), kNumParams, &presets()) {}
 
+    int latencyNow() const { return engine.latency(); }
+
 protected:
     const char* getLabel() const override { return "pump_band"; }
     const char* getDescription() const override { return PUMP_PLUGIN_ABOUT; }

@@ -11,6 +11,8 @@ class PluginHeat : public pump::heat::HeatDsp<PumpPlugin> {
 public:
     PluginHeat() : HeatDsp(params().data(), kNumParams, &presets()) {}
 
+    int latencyNow() const { return engine.latency(); }
+
 protected:
     const char* getLabel() const override { return "pump_heat"; }
     const char* getDescription() const override { return PUMP_PLUGIN_ABOUT; }
