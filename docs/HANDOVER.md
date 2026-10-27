@@ -39,43 +39,33 @@ Last updated 2026-10-25 (code review and hardening session).
 Not verified: the atomic preset save was not exercised end to end (it needs a running plugin UI); only `rename`'s
 replace behaviour and the reader were tested. Rename-over-existing on Windows was not tested.
 
-## OPEN: NAM can corrupt memory on a damaged .nam model
+## FIXED (2026-10-26): NAM could corrupt memory on a damaged .nam model
 
-This is the one real security/stability finding of the session. It is in upstream NAM, not pump.
+The one real security/stability finding of the earlier session, in upstream NAM, not pump.
 
-- **Symptom:** a `.nam` file that is valid JSON but whose weights do not match its architecture makes NAM read past
+- **What it was:** a `.nam` file that is valid JSON but whose weights don't match its architecture made NAM read past
   the end of its weights array (heap-buffer-overflow in `set_weights_` of `Conv1D`, `Conv1x1`, `LSTMCell`) while
-  `nam::get_dsp` builds the network. A second class aborts on a missing JSON key (assertion in nlohmann
-  `operator[]`). In a 300-case fuzz run, 11 cases (3.7 %) crashed.
-- **Why pump's try/catch does not help:** it is memory corruption or an abort, not an exception.
-- **Why it matters:** AMP stores the model path in the session and reloads it in `setState` and in `activate()`, so a
-  damaged model in a saved project is parsed inside the host on every open and every sample-rate change.
-- **Root cause upstream:** every `set_weights_` takes a bare iterator with no end. WaveNet checks the count only
-  after consuming (`NAM/wavenet/model.cpp` around line 674); ConvNet checks before (`NAM/convnet.cpp:182`). pump is
-  pinned at upstream's latest commit (0b3d3c9, 2026-09-18), so there is no newer NAM to take.
-- **Reproduce:** `build/fuzz/found/seed_*.nam` (not committed; regenerate with the fuzzer below). Example: take
-  `third_party/NeuralAmpModelerCore/example_models/A2.nam` and delete 9 weights from `config.submodels[1].model.weights`.
+  `nam::get_dsp` built the network. A second class aborted on a missing JSON key (an `assert` in nlohmann's
+  `operator[]`; in release builds an out-of-range read). A third: an architecture size of 2^32 wrapped to a negative
+  matrix size. 11 of 300 fuzz cases crashed.
+- **The fix, in three parts:**
+  1. `patches/nam/0001-bounds-checked-weights-iterator.patch` (applied by `make`, see `patches/nam/README.md`): the
+     weights cursor knows its end and throws on a read past it, so a short weights list is "Weight mismatch", not an
+     overflow. A long one was already caught (and the LSTM's check, an assert, now throws too).
+  2. `plugins/amp/NamJson.hpp`: AMP's copy of the JSON library turns its asserts into exceptions.
+  3. `ModelGuard.hpp`: numbers in the architecture (not the weights or the metadata) must be under 2^24.
+- **Verified:** `tests/fuzz_nam.cpp` under ASan+UBSan, one seed per process, seeds 1-600: 600 pass (257 rejected
+  cleanly, 343 loaded and ran), 0 sanitizer reports. `test_amp` now checks four example models with 9 or 1 weights
+  missing and 3 extra: all refused with a message.
+- **Still there:** the crash marker (below) stays as a backstop for anything the fuzzer hasn't found. Report the
+  overflow upstream (https://github.com/sdatkinson/NeuralAmpModelerCore) with the patch.
 
-### What pump does about it today (and how little that is)
+### What pump also does (the backstop)
 
 - `ModelGuard.hpp` rejects files that are plainly not a model (not JSON, wrong types, missing keys, absurd size).
-  **It does not stop the crashing files**: the 11 known crashers are well-formed JSON with numeric weights and the wrong
-  count, and it passed all 11 through (replayed). Do not describe it as protection against this bug.
-- The **crash marker** is the part that works. `loadModel` writes a marker (temp folder, keyed on path + file size +
-  mtime) before calling NAM and removes it after. If the host dies inside NAM the marker stays, and later loads of that
-  unchanged file are refused with a message instead of crashing again. Simulated with a real crashing file: open 1
-  crashes, opens 2 to 4 load the project with the model refused, and replacing the file with a good one at the same
-  path loads normally. A bad model therefore costs one crash instead of one per open. CLEAR removes the marker.
-- The marker is not a fix. The first load of any damaged file still crashes the host.
-
-### The real fixes (pick one, not done)
-
-1. **Bounds-check NAM**: pass an end iterator to every `set_weights_` and throw on overrun, as a numbered carry-patch
-   in the style of `patches/dpf/` (do not edit the submodule in place). Large and invasive (Conv1D, Conv1x1, LSTMCell,
-   Linear, WaveNet layers, A2 models and their callers); only a fuzz run can show it is complete.
-2. **Report upstream** (https://github.com/sdatkinson/NeuralAmpModelerCore) with the repro above, and take the fix.
-3. **Load models in a child process** and only load in the host after the child survives. Needs process spawning on
-   Windows and macOS; not started.
+- The **crash marker**: `loadModel` writes a marker (temp folder, keyed on path + file size + mtime) before calling NAM
+  and removes it after. If the host dies inside NAM the marker stays, and later loads of that unchanged file are
+  refused with a message instead of crashing again. CLEAR removes the marker.
 
 ### Fuzzing it
 
@@ -84,7 +74,7 @@ This is the one real security/stability finding of the session. It is in upstrea
 git submodule update --init --recursive
 make tests-asan                                  # does not cover amp; amp needs the NAM objects:
 NAM=third_party/NeuralAmpModelerCore
-c++ -O1 -g -fsanitize=address,undefined -fno-sanitize-recover=undefined -std=c++17 -DNAM_SAMPLE_FLOAT \
+c++ -O1 -g -fsanitize=address,undefined -fno-sanitize-recover=undefined -std=c++17 -DNAM_SAMPLE_FLOAT -Iplugins/amp \
     -I$NAM -I$NAM/Dependencies/eigen -I$NAM/Dependencies/nlohmann -c plugins/amp/nam_unity.cpp -o build/asan/nam.o
 c++ -O1 -g -fsanitize=address,undefined -fno-sanitize-recover=undefined -std=c++17 -DNAM_SAMPLE_FLOAT -Icommon \
     -I$NAM -I$NAM/Dependencies/eigen -I$NAM/Dependencies/nlohmann -Iplugins/amp \

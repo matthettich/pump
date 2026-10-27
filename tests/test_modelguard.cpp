@@ -33,6 +33,8 @@ int main()
     CHECK(!checkModelFile(put("g_nokey.nam", R"({"version":"0.5.0","architecture":"LSTM","weights":[1]})")).empty(), "no config");
     CHECK(!checkModelFile(put("g_noweights.nam", R"({"version":"0.5.0","architecture":"LSTM","config":{}})")).empty(), "no weights key");
     CHECK(!checkModelFile(put("g_wstr.nam", R"({"version":"0.5.0","architecture":"LSTM","config":{},"weights":"abc"})")).empty(), "weights as a string");
+    CHECK(!checkModelFile(put("g_huge.nam", R"({"version":"0.5.0","architecture":"WaveNet","config":{"layers":[{"input_size":4294967296}]},"weights":[1]})")).empty(), "a size that overflows an int");
+    CHECK(checkModelFile(put("g_meta.nam", R"({"version":"0.5.0","architecture":"LSTM","config":{"metadata":{"date":4294967296}},"weights":[1]})")).empty(), "big numbers in the metadata are fine");
     CHECK(!checkModelFile(put("g_wnull.nam", R"({"version":"0.5.0","architecture":"LSTM","config":{},"weights":[1,null,2]})")).empty(), "a null among the weights");
     CHECK(!checkModelFile(put("g_wtext.nam", R"({"version":"0.5.0","architecture":"LSTM","config":{},"weights":[1,"x"]})")).empty(), "text among the weights");
     CHECK(!checkModelFile(put("g_arch.nam", R"({"version":"0.5.0","architecture":5,"config":{},"weights":[1]})")).empty(), "architecture not a string");

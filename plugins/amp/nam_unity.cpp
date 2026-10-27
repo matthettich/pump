@@ -1,4 +1,5 @@
 // The NAM core (third_party/NeuralAmpModelerCore, MIT), compiled as one unit with float samples.
+#include "NamJson.hpp"   // first: NAM's JSON asserts become exceptions
 #include "NAM/activations.cpp"
 #include "NAM/container.cpp"
 #include "NAM/conv1d.cpp"

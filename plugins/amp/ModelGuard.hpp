@@ -1,20 +1,15 @@
 // pump AMP: a cheap check of a .nam file before NAM's core is allowed to build a network from it, and a marker that
 // stops a project from crashing the host again and again.
 //
-// Why: the fuzzer (tests/fuzz_nam.cpp) found that NAM's core reads past the end of its weights array when a file's
-// architecture and weights disagree (about 4 % of randomly damaged models; heap-buffer-overflow in set_weights_ of
-// Conv1D, Conv1x1 and LSTMCell). That is memory corruption in the host, not an exception, so AmpEngine's catch
-// clauses can't help, and AMP re-loads the saved model path whenever a project opens or the sample rate changes.
-//
-// What this does and does NOT do. It rejects files that are obviously not a model: not JSON, not an object, missing
-// the keys NAM needs, a `weights` anywhere that isn't an array of numbers, absurd sizes. It does NOT check that the
-// number of weights matches the architecture: that rule lives in NAM (one layout per architecture, always
-// changing), and copying it here would go stale and give false comfort. A damaged file that is well-formed JSON with
-// the wrong weight count still gets through; the crash marker below limits it to one crash per file instead of one per
-// project open. The real fix is a bounds check in NAM (see docs/HANDOVER.md, "NAM weight loading").
+// Why: the fuzzer (tests/fuzz_nam.cpp) found that NAM's core read past the end of its weights array when a file's
+// architecture and weights disagreed (about 4 % of randomly damaged models; heap-buffer-overflow in set_weights_).
+// patches/nam/0001 fixes that in NAM itself (a bounds-checked weights cursor: a short file now throws). What is left
+// here: reject files that are obviously not a model (not JSON, not an object, missing the keys NAM needs, a `weights`
+// that isn't an array of numbers, absurd sizes, architecture numbers that overflow an int), and the crash marker below,
+// which still limits anything not yet found to one crash per file instead of one per project open.
 #pragma once
 
-#include "json.hpp"
+#include "NamJson.hpp"
 #include <cstdint>
 #include <cstdio>
 #include <filesystem>
@@ -51,6 +46,29 @@ inline std::string checkWeights(const nlohmann::json& j, size_t& total, int dept
     return "";
 }
 
+// The architecture's numbers (sizes, channels, dilations, rates; not the weights, not the metadata) must fit NAM's
+// ints: a size of 2^32 wraps to a negative matrix size inside NAM (an assertion or a huge allocation).
+static constexpr double kMaxConfigNumber = 16.0 * 1024 * 1024;
+inline std::string checkConfigNumbers(const nlohmann::json& j, int depth = 0)
+{
+    if (depth > kMaxModelDepth) return "nested too deeply";
+    if (j.is_object())
+    {
+        for (auto it = j.begin(); it != j.end(); ++it)
+        {
+            if (it.key() == "weights" || it.key() == "metadata") continue;
+            const std::string e = checkConfigNumbers(it.value(), depth + 1); if (!e.empty()) return e;
+        }
+    }
+    else if (j.is_array()) { for (const auto& v : j) { const std::string e = checkConfigNumbers(v, depth + 1); if (!e.empty()) return e; } }
+    else if (j.is_number())
+    {
+        const double v = j.get<double>();
+        if (!(v > -kMaxConfigNumber && v < kMaxConfigNumber)) return "a size in the architecture is out of range";
+    }
+    return "";
+}
+
 // "" when the file looks like a model NAM can be given; otherwise why not (shown to the user).
 inline std::string checkModelFile(const std::string& path)
 {
@@ -75,6 +93,8 @@ inline std::string checkModelFile(const std::string& path)
     size_t total = 0;
     const std::string e = checkWeights(j, total);
     if (!e.empty()) return "damaged .nam file (" + e + ")";
+    const std::string c = checkConfigNumbers(j["config"]);
+    if (!c.empty()) return "damaged .nam file (" + c + ")";
     return "";
 }
 

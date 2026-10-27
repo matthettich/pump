@@ -11,7 +11,7 @@
 #include <random>
 #include <thread>
 #include <fstream>
-#include "json.hpp"
+#include "NamJson.hpp"
 
 using namespace pump;
 using namespace pump::amp;
@@ -107,6 +107,22 @@ int main()
             CHECK(info.resampled == (std::fabs(info.rate - sr) > 0.5), "%s: resampled only when the host rate differs", file);
         }
         if (sr != 48000.0) continue;
+        // ---- a model whose weights don't match its architecture is refused (NAM used to read past the end of the
+        // list here; patches/nam/0001). Run under ASan to see the difference: make tests-asan does not build amp, see
+        // docs/HANDOVER.md. A2.nam keeps its weights in submodels, the others at the top.
+        for (const char* file : { "wavenet.nam", "lstm.nam", "wavenet_a1_standard.nam", "A2.nam" })
+            for (int drop : { 9, 1, -3 })   // remove 9 or 1, or add 3
+            {
+                std::ifstream in(std::string(kModelDir) + file);
+                nlohmann::json j = nlohmann::json::parse(in);
+                nlohmann::json& w = j["weights"].size() ? j["weights"] : j["config"]["submodels"][1]["model"]["weights"];
+                if (drop > 0) for (int k = 0; k < drop; ++k) w.erase(w.size() - 1);
+                else for (int k = 0; k < -drop; ++k) w.push_back(0.0);
+                std::ofstream("build/tests/short.nam") << j.dump();
+                Engine e; e.prepare(sr, 512);
+                const ModelInfo info = e.loadModel("build/tests/short.nam");
+                CHECK(!info.loaded && !info.error.empty(), "%s with %d weights %s: refused (%s)", file, std::abs(drop), drop > 0 ? "missing" : "extra", info.error.c_str());
+            }
         // ---- normalize: a model that knows its loudness lands near the target on a guitar-like input
         {
             // the example models carry no loudness: a copy of one that says it is -12.5 dB loud

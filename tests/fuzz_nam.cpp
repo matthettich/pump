@@ -4,8 +4,8 @@
 // edits: wrong array sizes, absurd dimensions, missing / retyped fields, huge numbers) and loads every result, then
 // runs audio through whatever did load.
 //
-// Not part of `make tests` (it is about NAM's code more than pump's, and it FAILS today: see docs/HANDOVER.md, "NAM can
-// corrupt memory on a damaged .nam model"). There is no make target: it needs NAM built with the sanitizers too, and
+// Not part of `make tests` (it is about NAM's code more than pump's). It used to fail (about 4 % of cases corrupted
+// memory, see docs/HANDOVER.md); with patches/nam/0001, NamJson.hpp and ModelGuard's range check, 600 of 600 pass. There is no make target: it needs NAM built with the sanitizers too, and
 // the exact commands are in docs/HANDOVER.md ("Fuzzing it"). Usage once built:
 //   ./build/asan/fuzz_nam <cases> <seed>   cases defaults to 600, seed to 1; the same seed repeats the same run.
 // It stops at the first crash and leaves that input in build/fuzz/crash.nam.
@@ -17,7 +17,7 @@
 #include <random>
 #include <sstream>
 #include <filesystem>
-#include "json.hpp"
+#include "NamJson.hpp"
 
 using namespace pump;
 using namespace pump::amp;

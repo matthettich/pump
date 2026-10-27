@@ -1,7 +1,7 @@
 # Developing …pump
 
 **Picking this up? Read [HANDOVER.md](HANDOVER.md) first**: current state, what is verified, and the open items
-(including a NAM memory-safety finding).
+(the NAM memory-safety finding is fixed: patches/nam/).
 
 Mastering plugins and creative effects by wake, built on DPF (VST3 + CLAP everywhere, AU on macOS). Every plugin
 shares one DSP library, one UI kit and one look: Thunder Plus's **Simple** skins (flat, square, 1.5 px ink outlines, offset blocks behind

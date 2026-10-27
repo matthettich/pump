@@ -14,9 +14,13 @@ all: $(PLUGINS)
 dpf-patches:
 	@sh tools/apply-dpf-patches.sh
 
+# fixes to the NAM core (AMP), the same way: patches/nam/
+nam-patches:
+	@sh tools/apply-nam-patches.sh
+
 # DPF's graphics library is shared by every plugin: build it once, first, so parallel plugin builds (make -j)
 # don't race to write it.
-dgl: dpf-patches
+dgl: dpf-patches nam-patches
 	$(MAKE) -C dpf/dgl opengl
 
 $(PLUGINS): dgl
@@ -58,7 +62,7 @@ build/tests/wasm_wrapper: tests/wasm_wrapper.cpp wasm/pump_wasm.cpp build/tests/
 NAM_DIR := third_party/NeuralAmpModelerCore
 EIGEN_PATH ?= $(NAM_DIR)/Dependencies/eigen
 NAM_FLAGS = -DNAM_SAMPLE_FLOAT -I$(NAM_DIR) -I$(EIGEN_PATH) -I$(NAM_DIR)/Dependencies/nlohmann
-build/tests/nam.o: plugins/amp/nam_unity.cpp $(wildcard $(NAM_DIR)/NAM/* $(NAM_DIR)/NAM/*/*)
+build/tests/nam.o: plugins/amp/nam_unity.cpp $(wildcard $(NAM_DIR)/NAM/* $(NAM_DIR)/NAM/*/*) $(wildcard patches/nam/*.patch) | nam-patches
 	@mkdir -p build/tests
 	$(CXX) -O2 -std=c++17 $(NAM_FLAGS) -c $< -o $@
 # AMP's model pre-check test reads the NAM example models and needs only the JSON header, not NAM's code
@@ -120,4 +124,4 @@ wasm:
 clean:
 	rm -rf bin build
 
-.PHONY: all dgl jack tests clean dpf-patches wasm $(PLUGINS)
+.PHONY: all dgl jack tests clean dpf-patches nam-patches wasm $(PLUGINS)
