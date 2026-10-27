@@ -12,9 +12,9 @@ using namespace pump::coil;
 
 class UICoil : public PumpUI {
 public:
-    UICoil() : PumpUI(params().data(), kNumParams, &presets(), pump::accents::coil(), "COIL", 1000, 800, -1)
+    UICoil() : PumpUI(params().data(), kNumParams, &presets(), pump::accents::coil(), "COIL", 1000, 648, -1)
     {
-        auto dial = [&](int p, const char* l, bool bi = false, const char* tip = nullptr, Dial::Size sz = Dial::Small) { Dial* d = addDial(p, l, sz, bi); if (tip) d->tip = tip; return d; };
+        auto dial = [&](int p, const char* l, bool bi = false, const char* tip = nullptr, Dial::Size sz = Dial::Medium) { Dial* d = addDial(p, l, sz, bi); if (tip) d->tip = tip; return d; };
         modelSeg = addSegmented(kModel, { "TWO", "THREE", "SHORT", "LONG", "DIGITAL", "LO-FI" });
         modelSeg->tip = "Which of SPRING's tanks: two- or three-spring, short, long, or the cheap digital ones";
         tensionD = dial(kTension, "TENSION", true, "Tight (+) or loose (-): the springs' transition frequency and dispersion");
@@ -51,31 +51,34 @@ protected:
 
     void layout() override
     {
-        const float top = 58, sh = 228, hs = Dial::heightFor(Dial::Small);
+        // top: springs, KICK, scope, meters
+        const float top = 58, sh = 200, hm = Dial::heightFor(Dial::Medium), hl = Dial::heightFor(Dial::Large);
         springsR = Rect(14, top, 600, sh);
         kickR = Rect(626, top, 140, sh);
         scopeR = Rect(778, top, 182, sh);
         meterL = Rect(966, top, 8, sh - 12); meterR = Rect(977, top, 8, sh - 12);
 
-        const float y1 = 300, ph = 196;
-        springPanel = Rect(14, y1, 520, ph);
-        modelSeg->r = Rect(24, y1 + 28, 500, 22);
+        // SPRING (model + its five dials) beside VOICE (harmonic, spread, excite)
+        const float y1 = top + sh + 12, ph = 150;
+        springPanel = Rect(14, y1, 500, ph);
+        modelSeg->r = Rect(26, y1 + 28, 476, 24);
         Dial* sd[5] = { tensionD, dripD, wobbleD, gritD, toneD };
-        for (int k = 0; k < 5; ++k) sd[k]->r = Rect(24 + k * 100, y1 + 74, 100, hs);
-        voicePanel = Rect(546, y1, 440, ph);
-        harmD->r = Rect(560, y1 + 34, 130, Dial::heightFor(Dial::Large));
-        spreadD->r = Rect(700, y1 + 50, 90, hs); exciteD->r = Rect(800, y1 + 50, 90, hs);
+        for (int k = 0; k < 5; ++k) sd[k]->r = Rect(26 + k * 95.2f, y1 + 62, 95.2f, hm);
+        voicePanel = Rect(526, y1, 460, ph);
+        harmD->r = Rect(540, y1 + 40, 140, hl);
+        spreadD->r = Rect(700, y1 + 54, 130, hm); exciteD->r = Rect(840, y1 + 54, 130, hm);
 
-        const float y2 = 508, ph2 = 192;
-        envPanel = Rect(14, y2, 320, ph2);
-        Dial* ed[3] = { decayD, relD, velD };
-        for (int k = 0; k < 3; ++k) ed[k]->r = Rect(24 + k * 100, y2 + 64, 100, hs);
-        tankPanel = Rect(346, y2, 320, ph2);
-        tankD->r = Rect(366, y2 + 64, 120, hs); widthD->r = Rect(506, y2 + 64, 120, hs);
-        playPanel = Rect(678, y2, 308, ph2);
-        Dial* pd[3] = { octD, bendD, volD };
-        for (int k = 0; k < 3; ++k) pd[k]->r = Rect(688 + k * 96, y2 + 64, 96, hs);
-        keyboard.r = Rect(14, 712, 966, 56);
+        // one strip: ENVELOPE | TANK | PLAY
+        const float y2 = y1 + ph + 12, ph2 = 116;
+        auto rowOf = [&](Rect& panel, float x, float w, Dial** d, int n) {
+            panel = Rect(x, y2, w, ph2);
+            const float cw = (w - 20) / n;
+            for (int k = 0; k < n; ++k) d[k]->r = Rect(x + 10 + k * cw, y2 + 28, cw, hm);
+        };
+        Dial* ed[3] = { decayD, relD, velD }; rowOf(envPanel, 14, 360, ed, 3);
+        Dial* td[2] = { tankD, widthD };      rowOf(tankPanel, 386, 240, td, 2);
+        Dial* pd[3] = { octD, bendD, volD };  rowOf(playPanel, 638, 348, pd, 3);
+        keyboard.r = Rect(14, y2 + ph2 + 12, 966, 56);
     }
 
     void tick(float dt) override
@@ -112,8 +115,7 @@ protected:
         auto panel = [&](const Rect& r, const char* c) { strokeRect(r, theme.dim, 1.0f); caption(r.x + 12, r.y + 16, c); };
         panel(springPanel, "SPRING"); panel(voicePanel, "VOICE"); panel(envPanel, "ENVELOPE"); panel(tankPanel, "TANK"); panel(playPanel, "PLAY");
         const float h = value(kHarmonic) * 0.01f;
-        textAt(voicePanel.x + 150, voicePanel.b() - 22, h < 0.2f ? "SPRING: CLANG AND DRIP" : h < 0.8f ? "IN BETWEEN" : "STRING: A CLEAN PLUCK", kLabel, 9.0f, theme.ink2, ALIGN_LEFT | ALIGN_MIDDLE, 0.8f);
-        textAt(tankPanel.x + 12, tankPanel.b() - 16, "THE REAL SPRING TANK AROUND THE NOTES", kLabel, 8.5f, theme.ink2, ALIGN_LEFT | ALIGN_MIDDLE, 0.5f);
+        textAt(voicePanel.r() - 12, voicePanel.y + 16, h < 0.2f ? "SPRING: CLANG AND DRIP" : h < 0.8f ? "IN BETWEEN" : "STRING: A CLEAN PLUCK", kLabel, 9.0f, theme.ink2, ALIGN_RIGHT | ALIGN_MIDDLE, 0.8f);
         keyboard.draw(*this);
     }
     void drawKick()
