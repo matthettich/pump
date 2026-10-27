@@ -1,6 +1,8 @@
 // Writes every pump plugin's parameter table and factory presets as JSON, from the same Params.hpp tables the plugins
 // use (so Thunder Plus's preset lists and parameter ranges stay in parity with the plugins). Built and run by
 // wasm/build.sh on the host compiler:  c++ -std=c++17 -Icommon wasm/pump_meta.cpp -o pump_meta && ./pump_meta > meta.json
+// `./pump_meta synth` writes the instruments in pump-synth.wasm instead (wasm/pump_synth.cpp), in the same shape with
+// "synth" in place of "fx".
 //
 // Output: {"version":1,"types":["eq",...],"fx":{"eq":{"name":"EQ","long":"...","params":[...],"presets":[...]},...}}
 //   param:  {"s":symbol,"n":name,"sn":short name,"min","max","def","unit":"dB"|"Hz"|...|"","scale":"lin"|"log"|"pow",
@@ -16,7 +18,11 @@
 #include "../plugins/wide/WideParams.hpp"
 #include "../plugins/heat/HeatParams.hpp"
 #include "../plugins/meter/MeterParams.hpp"
+#include "../plugins/mono/MonoParams.hpp"
+#include "../plugins/poly/PolyParams.hpp"
+#include "../plugins/coil/CoilParams.hpp"
 #include <cstdio>
+#include <cstring>
 #include <string>
 
 using namespace pump;
@@ -87,8 +93,17 @@ static void dump(const char* key, const char* name, const char* longName, const 
     std::printf("]}%s\n", last ? "" : ",");
 }
 
-int main()
+int main(int argc, char** argv)
 {
+    if (argc > 1 && std::strcmp(argv[1], "synth") == 0)
+    {
+        std::printf("{\"version\":1,\"types\":[\"mono\",\"poly\",\"coil\"],\"synth\":{\n");
+        dump("mono", "MONO", "Analog Mono Synth", mono::params(), mono::presets(), false);
+        dump("poly", "POLY", "Vintage Poly Synth", poly::params(), poly::presets(), false);
+        dump("coil", "COIL", "Spring Synth", coil::params(), coil::presets(), true);
+        std::printf("}}\n");
+        return 0;
+    }
     std::printf("{\"version\":1,\"types\":[\"eq\",\"comp\",\"limit\",\"calm\",\"tone\",\"band\",\"wide\",\"heat\",\"meter\"],\"fx\":{\n");
     dump("eq", "EQ", "Equalizer", eq::params(), eq::presets(), false);
     dump("comp", "COMP", "Compressor", comp::params(), comp::presets(), false);

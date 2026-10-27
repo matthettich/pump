@@ -65,8 +65,10 @@ tests/wasm_wrapper.cpp   the WebAssembly wrapper built natively (every effect th
 wasm/                    the nine mastering engines for Thunder Plus (see "WebAssembly" below; the creative effects
                          aren't in it yet)
   pump_wasm.cpp          one C interface over the engines; Host<Name> = each Plugin<Name>.hpp's DSP side without DPF
-  pump_meta.cpp          writes the parameter tables and factory presets as JSON (from the Params.hpp tables)
-  build.sh               pump.wasm + pump-meta.js (wasi-sdk 25)
+  pump_synth.cpp         the same for the instruments MONO, POLY and COIL (MIDI in, audio out): Thunder Plus's synth engines
+  pump_meta.cpp          writes the parameter tables and factory presets as JSON (from the Params.hpp tables; `synth`:
+                         the instruments')
+  build.sh               pump.wasm + pump-meta.js, pump-synth.wasm + pump-synth-meta.js (wasi-sdk 25)
   compare.cpp/.mjs       the wasm against a native build of the same wrapper, on the test mix
 tools/shot.sh            headless screenshot of a standalone build
 tools/apply-dpf-patches.sh  applies patches/dpf/*.patch to DPF (run by make; see patches/dpf/README.md)
@@ -153,6 +155,15 @@ node wasm/compare.mjs build/wasm tests/data/mix.f32 10    # wasm vs native: diff
 Thunder Plus vendors `pump.wasm` and `pump-meta.js` in its `pump/` folder (bump their `?v=` there); its
 `docs/PUMP-FX.md` describes how it uses them. `pump-meta.js` is generated from the Params.hpp tables, so its parameter
 ranges and factory presets always match the plugins.
+
+**The instruments** (`wasm/pump_synth.cpp`, built into `pump-synth.wasm` with `pump-synth-meta.js`): MONO, POLY and
+COIL behind `psyn_new(type, sr)`, `psyn_values` / `psyn_commit`, `psyn_midi(h, frame, status, d1, d2)` (queued for the
+next call, at that sample) and `psyn_process(h, n)` into `psyn_out(0/1)`; `psyn_latency` is MONO's oversampler. Each
+`Synth<Name>` is its `Plugin<Name>.hpp` without DPF: the same `sync()` from the values to the engine's `Settings` and
+the same 256-sample chunks with the MIDI in each (no on-screen keyboard, no COIL KICK key). **When a `Plugin<Name>.hpp`'s
+`sync()` or `run()` changes, change its `Synth<Name>` the same way.** Thunder Plus vendors both files in `pump/synth/`
+(`pump-synth-engine.js` there renders a pad's note with them); to add an instrument, add a `Synth<Name>`, its `Type`, a
+`dump()` line in `pump_meta.cpp`'s `synth` mode, and its entry in that glue file.
 
 An AudioWorklet has no threads, so the wasm build sets **`PUMP_SYNC_KERNELS=1`** (`common/dsp/Util.hpp`): the kernels
 the plugins design on a worker thread are designed on the calling thread instead, at the point the worker would have
