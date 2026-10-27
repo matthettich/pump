@@ -67,6 +67,7 @@ namespace accents {
     inline Accent prism()  { return { "prism",  hexColor(0x7FE8FF), hexColor(0x0A5A6E), hexColor(0xFF7AA8) }; }   // glacier
     inline Accent modal()  { return { "modal",  hexColor(0xFFC15E), hexColor(0x744400), hexColor(0x3D7BFF) }; }   // honey
     inline Accent orbit()  { return { "orbit",  hexColor(0xBE8CFF), hexColor(0x47148C), hexColor(0x2FD3A0) }; }   // nebula
+    inline Accent fold()   { return { "fold",   hexColor(0xFFA3E6), hexColor(0x8A1470), hexColor(0x2FC4B0) }; }   // blush
 }
 
 struct Theme {

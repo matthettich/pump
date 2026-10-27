@@ -39,6 +39,7 @@
 #include "../plugins/prism/PrismParams.hpp"
 #include "../plugins/modal/ModalParams.hpp"
 #include "../plugins/orbit/OrbitParams.hpp"
+#include "../plugins/fold/FoldParams.hpp"
 #include <cstdio>
 #include <cstring>
 #include <map>
@@ -143,6 +144,7 @@ int main()
         { "PRISM", prism::params(), prism::presets() },
         { "MODAL", modal::params(), modal::presets() },
         { "ORBIT", orbit::params(), orbit::presets() },
+        { "FOLD", fold::params(), fold::presets() },
     };
     std::map<std::string, int> sections;
     std::vector<std::vector<std::string>> chains;
