@@ -1,33 +1,15 @@
 // pump EQ: plugin (DSP side). Declared in a header so the UI can read its analyzer feeds directly.
 #pragma once
 #include "PumpPlugin.hpp"
-#include "EQParams.hpp"
-#include "EQEngine.hpp"
-#include "dsp/Bypass.hpp"
-#include "dsp/Audition.hpp"
+#include "EQDsp.hpp"   // the DSP itself (shared with the web build)
 
 START_NAMESPACE_DISTRHO
 
 using namespace pump::eq;
 
-class PluginEQ : public PumpPlugin {
+class PluginEQ : public pump::eq::EQDsp<PumpPlugin> {
 public:
-    PluginEQ() : PumpPlugin(params().data(), kNumParams, &presets())
-    {
-        engine.prepare(getSampleRate(), (int)getBufferSize());
-        bypass.prepare(getSampleRate(), 1 << 17, (int)std::max<uint32_t>(getBufferSize(), 8192));
-    }
-
-    // feeds for the UI (analyzers)
-    pump::ScopeRing preRing { pump::kAnalyzerRing }, postRing { pump::kAnalyzerRing };
-    pump::MeterValue outPeak[2];   // max-hold since the UI last read it
-    Engine engine;
-
-    // Listening driven by the editor's Alt-hold (never host parameters: not saved with the session, not undone,
-    // not touched by host gesture echoes). -1 / false = off.
-    std::atomic<int> soloHold { -1 };
-    std::atomic<bool> auditionOn { false };
-    std::atomic<float> auditionFreq { 1000.0f }, auditionQ { 2.0f };
+    PluginEQ() : EQDsp(params().data(), kNumParams, &presets()) {}
 
     double dynOffset(int band) const { return engine.dynOffset(band); }
     int latencyNow() const { return engine.latencyForUI(); }
@@ -35,109 +17,6 @@ public:
 protected:
     const char* getLabel() const override { return "pump_eq"; }
     const char* getDescription() const override { return PUMP_PLUGIN_ABOUT; }
-
-    void activate() override
-    {
-        engine.prepare(getSampleRate(), (int)getBufferSize());
-        bypass.prepare(getSampleRate(), 1 << 17, (int)std::max<uint32_t>(getBufferSize(), 8192));
-        audition.prepare(getSampleRate());
-        syncAll();
-        engine.finishPending();   // a session saved in linear phase: build it now, not on the audio thread later
-        // report latency here: hosts (CLAP especially) read it right after activation
-        lastLatency = engine.latency();
-        setLatency((uint32_t)lastLatency);
-        bypass.setLatency(lastLatency);
-    }
-
-    void syncAll()
-    {
-        for (int b = 0; b < kNumBands; ++b) syncBand(b);
-        engine.setGainScale(pv(kGainScale));
-        engine.setOutput(pv(kOutGain));
-        engine.setAutoGain(pv(kAutoGain) >= 0.5f);
-        engine.setDynTimes(pv(kDynAttack), pv(kDynRelease));
-        engine.setPhaseMode((int)pv(kPhase), (int)pv(kLinQuality));
-        syncSolo();
-    }
-    void syncSolo()
-    {
-        const int hold = soloHold.load(std::memory_order_relaxed);
-        engine.setSolo(hold >= 0 ? hold : (int)pv(kSolo) - 1);
-    }
-    void syncBand(int b)
-    {
-        pump::BandSpec s;
-        s.shape = (pump::Shape)(int)pv((uint32_t)bandParam(b, kShape));
-        s.freq = pv((uint32_t)bandParam(b, kFreq));
-        s.gainDb = pv((uint32_t)bandParam(b, kGain));
-        s.q = pv((uint32_t)bandParam(b, kQ));
-        s.slope = kSlopeValues[pump::clampv((int)pv((uint32_t)bandParam(b, kSlope)), 0, kMaxSlopeIdx)];
-        engine.setBand(b, pv((uint32_t)bandParam(b, kUsed)) >= 0.5f, pv((uint32_t)bandParam(b, kBandBypass)) >= 0.5f, s,
-                       (int)pv((uint32_t)bandParam(b, kPlace)), pv((uint32_t)bandParam(b, kDyn)) >= 0.5f,
-                       pv((uint32_t)bandParam(b, kDynRange)), pv((uint32_t)bandParam(b, kDynThresh)));
-    }
-
-    void run(const float** inputs, float** outputs, uint32_t frames) override
-    {
-        const pump::DenormalGuard dg;
-        if (takeAnyChanged())
-        {
-            bool bandDirty[kNumBands] = {};
-            bool global = false;
-            for (uint32_t i = 0; i < (uint32_t)kNumParams; ++i)
-            {
-                if (!takeChanged(i)) continue;
-                const int b = bandOf((int)i);
-                if (b >= 0) bandDirty[b] = true; else global = true;
-            }
-            for (int b = 0; b < kNumBands; ++b) if (bandDirty[b]) syncBand(b);
-            if (global)
-            {
-                engine.setGainScale(pv(kGainScale));
-                engine.setOutput(pv(kOutGain));
-                engine.setAutoGain(pv(kAutoGain) >= 0.5f);
-                engine.setDynTimes(pv(kDynAttack), pv(kDynRelease));
-                engine.setPhaseMode((int)pv(kPhase), (int)pv(kLinQuality));
-            }
-        }
-        syncSolo();   // every block: the editor's Alt-hold solo isn't a parameter
-        const int lat = engine.latency();
-        if (lat != lastLatency) { setLatency((uint32_t)lat); bypass.setLatency(lat); lastLatency = lat; }
-
-        float* L = outputs[0];
-        float* R = outputs[1];
-        if (L != inputs[0]) std::memcpy(L, inputs[0], sizeof(float) * frames);
-        if (R != inputs[1]) std::memcpy(R, inputs[1], sizeof(float) * frames);
-
-        uint32_t done = 0;
-        while (done < frames)
-        {
-            const int n = (int)std::min<uint32_t>(frames - done, 4096);
-            float* l = L + done;
-            float* r = R + done;
-            bypass.capture(l, r, n);
-            for (int i = 0; i < n; ++i) preRing.push(0.5f * (l[i] + r[i]));
-            engine.process(l, r, n);
-            audition.set(auditionOn.load(std::memory_order_relaxed), auditionFreq.load(std::memory_order_relaxed), auditionQ.load(std::memory_order_relaxed));
-            audition.process(l, r, n);
-            bypass.apply(l, r, n, pv(kBypass) >= 0.5f);
-            float pl = 0.0f, pr = 0.0f;
-            for (int i = 0; i < n; ++i)
-            {
-                // never hand a non-finite sample to the host (a NaN input, or a state that went bad)
-                if (!std::isfinite(l[i])) l[i] = 0.0f;
-                if (!std::isfinite(r[i])) r[i] = 0.0f;
-                postRing.push(0.5f * (l[i] + r[i])); pl = std::max(pl, std::fabs(l[i])); pr = std::max(pr, std::fabs(r[i]));
-            }
-            outPeak[0].setMax(pl); outPeak[1].setMax(pr);
-            done += (uint32_t)n;
-        }
-    }
-
-private:
-    pump::BypassMixer bypass;
-    pump::Audition audition;
-    int lastLatency = -1;
 
     DISTRHO_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PluginEQ)
 };

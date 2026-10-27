@@ -153,10 +153,11 @@ builds Linux, runs `make tests` and the sanitizer runs (`tests-asan`, `tests-tsa
 
 `wasm/pump_wasm.cpp` puts the nine engines behind one C interface (`pump_new(type, sr)`, `pump_values` /
 `pump_commit`, `pump_process`, `pump_tel` for the meters, `pump_ring_*` for the UI feeds, `pump_hold` for Alt-listen;
-the list is at the top of the file). Each `Host<Name>` there is its plugin's DSP side with the DPF parts taken out:
-the same prepare / activate / sync / run code, chunk sizes, `BypassMixer`, sanitising, `ScopeRing`s and `MeterValue`s.
-`HostBase` stands in for `PumpPlugin` (values with change flags, `pv`, `takeAnyChanged`, `takeChanged`).
-**When a `Plugin<Name>.hpp` changes, change its `Host<Name>` the same way**, and rebuild.
+the list is at the top of the file). Each `Host<Name>` there runs the plugin's own DSP side, `plugins/<name>/<Name>Dsp.hpp`
+(a template on its host base: `PumpPlugin` in the plugin, `HostBase` here), so a change to the plugin's processing is
+a change to the web build too: rebuild `pump.wasm` and vendor it into Thunder Plus. `Plugin<Name>.hpp` keeps only what
+DPF needs (label, description, audio ports). `make tests` runs `tests/parity.cpp`, which checks every effect's web
+build against its plugin, sample for sample, over every factory preset.
 Handles from `pump_new` / `psyn_new` are opaque (slot and generation, wasm/Handles.hpp): JavaScript must not treat
 them as small array indices, and a handle used after `pump_free` is ignored. Staged values that aren't written before
 `pump_new` take the parameter's default.
