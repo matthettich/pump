@@ -13,9 +13,9 @@ using namespace pump::twang;
 
 class UITwang : public PumpUI {
 public:
-    UITwang() : PumpUI(params().data(), kNumParams, &presets(), pump::accents::twang(), "TWANG", 1000, 800, kBypass)
+    UITwang() : PumpUI(params().data(), kNumParams, &presets(), pump::accents::twang(), "TWANG", 1000, 658, kBypass)
     {
-        auto dial = [&](int p, const char* l, bool bi = false, const char* tip = nullptr, Dial::Size sz = Dial::Small) { Dial* d = addDial(p, l, sz, bi); if (tip) d->tip = tip; return d; };
+        auto dial = [&](int p, const char* l, bool bi = false, const char* tip = nullptr, Dial::Size sz = Dial::Medium) { Dial* d = addDial(p, l, sz, bi); if (tip) d->tip = tip; return d; };
         tuneSeg = addSegmented(kTuning, { "CHORD", "MIDI", "LATCH" });
         tuneSeg->tip = "Chord: ROOT + CHORD tune the springs · MIDI: the notes you hold · Latch: the last notes played, until new ones";
         rootD = dial(kRoot, "ROOT");
@@ -53,27 +53,33 @@ protected:
 
     void layout() override
     {
-        const float top = 58, sh = 228, hs = Dial::heightFor(Dial::Small);
+        // top: springs, KICK, scope, meters
+        const float top = 58, sh = 200, hm = Dial::heightFor(Dial::Medium), hl = Dial::heightFor(Dial::Large);
         springsR = Rect(14, top, 600, sh);
         kickR = Rect(626, top, 140, sh);
         scopeR = Rect(778, top, 182, sh);
         meterL = Rect(966, top, 8, sh - 12); meterR = Rect(977, top, 8, sh - 12);
-        const float y1 = 300, ph = 196;
+        // evenly spread n dials across [x, x + w) at y
+        auto rowOf = [&](float x, float w, float y, Dial** d, int n) {
+            const float cw = w / n;
+            for (int k = 0; k < n; ++k) d[k]->r = Rect(x + k * cw, y, cw, hm);
+        };
+        // TUNING (mode + root/chord/octave) beside SPRING (model + five dials)
+        const float y1 = top + sh + 12, ph = 150;
         tunePanel = Rect(14, y1, 420, ph);
-        tuneSeg->r = Rect(24, y1 + 28, 400, 22);
-        rootD->r = Rect(34, y1 + 66, 120, hs); chordD->r = Rect(154, y1 + 66, 140, hs); octD->r = Rect(294, y1 + 66, 120, hs);
+        tuneSeg->r = Rect(26, y1 + 28, 396, 24);
+        Dial* td[3] = { rootD, chordD, octD }; rowOf(26, 396, y1 + 62, td, 3);
         springPanel = Rect(446, y1, 540, ph);
-        modelSeg->r = Rect(456, y1 + 28, 520, 22);
-        Dial* sd[5] = { tensionD, dripD, wobbleD, gritD, toneD };
-        for (int k = 0; k < 5; ++k) sd[k]->r = Rect(460 + k * 104, y1 + 74, 104, hs);
-        const float y2 = 508, ph2 = 192;
+        modelSeg->r = Rect(458, y1 + 28, 516, 24);
+        Dial* sd[5] = { tensionD, dripD, wobbleD, gritD, toneD }; rowOf(458, 516, y1 + 62, sd, 5);
+        // VOICE (HARMONIC + spread, decay, release) beside OUTPUT
+        const float y2 = y1 + ph + 12, ph2 = 124;
         voicePanel = Rect(14, y2, 420, ph2);
-        harmD->r = Rect(24, y2 + 34, 120, Dial::heightFor(Dial::Large));
-        spreadD->r = Rect(150, y2 + 50, 90, hs); decayD->r = Rect(240, y2 + 50, 90, hs); relD->r = Rect(330, y2 + 50, 90, hs);
+        harmD->r = Rect(24, y2 + 24, 130, hl);
+        Dial* vd[3] = { spreadD, decayD, relD }; rowOf(160, 262, y2 + 32, vd, 3);
         outPanel = Rect(446, y2, 540, ph2);
-        Dial* od[5] = { driveD, tankD, widthD, mixD, outD };
-        for (int k = 0; k < 5; ++k) od[k]->r = Rect(460 + k * 104, y2 + 50, 104, hs);
-        keyboard.r = Rect(14, 712, 966, 56);
+        Dial* od[5] = { driveD, tankD, widthD, mixD, outD }; rowOf(458, 516, y2 + 32, od, 5);
+        keyboard.r = Rect(14, y2 + ph2 + 12, 966, 56);
     }
 
     void tick(float dt) override
@@ -118,7 +124,7 @@ protected:
         auto panel = [&](const Rect& r, const char* c) { strokeRect(r, theme.dim, 1.0f); caption(r.x + 12, r.y + 16, c); };
         panel(tunePanel, "TUNING"); panel(springPanel, "SPRING"); panel(voicePanel, "VOICE"); panel(outPanel, "OUTPUT");
         const char* hint = tu == pump::coil::kTuneChord ? "THE CHORD TUNES THE SPRINGS; THE INPUT RINGS THEM" : tu == pump::coil::kTuneMidi ? "PLAY OR SEND MIDI: THE NOTES HELD TUNE THE SPRINGS" : "PLAY OR SEND MIDI: THE LAST CHORD STAYS UNTIL A NEW ONE";
-        textAt(tunePanel.x + 12, tunePanel.b() - 16, hint, kLabel, 8.5f, theme.ink2, ALIGN_LEFT | ALIGN_MIDDLE, 0.5f);
+        textAt(tunePanel.r() - 12, tunePanel.y + 16, hint, kLabel, 8.5f, theme.ink2, ALIGN_RIGHT | ALIGN_MIDDLE, 0.5f);
         keyboard.draw(*this);
     }
     void drawKick()
