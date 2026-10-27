@@ -138,6 +138,16 @@ make tests-tsan           # and under ThreadSanitizer (slow: heat takes several 
 DISPLAY_NUM=:101 tools/shot.sh bin/pump-eq /tmp/eq.png 1 0 4  # preset 1, light, after 4 s of the test mix
 ```
 
+Before and after a refactor that shouldn't change the sound, render every plugin's defaults and factory presets and
+compare (differences below -120 dB of the peak are float rounding; EQ's linear phase differs by about -150 dB from
+run to run, since its kernels are built on a thread):
+
+```
+sh tools/render_golden.sh /tmp/before        # on the old code
+sh tools/render_golden.sh /tmp/after         # on the new code
+python3 tools/compare_renders.py /tmp/before /tmp/after
+```
+
 Only the standalone (`jack`) builds read the `PUMP_TEST_*` variables (through `pump::testEnv`; `make jack` builds them
 with `PUMP_TEST_HOOKS=1` in a build folder of their own), so the released plugins never do. The standalone build runs headless with `PUMP_TEST_AUDIO=tests/data/mix.f32` (made by tools/make_mix.py; 8 bars of drums,
 bass, pads and a lead with two deliberate resonances, peaking at -6 dBFS). `PUMP_TEST_PRESET=<n>` loads a factory
