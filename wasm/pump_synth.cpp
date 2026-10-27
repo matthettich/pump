@@ -13,8 +13,10 @@
 // Interface (all exported, "C"):
 //   psyn_types()                         number of instrument types (3); ids are kTypeNames' order: mono, poly, coil
 //   psyn_nparams(type)                   parameter count (parameter i is params()[i] of that plugin)
-//   psyn_stage()                         float[512]: write a new instance's values here before psyn_new
-//   psyn_new(type, sr)                   an instance (handle >= 0) with the staged values, prepared; -1 on failure
+//   psyn_stage()                         float[512]: write a new instance's values here before psyn_new (values not
+//                                        written are the parameter's default: psyn_new clears the stage after use)
+//   psyn_new(type, sr)                   an instance (an opaque handle >= 0, wasm/Handles.hpp) with the staged
+//                                        values, prepared; -1 on failure. A freed instance's handle is refused
 //   psyn_free(h)
 //   psyn_values(h)                       float[nparams]: the instance's requested values; write, then psyn_commit(h)
 //   psyn_commit(h)                       applies the values that changed (clamped as a host's setParameterValue)
@@ -23,6 +25,8 @@
 //   psyn_out(ch)                         float[4096] output buffers: 0 = L, 1 = R
 //   psyn_process(h, n)                   n <= 4096 samples into psyn_out(0/1), playing the queued messages
 //   psyn_latency(h)                      the latency the plugin reports (samples): MONO's half-band decimator
+#include <limits>
+#include "Handles.hpp"
 #include "../plugins/mono/MonoEngine.hpp"
 #include "../plugins/poly/PolyEngine.hpp"
 #include "../plugins/coil/CoilEngine.hpp"
@@ -79,7 +83,9 @@ public:
     void queue(int frame, int status, int d1, int d2)
     {
         if (nq >= kMaxEvents) return;
-        q[nq++] = { (uint32_t)std::max(0, frame), (uint8_t)status, (uint8_t)(d1 & 0x7F), (uint8_t)(d2 & 0x7F) };
+        // a frame is within one call (< kMaxBlock): a wild one would wait forever and fill the queue, note-offs too
+        frame = std::max(0, std::min(frame, kMaxBlock - 1));
+        q[nq++] = { (uint32_t)frame, (uint8_t)status, (uint8_t)(d1 & 0x7F), (uint8_t)(d2 & 0x7F) };
     }
     // The plugin's run(): settings first (when a value changed), then 256-sample chunks with the messages in each.
     void run(float* L, float* R, int frames)
@@ -209,11 +215,12 @@ inline SynthBase* make(int type, double sr)
     }
 }
 
-std::vector<std::unique_ptr<SynthBase>> inst;
+pumpwasm_handles::HandleTable<SynthBase> inst;
 float stage[kStage];
+const bool stageCleared = [] { for (float& v : stage) v = std::numeric_limits<float>::quiet_NaN(); return true; }();   // unwritten = default
 float out[2][kMaxBlock];
 
-inline SynthBase* at(int h) { return h >= 0 && h < (int)inst.size() ? inst[(size_t)h].get() : nullptr; }
+inline SynthBase* at(int h) { return inst.at(h); }
 
 } // namespace pumpsynth
 
@@ -224,19 +231,17 @@ PUMP_API int psyn_nparams(int type) { return type >= 0 && type < kNumTypes ? (in
 PUMP_API float* psyn_stage() { return stage; }
 PUMP_API int psyn_new(int type, double sr)
 {
-    if (type < 0 || type >= kNumTypes || !(sr > 1000.0)) return -1;
+    if (type < 0 || type >= kNumTypes || !(sr > 1000.0 && sr <= 768000.0)) return -1;
     SynthBase* s = make(type, sr);
     if (!s) return -1;
     // a host restores the state, then activates
-    for (int i = 0; i < s->numParams && i < kStage; ++i) s->requested[(size_t)i] = stage[i];
+    for (int i = 0; i < s->numParams && i < kStage; ++i) if (stage[i] == stage[i]) s->requested[(size_t)i] = stage[i];
+    for (float& v : stage) v = std::numeric_limits<float>::quiet_NaN();   // unwritten = default, for the next one too
     s->commit();
     s->activate();
-    for (size_t k = 0; k < inst.size(); ++k)
-        if (!inst[k]) { inst[k].reset(s); return (int)k; }
-    inst.emplace_back(s);
-    return (int)inst.size() - 1;
+    return inst.add(s);
 }
-PUMP_API void psyn_free(int h) { if (at(h)) inst[(size_t)h].reset(); }
+PUMP_API void psyn_free(int h) { inst.remove(h); }
 PUMP_API float* psyn_values(int h) { SynthBase* s = at(h); return s ? s->requested.data() : nullptr; }
 PUMP_API void psyn_commit(int h) { if (SynthBase* s = at(h)) s->commit(); }
 PUMP_API void psyn_midi(int h, int frame, int status, int d1, int d2) { if (SynthBase* s = at(h)) s->queue(frame, status, d1, d2); }

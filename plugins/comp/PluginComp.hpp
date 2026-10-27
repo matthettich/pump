@@ -52,7 +52,6 @@ protected:
         prepareAll();
         lastLatency = -1;
     }
-    void sampleRateChanged(double) override { prepareAll(); }
 
     void prepareAll()
     {

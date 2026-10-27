@@ -96,7 +96,7 @@ tests: licence-check $(TESTS) $(SYNC_TESTS) build/tests/wasm_wrapper
 #   make tests-asan      memory errors and undefined behaviour
 #   make tests-tsan      data races
 # (SAN_TESTS names the quick, self-contained ones; add to it as more are checked.)
-SAN_TESTS ?= wav biquad dsp presets table eq band wide heat gate
+SAN_TESTS ?= wav biquad dsp presets table eq band wide heat gate tune sing_bank boing
 ASAN_FLAGS = -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=undefined
 TSAN_FLAGS = -O1 -g -fno-omit-frame-pointer -fsanitize=thread
 
@@ -113,8 +113,10 @@ $(eval $(call SAN_RULE,asan,$(ASAN_FLAGS)))
 $(eval $(call SAN_RULE,tsan,$(TSAN_FLAGS)))
 
 tests-asan: $(patsubst %,build/asan/test_%,$(SAN_TESTS))
+	@mkdir -p build/tests   # (test_wav writes its files there)
 	@for t in $(SAN_TESTS); do echo "== asan $$t"; ./build/asan/test_$$t || exit 1; done
 tests-tsan: $(patsubst %,build/tsan/test_%,$(SAN_TESTS))
+	@mkdir -p build/tests   # (test_wav writes its files there)
 	@for t in $(SAN_TESTS); do echo "== tsan $$t"; ./build/tsan/test_$$t || exit 1; done
 
 # pump.wasm + pump-meta.js for Thunder Plus (WASI_SDK = a wasi-sdk 25 folder; see wasm/build.sh)

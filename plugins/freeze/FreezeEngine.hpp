@@ -103,7 +103,7 @@ public:
     {
         sr = sampleRate;
         fft.setup(kN);
-        bufA.assign(kN, 0.0f); bufB.assign(kN, 0.0f);
+        bufA.assign(kN, 0.0f); bufB.assign(kN, 0.0f); tmpA.assign(kN, 0.0f); tmpB.assign(kN, 0.0f);
         win.assign(kN, 0.0f); for (int i = 0; i < kN; ++i) win[(size_t)i] = (float)(0.5 - 0.5 * std::cos(kTwoPi * i / kN));
         for (int i = 0; i < kMaxVoices; ++i)
         {
@@ -294,8 +294,7 @@ private:
             bufA[(size_t)(2 * k)] = (float)(mm * std::cos(pl)); bufA[(size_t)(2 * k + 1)] = (float)(mm * std::sin(pl));
             bufB[(size_t)(2 * k)] = (float)(mm * std::cos(pr)); bufB[(size_t)(2 * k + 1)] = (float)(mm * std::sin(pr));
         }
-        std::vector<float>& outA = tmpA; std::vector<float>& outB = tmpB;
-        outA.resize(kN); outB.resize(kN);
+        std::vector<float>& outA = tmpA; std::vector<float>& outB = tmpB;   // sized in prepare()
         fft.inverse(bufA.data(), outA.data()); fft.inverse(bufB.data(), outB.data());
         for (int i = 0; i < kN; ++i) { v.olaL[(size_t)i] += (float)(outA[(size_t)i] * win[(size_t)i] * sc); v.olaR[(size_t)i] += (float)(outB[(size_t)i] * win[(size_t)i] * sc); }
         if (feed)

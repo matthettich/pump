@@ -9,6 +9,7 @@
 #include <cstring>
 #include <string>
 #include <vector>
+#include "../FilePath.hpp"
 
 namespace pump {
 
@@ -29,7 +30,7 @@ static constexpr long kWavMaxFileBytes = 1L << 30;
 inline bool readWholeFile(const std::string& path, std::vector<uint8_t>& d, std::string& why)
 {
     d.clear();
-    FILE* f = std::fopen(path.c_str(), "rb");
+    FILE* f = fopenUtf8(path, "rb");
     if (!f) { why = "can't open the file"; return false; }
     bool ok = false;
     if (std::fseek(f, 0, SEEK_END) != 0) why = "can't read the file";

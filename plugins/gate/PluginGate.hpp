@@ -40,7 +40,6 @@ protected:
         setLatency(0);
         bypass.setLatency(0);
     }
-    void sampleRateChanged(double) override { activate(); }
 
     void sync()
     {

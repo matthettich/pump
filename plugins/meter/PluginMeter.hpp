@@ -27,7 +27,6 @@ protected:
         engine.prepare(getSampleRate());
         engine.setResetCounter(pv(kReset));
     }
-    void sampleRateChanged(double) override { activate(); }
 
     void run(const float** inputs, float** outputs, uint32_t frames) override
     {

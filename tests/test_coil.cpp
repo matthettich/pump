@@ -146,6 +146,18 @@ int main()
             CHECK(std::fabs(cents(fa, 220.0)) < 12 && std::fabs(cents(fe, synth::midiToHz(64))) < 12 && pa > 30 * pn, "TWANG on noise, A fifth: peaks at %.1f and %.1f Hz, %.0f dB over the gap between", fa, fe, 10 * std::log10(pa / (pn + 1e-30)));
             CHECK(e.voicesNow() == 2, "the fifth rings on %d voices", e.voicesNow());
         }
+        {
+            // a block longer than prepared for (hosts do this when bouncing) is run in pieces: the same sound, notes
+            // landing where they should
+            Engine e; Settings s; e.setSettings(s); e.prepare(sr, 256);
+            const auto ref = run(e, 6000, { { 100, 0x90, 57, 110 }, { 4100, 0x90, 64, 100 } });
+            Engine f; f.setSettings(s); f.prepare(sr, 256);
+            std::vector<float> L(6000), R(6000);
+            const synth::Midi ev[2] = { { 100, 0x90, 57, 110 }, { 4100, 0x90, 64, 100 } };
+            f.process(nullptr, nullptr, L.data(), R.data(), 6000, ev, 2);
+            double diff = 0.0; for (int i = 0; i < 6000; ++i) diff = std::max(diff, (double)std::fabs(0.5f * (L[(size_t)i] + R[(size_t)i]) - ref[(size_t)i]));
+            CHECK(diff < 1e-5, "one 6000-sample block after prepare(256) sounds as 256-sample blocks do (max difference %.1e)", diff);
+        }
         if (sr != 48000.0) continue;
         {
             std::mt19937 rng(51); std::uniform_real_distribution<double> u(0.0, 1.0);

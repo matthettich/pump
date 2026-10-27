@@ -22,8 +22,8 @@
 #include "dsp/Util.hpp"
 #include "dsp/Wav.hpp"
 #include "SingText.hpp"
-#include <dirent.h>
-#include <sys/stat.h>
+#include "FilePath.hpp"
+#include <filesystem>
 #include <fstream>
 #include <map>
 #include <memory>
@@ -223,12 +223,12 @@ public:
     static std::shared_ptr<Bank> load(std::string path)
     {
         auto b = std::make_shared<Bank>();
-        struct stat st {};
-        if (stat(path.c_str(), &st) == 0 && !S_ISDIR(st.st_mode)) { const size_t sl = path.find_last_of("/\\"); path = sl == std::string::npos ? "." : path.substr(0, sl); }
+        std::error_code ec;
+        if (std::filesystem::exists(utf8Path(path), ec) && !std::filesystem::is_directory(utf8Path(path), ec)) { const size_t sl = path.find_last_of("/\\"); path = sl == std::string::npos ? "." : path.substr(0, sl); }
         b->name = path.substr(path.find_last_of("/\\") == std::string::npos ? 0 : path.find_last_of("/\\") + 1);
         // character.txt: name=
         {
-            std::ifstream f(path + "/character.txt", std::ios::binary);
+            std::ifstream f(utf8Path(path + "/character.txt"), std::ios::binary);
             std::string line;
             while (std::getline(f, line)) { if (line.rfind("name=", 0) == 0) { std::string n = line.substr(5); while (!n.empty() && (n.back() == '\r' || n.back() == '\n')) n.pop_back(); b->name = validUtf8(n) ? n : sjisToUtf8(n); } }
         }
@@ -239,28 +239,32 @@ public:
     }
 
 private:
+    // all the samples of a bank together: about 15 minutes at 44.1 kHz (the analysis runs while the session loads)
+    static constexpr size_t kMaxBankFrames = (size_t)44100 * 60 * 15;
+    size_t totalFrames = 0;
+    // oto.ini numbers: locale-independent (atof reads "12.5" as 12 under a comma-decimal locale), no nan / inf
+    static double num(const std::string& t) { return parseNumber(t.c_str(), nullptr); }
+
     void scan(const std::string& dir, int depth, std::map<std::string, int>& files)
     {
         readOto(dir, files);
         if (depth >= 2) return;
-        if (DIR* d = opendir(dir.c_str()))
+        std::vector<std::string> subs;
+        std::error_code ec;
+        std::filesystem::directory_iterator it(utf8Path(dir), ec), end;
+        for (; !ec && it != end; it.increment(ec))   // error codes: nothing here may throw into the host
         {
-            std::vector<std::string> subs;
-            while (dirent* e = readdir(d))
-            {
-                if (e->d_name[0] == '.') continue;
-                const std::string p = dir + "/" + e->d_name;
-                struct stat st {};
-                if (stat(p.c_str(), &st) == 0 && S_ISDIR(st.st_mode)) subs.push_back(p);
-            }
-            closedir(d);
-            std::sort(subs.begin(), subs.end());
-            for (const auto& s : subs) scan(s, depth + 1, files);
+            const std::string name = pathUtf8(it->path().filename());
+            if (name.empty() || name[0] == '.') continue;
+            std::error_code de;
+            if (it->is_directory(de)) subs.push_back(dir + "/" + name);
         }
+        std::sort(subs.begin(), subs.end());
+        for (const auto& s : subs) scan(s, depth + 1, files);
     }
     void readOto(const std::string& dir, std::map<std::string, int>& files)
     {
-        std::ifstream f(dir + "/oto.ini", std::ios::binary);
+        std::ifstream f(utf8Path(dir + "/oto.ini"), std::ios::binary);
         if (!f) return;
         std::stringstream ss; ss << f.rdbuf();
         std::string text = ss.str();
@@ -274,6 +278,8 @@ private:
             const size_t eq = line.find('=');
             if (eq == std::string::npos) continue;
             const std::string file = line.substr(0, eq);
+            // a sample beside the oto.ini, nothing else: no folders, no way out of the bank (a bank is untrusted input)
+            if (file.empty() || file.find_first_of("/\\") != std::string::npos || file == "." || file == "..") continue;
             std::vector<std::string> v; std::string cur;
             for (char c : line.substr(eq + 1)) { if (c == ',') { v.push_back(cur); cur.clear(); } else cur += c; }
             v.push_back(cur);
@@ -285,14 +291,18 @@ private:
             if (it != files.end()) si = it->second;
             else
             {
-                const WavData w = readWav(fp, (size_t)(44100.0 * 20.0));
-                if (!w.ok()) { si = -1; files[fp] = -1; }
+                std::error_code fe;
+                const bool regular = std::filesystem::is_regular_file(utf8Path(fp), fe);   // not a FIFO or a device
+                const WavData w = regular && totalFrames < kMaxBankFrames ? readWav(fp, (size_t)(44100.0 * 20.0)) : WavData();
+                // a voicebank is recorded at 44.1 / 48 kHz; far higher rates only make the analysis slow
+                if (!w.ok() || w.sampleRate > 96000.0) { si = -1; files[fp] = -1; }
                 else
                 {
                     Sample s; s.sr = w.sampleRate;
                     const size_t n = w.channels[0].size();
                     s.x.assign(n, 0.0f);
                     for (const auto& c : w.channels) for (size_t i = 0; i < n; ++i) s.x[i] += c[i] / (float)w.channels.size();
+                    totalFrames += n;
                     analyse(s);
                     si = (int)samples.size();
                     samples.push_back(std::move(s));
@@ -305,13 +315,13 @@ private:
             Entry e;
             e.alias = toHiragana(v[0].empty() ? file.substr(0, file.find_last_of('.')) : v[0]);
             e.sample = si;
-            e.offset = std::max(0.0, std::atof(v[1].c_str()) * ms);
-            e.consonant = std::max(0.0, std::atof(v[2].c_str()) * ms);
-            const double cut = std::atof(v[3].c_str()) * ms;
+            e.offset = std::max(0.0, num(v[1]) * ms);
+            e.consonant = std::max(0.0, num(v[2]) * ms);
+            const double cut = num(v[3]) * ms;
             e.end = cut < 0.0 ? e.offset - cut : (double)S.x.size() - cut;
             e.end = clampv(e.end, e.offset + e.consonant + 0.03 * S.sr, (double)S.x.size());
-            e.preutter = std::max(0.0, std::atof(v[4].c_str()) * ms);
-            e.overlap = std::max(0.0, std::atof(v[5].c_str()) * ms);
+            e.preutter = std::max(0.0, num(v[4]) * ms);
+            e.overlap = std::max(0.0, num(v[5]) * ms);
             if (byAlias.count(e.alias)) continue;   // the first of an alias wins (a bank's main pitch is usually first)
             byAlias[e.alias] = (int)entries.size();
             entries.push_back(e);

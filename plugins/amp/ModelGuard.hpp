@@ -13,6 +13,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <filesystem>
+#include "FilePath.hpp"
 #include <fstream>
 #include <string>
 #include <system_error>
@@ -73,11 +74,11 @@ inline std::string checkConfigNumbers(const nlohmann::json& j, int depth = 0)
 inline std::string checkModelFile(const std::string& path)
 {
     std::error_code ec;
-    const std::uintmax_t size = std::filesystem::file_size(std::filesystem::path(path), ec);
+    const std::uintmax_t size = std::filesystem::file_size(pump::utf8Path(path), ec);
     if (ec) return "can't read the file";
     if (size == 0) return "empty file";
     if (size > kMaxModelBytes) return "file too large for a model";
-    std::ifstream in(path, std::ios::binary);
+    std::ifstream in(pump::utf8Path(path), std::ios::binary);
     if (!in) return "can't read the file";
     nlohmann::json j = nlohmann::json::parse(in, nullptr, false);
     if (j.is_discarded()) return "not a valid .nam file (damaged or incomplete?)";
@@ -125,8 +126,8 @@ inline std::filesystem::path loadMarkerPath(const std::string& modelPath)
     std::string key = modelPath;
     {
         std::error_code e1, e2;
-        const auto sz = std::filesystem::file_size(std::filesystem::path(modelPath), e1);
-        const auto mt = std::filesystem::last_write_time(std::filesystem::path(modelPath), e2);
+        const auto sz = std::filesystem::file_size(pump::utf8Path(modelPath), e1);
+        const auto mt = std::filesystem::last_write_time(pump::utf8Path(modelPath), e2);
         if (!e1 && !e2) key += "|" + std::to_string((unsigned long long)sz) + "|" + std::to_string((long long)mt.time_since_epoch().count());
     }
     uint64_t h = 1469598103934665603ULL;   // FNV-1a of the key

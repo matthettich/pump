@@ -120,13 +120,7 @@ protected:
         // the host may change the rate without telling the UI (or before it opened): follow the plugin's rate
         const double srNow = plug->getSampleRate();
         if (srNow > 0.0 && srNow != anaRate) setupAnalyzers(srNow);
-        for (int c = 0; c < 2; ++c)
-        {
-            const float pk = pump::gainToDbF(plug->outPeak[c].exchange(0.0f));
-            lvl[c] = std::max(pk, lvl[c] - 26.0f * dt);
-            if (pk >= hold[c]) { hold[c] = pk; holdT[c] = 1.5f; }
-            else if ((holdT[c] -= dt) <= 0.0f) hold[c] = std::max(pk, hold[c] - 18.0f * dt);
-        }
+        outMeter.tick(plug->outPeak, dt);
         pre.update(&plug->preRing, nullptr, dt);
         post.update(&plug->postRing, nullptr, dt);
         const float a = 1.0f - std::exp(-dt / 0.08f);
@@ -284,8 +278,7 @@ protected:
         }
         restore();
 
-        drawLevelMeter(meterL, lvl[0], hold[0], -48.0f, 6.0f);
-        drawLevelMeter(meterR, lvl[1], hold[1], -48.0f, 6.0f);
+        drawOutMeter(outMeter, meterL, meterR);
         textAt(meterL.r() + 1, display.b() - 7, "OUT", kLabel, 9.0f, theme.ink2, ALIGN_CENTER | ALIGN_MIDDLE, 0.8f);
 
         for (const Rect* p : { &panelA, &panelB, &panelC }) strokeRect(*p, theme.dim, 1.0f);
@@ -391,6 +384,7 @@ protected:
         if (key == kKeyAltL || key == kKeyAltR) { altHeld = false; repaint(); }
         return false;
     }
+    void releaseAllHeld() override { if (altHeld) { altHeld = false; repaint(); } }
 
     std::vector<std::pair<std::string, std::string>> helpLines() override
     {
@@ -422,7 +416,7 @@ private:
     PluginTone* plug = nullptr;
     SpectrumView pre, post;
     Rect display, meterL, meterR, panelA, panelB, panelC, makeupRect;
-    float lvl[2] = { -120.0f, -120.0f }, hold[2] = { -120.0f, -120.0f }, holdT[2] = { 0.0f, 0.0f };
+    OutMeter outMeter;
     float gain[Engine::kBands] = {}, target[Engine::kBands] = {};
     double erb[Engine::kBands] = {};
     float makeup = 0.0f, dbRange = 6.0f, hoverX = -1, hoverY = -1;

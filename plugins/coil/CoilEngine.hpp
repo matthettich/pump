@@ -434,7 +434,7 @@ public:
         decim = std::max(1, (int)std::lround(sr / 12000.0)); decimPos = 0;
         for (int i = 0; i < kMaxVoices; ++i) voices[(size_t)i].prepare(sr, (uint32_t)i + 1);
         body.prepare(sr, maxBlock);
-        bodyIn.assign((size_t)std::max(1, maxBlock) + 16, 0.0f);
+        bodyIn.assign((size_t)std::max(1024, maxBlock), 0.0f);
         bodyInR.assign(bodyIn.size(), 0.0f);
         drvHp.set(120.0, 0.70710678, sr);
         for (int c = 0; c < 2; ++c) { outHp[c].set(70.0, 0.70710678, sr); dripPk[c].reset(); outHp[c].reset(); }
@@ -473,7 +473,23 @@ public:
     int voiceNote(int i) const { return noteFeed[(size_t)clampv(i, 0, kMaxVoices - 1)].load(std::memory_order_relaxed); }
 
     // in: TWANG's input (nullptr for COIL); L / R out (may alias in)
+    // Any block size: a block longer than the buffers prepared for (some hosts send more than they announced, e.g.
+    // when bouncing) is run in pieces, so nothing is resized on the audio thread.
     void process(const float* inL, const float* inR, float* L, float* R, int n, const synth::Midi* ev, int nev)
+    {
+        const int cap = (int)bodyIn.size();
+        int done = 0, e = 0;
+        while (done < n)
+        {
+            const int m = std::min(cap, n - done);
+            int e2 = e; while (e2 < nev && (int)ev[e2].offset < done + m) ++e2;
+            processChunk(inL ? inL + done : nullptr, inR ? inR + done : nullptr, L + done, R + done, m, ev + e, e2 - e, done);
+            e = e2; done += m;
+        }
+    }
+
+private:
+    void processChunk(const float* inL, const float* inR, float* L, float* R, int n, const synth::Midi* ev, int nev, int evBase)
     {
         volS.setTarget(dbToGain(set.volumeDb));
         tankS.setTarget(set.tank);
@@ -493,12 +509,11 @@ public:
             }
             kickReq = 0.0;
         }
-        if ((int)bodyIn.size() < n) { bodyIn.resize((size_t)n); bodyInR.resize((size_t)n); }
         int e = 0;
         const double drv = dbToGain(-10.0 + 0.32 * clampv(set.dwell, 0.0, 100.0)), makeup = std::pow(drv, -0.7);
         for (int i = 0; i < n; ++i)
         {
-            while (e < nev && (int)ev[e].offset <= i) handle(ev[e++]);
+            while (e < nev && (int)ev[e].offset - evBase <= i) handle(ev[e++]);
             if (tickPos == 0) for (auto& v : voices) v.tick();
             const double frac = tickPos / (double)spring::kTick;
             tickPos = (tickPos + 1) % spring::kTick;
@@ -568,6 +583,7 @@ public:
         for (int i = 0; i < n; ++i) outRing.push(0.5f * (L[i] + R[i]));
     }
 
+public:
     // the chord's notes (TWANG): root + octave + intervals
     static int chordNotes(int root, int octave, int chord, int* out)
     {

@@ -21,8 +21,8 @@ public:
         engine.prepare(getSampleRate(), (int)getBufferSize());
         bypass.prepare(getSampleRate(), 1 << 15, (int)std::max<uint32_t>(getBufferSize(), 8192));
         // headless screenshots (tools/shot.sh): files to load at start
-        if (const char* m = std::getenv("PUMP_TEST_MODEL")) { modelPath = m; loadModel(); }
-        if (const char* i = std::getenv("PUMP_TEST_IR")) { irPath = i; loadIr(); }
+        if (const char* m = pump::testEnv("PUMP_TEST_MODEL")) { modelPath = m; loadModel(); }
+        if (const char* i = pump::testEnv("PUMP_TEST_IR")) { irPath = i; loadIr(); }
         engine.installNow();
         reportLatency();
     }
@@ -78,7 +78,7 @@ protected:
         {
             refusedPath = modelPath;
             info.path = modelPath;
-            info.name = std::filesystem::path(modelPath).stem().string();
+            info.name = pump::pathUtf8(pump::utf8Path(modelPath).stem());
             info.error = "not loaded: this model crashed the plugin last time (CLEAR, then pick it again to retry)";
         }
         else
@@ -120,7 +120,6 @@ protected:
         setLatency((uint32_t)lastLatency);
         bypass.setLatency(lastLatency);
     }
-    void sampleRateChanged(double) override { activate(); }
 
     void sync()
     {

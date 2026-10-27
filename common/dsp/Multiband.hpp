@@ -488,15 +488,22 @@ private:
     void startWorker()
     {
         quit.store(false);
+        // Polls (the audio thread only sets an atomic, never wakes a thread): every 2 ms while settings are moving,
+        // backing off to 50 ms once nothing has changed for a second, so an idle instance costs ~20 wake-ups a second,
+        // not 500. The first change after a pause is picked up within 50 ms.
         worker = std::thread([this] {
+            int idleMs = 0;
             while (!quit.load(std::memory_order_acquire))
             {
                 const uint32_t seq = reqSeq.load(std::memory_order_acquire);
                 if (seq == builtSeq.load(std::memory_order_relaxed) || swapPending.load(std::memory_order_acquire))
                 {
-                    std::this_thread::sleep_for(std::chrono::milliseconds(2));
+                    const int wait = idleMs < 1000 ? 2 : 50;
+                    std::this_thread::sleep_for(std::chrono::milliseconds(wait));
+                    idleMs = std::min(idleMs + wait, 1000);
                     continue;
                 }
+                idleMs = 0;
                 designRequested();
             }
         });

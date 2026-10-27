@@ -6,6 +6,7 @@
 #include "../common/dsp/Loudness.hpp"
 #include "../common/dsp/Dynamics.hpp"
 #include "../common/dsp/Crossover.hpp"
+#include "../common/dsp/Retained.hpp"
 #include <cstdio>
 #include <random>
 
@@ -183,6 +184,28 @@ static void testCrossover()
     }
 }
 
+// Retained: what the audio thread has moved past is freed at the next publish; what it may still use never is
+static void testRetained()
+{
+    printf("Retained\n");
+    struct Obj { int v; static int& alive() { static int a = 0; return a; } Obj(int x) : v(x) { ++alive(); } ~Obj() { --alive(); } };
+    {
+        Retained<Obj> r;
+        r.publish(std::make_shared<Obj>(1));
+        const Obj* a = r.acquire();
+        r.publish(std::make_shared<Obj>(2));   // the audio thread still holds 1: kept
+        CHECK(a->v == 1 && Obj::alive() == 2, "an object the audio thread still holds is kept (%d alive)", Obj::alive());
+        const Obj* b = r.acquire();
+        r.publish(std::make_shared<Obj>(3));   // it moved on to 2: 1 goes
+        CHECK(b->v == 2 && Obj::alive() == 2, "once the audio thread moves on, the old object is freed (%d alive)", Obj::alive());
+        for (int k = 0; k < 100; ++k) { r.acquire(); r.publish(std::make_shared<Obj>(10 + k)); }
+        CHECK(r.heldCount() <= 2 && Obj::alive() <= 2, "100 loads with the audio thread running: %d held", (int)r.heldCount());
+        r.publish(nullptr); r.acquire(); r.collect();
+        CHECK(r.peek() == nullptr && Obj::alive() <= 1, "unloading leaves at most the last object until the next publish (%d alive)", Obj::alive());
+    }
+    CHECK(Obj::alive() == 0, "everything is freed with the owner (%d alive)", Obj::alive());
+}
+
 int main()
 {
     testOversampler();
@@ -191,6 +214,7 @@ int main()
     testLoudness();
     testLookahead();
     testCrossover();
+    testRetained();
     printf(fails ? "\n%d FAILED\n" : "\nall passed\n", fails);
     return fails ? 1 : 0;
 }

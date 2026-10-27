@@ -56,7 +56,6 @@ protected:
     }
 
     void activate() override { prepareAll(); }
-    void sampleRateChanged(double) override { prepareAll(); }
 
     void prepareAll()
     {

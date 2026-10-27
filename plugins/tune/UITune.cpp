@@ -394,7 +394,7 @@ protected:
         if (!testLoaded)
         {
             testLoaded = true;
-            if (const char* tg = std::getenv("PUMP_TEST_GRAPH"))
+            if (const char* tg = pump::testEnv("PUMP_TEST_GRAPH"))
                 if (FILE* f = std::fopen(tg, "rb"))
                 {
                     std::string all; char buf[4096]; size_t k;

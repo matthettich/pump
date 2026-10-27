@@ -47,7 +47,7 @@ public:
             d.spring.prepare(sr, (uint32_t)(p + 11));
         }
         body.prepare(sr, maxBlock);
-        bodyIn.assign((size_t)std::max(1, maxBlock) + 16, 0.0f); bodyInR = bodyIn;
+        bodyIn.assign((size_t)std::max(1024, maxBlock), 0.0f); bodyInR = bodyIn;
         decim = std::max(1, (int)std::lround(sr / 12000.0)); decimPos = 0;
         volS.setRamp(std::max(1, (int)(0.02 * sr))); volS.reset(dbToGain(set.volumeDb));
         dcL.set(15.0, sr); dcR.set(15.0, sr); dcL.reset(); dcR.reset();
@@ -64,15 +64,30 @@ public:
     bool padActive(int p) const { return activeFeed[(size_t)clampv(p, 0, kPads - 1)].load(std::memory_order_relaxed); }
     uint32_t takeHits() { return hitFeed.exchange(0u, std::memory_order_relaxed); }
 
+    // Any block size: a block longer than the buffers prepared for (some hosts send more than they announced, e.g.
+    // when bouncing) is run in pieces, so nothing is resized on the audio thread.
     void process(float* L, float* R, int n, const synth::Midi* ev, int nev)
     {
+        const int cap = (int)bodyIn.size();
+        int done = 0, e = 0;
+        while (done < n)
+        {
+            const int m = std::min(cap, n - done);
+            int e2 = e; while (e2 < nev && (int)ev[e2].offset < done + m) ++e2;
+            processChunk(L + done, R + done, m, ev + e, e2 - e, done);
+            e = e2; done += m;
+        }
+    }
+
+private:
+    void processChunk(float* L, float* R, int n, const synth::Midi* ev, int nev, int evBase)
+    {
         volS.setTarget(dbToGain(set.volumeDb));
-        if ((int)bodyIn.size() < n) { bodyIn.resize((size_t)n); bodyInR.resize((size_t)n); }
         int e = 0;
         const double drvG = 1.0 + set.drive * 6.0;
         for (int i = 0; i < n; ++i)
         {
-            while (e < nev && (int)ev[e].offset <= i) handle(ev[e++]);
+            while (e < nev && (int)ev[e].offset - evBase <= i) handle(ev[e++]);
             if (tickPos == 0) for (int p = 0; p < kPads; ++p) control(p);
             const double frac = tickPos / (double)kCtl;
             tickPos = (tickPos + 1) % kCtl;
@@ -122,7 +137,6 @@ public:
         for (int i = 0; i < n; ++i) outRing.push(0.5f * (L[i] + R[i]));
     }
 
-private:
     struct Pad {
         coil::Voice spring;
         coil::Settings cs;

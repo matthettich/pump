@@ -96,8 +96,7 @@ protected:
         for (int c = 0; c < 2; ++c)
         {
             const float pk = pump::gainToDbF(plug->outPeak[c].exchange(0.0f));
-            lvl[c] = std::max(pk, lvl[c] - 26.0f * dt);
-            if (pk >= hold[c]) { hold[c] = pk; holdT[c] = 1.5f; } else if ((holdT[c] -= dt) <= 0.0f) hold[c] = std::max(pk, hold[c] - 18.0f * dt);
+            outMeter.tickDb(c, pk, dt);
         }
         const uint32_t end = plug->engine.outRing.smoothPosition();
         for (int i = 0; i < kScopeN; ++i) scope[i] = plug->engine.outRing.at(end - (uint32_t)kScopeN + (uint32_t)i);
@@ -119,8 +118,7 @@ protected:
         springsView.draw(*this, springsR, kickAge, "SPRINGS", up.c_str());
         drawKick();
         drawScope();
-        drawLevelMeter(meterL, lvl[0], hold[0], -48.0f, 6.0f);
-        drawLevelMeter(meterR, lvl[1], hold[1], -48.0f, 6.0f);
+        drawOutMeter(outMeter, meterL, meterR);
         auto panel = [&](const Rect& r, const char* c) { strokeRect(r, theme.dim, 1.0f); caption(r.x + 12, r.y + 16, c); };
         panel(tunePanel, "TUNING"); panel(springPanel, "SPRING"); panel(voicePanel, "VOICE"); panel(outPanel, "OUTPUT");
         const char* hint = tu == pump::coil::kTuneChord ? "THE CHORD TUNES THE SPRINGS; THE INPUT RINGS THEM" : tu == pump::coil::kTuneMidi ? "PLAY OR SEND MIDI: THE NOTES HELD TUNE THE SPRINGS" : "PLAY OR SEND MIDI: THE LAST CHORD STAYS UNTIL A NEW ONE";
@@ -213,7 +211,7 @@ private:
     pump::coil::SpringsView springsView;
     bool kbDown = false, kickHeld = false;
     float t = 0.0f, kickPress = 0.0f, kickAge = 10.0f, scope[kScopeN] = {}, scale = 1.0f;
-    float lvl[2] = { -120.0f, -120.0f }, hold[2] = { -120.0f, -120.0f }, holdT[2] = { 0.0f, 0.0f };
+    OutMeter outMeter;
 
     DISTRHO_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(UITwang)
 };

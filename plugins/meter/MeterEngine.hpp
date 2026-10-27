@@ -40,7 +40,7 @@ public:
     static constexpr int kHistRate = 10;           // history points per second (one per 100 ms sub-block)
 
     // ---- UI feeds ----
-    ScopeRing spectrum { 1 << 15 };
+    ScopeRing spectrum { kAnalyzerRing };
     ScopeRing histM { 1 << 15 }, histS { 1 << 15 }, histI { 1 << 15 };   // 32768 points = 54 min
     std::atomic<uint32_t> histStart { 0 };         // history ring position at the last reset
     MeterValue peak[2], tpPeak[2];                 // linear, max-hold since the UI last exchanged them

@@ -133,13 +133,7 @@ protected:
     void tick(float dt) override
     {
         if (!plug) return;
-        for (int c = 0; c < 2; ++c)
-        {
-            const float pk = pump::gainToDbF(plug->outPeak[c].exchange(0.0f));
-            lvl[c] = std::max(pk, lvl[c] - 26.0f * dt);
-            if (pk >= hold[c]) { hold[c] = pk; holdT[c] = 1.5f; }
-            else if ((holdT[c] -= dt) <= 0.0f) hold[c] = std::max(pk, hold[c] - 18.0f * dt);
-        }
+        outMeter.tick(plug->outPeak, dt);
         const uint32_t end = plug->engine.levelRing.smoothPosition();
         for (int i = 0; i < kStrip; ++i)
         {
@@ -160,8 +154,7 @@ protected:
         drawTimeline();
         drawPads();
         drawNow();
-        drawLevelMeter(meterL, lvl[0], hold[0], -48.0f, 6.0f);
-        drawLevelMeter(meterR, lvl[1], hold[1], -48.0f, 6.0f);
+        drawOutMeter(outMeter, meterL, meterR);
         textAt(meterL.r() + 1, nowR.b() - 7, "OUT", kLabel, 9.0f, theme.ink2, ALIGN_CENTER | ALIGN_MIDDLE, 0.8f);
         strokeRect(autoPanel, theme.dim, 1.0f);
         strokeRect(repPanel, theme.dim, 1.0f);
@@ -458,6 +451,7 @@ protected:
         if (key >= '1' && key <= '8' && keyDown == (int)(key - '1')) { release(); return true; }
         return false;
     }
+    void releaseAllHeld() override { if (padDown >= 0 || keyDown >= 0) release(); }
     std::vector<std::pair<std::string, std::string>> helpLines() override
     {
         return {
@@ -487,7 +481,7 @@ private:
     float trY = 0.0f;
     bool dragMoved = false, clearOnUp = false;
     Rect pad[kNumMoves], useBox[kNumMoves];
-    float lvl[2] = { -120.0f, -120.0f }, hold[2] = { -120.0f, -120.0f }, holdT[2] = { 0.0f, 0.0f };
+    OutMeter outMeter;
     float strip[kStrip] = {}, stripMove[kStrip] = {}, flash[kNumMoves] = {};
     int moveShow = -1, repShow = 0, padDown = -1, keyDown = -1;
     bool heldShow = false;

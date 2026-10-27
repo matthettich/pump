@@ -169,9 +169,7 @@ protected:
         for (int c = 0; c < 2; ++c)
         {
             const float pk = pump::gainToDbF(plug->outPeak[c].exchange(0.0f));
-            lvl[c] = std::max(pk, lvl[c] - 26.0f * dt);
-            if (pk >= hold[c]) { hold[c] = pk; holdT[c] = 1.5f; }
-            else if ((holdT[c] -= dt) <= 0.0f) hold[c] = std::max(pk, hold[c] - 18.0f * dt);
+            outMeter.tickDb(c, pk, dt);
             const float o = plug->engine.openNow(c);
             openShow[c] += (o - openShow[c]) * std::min(1.0f, dt * 40.0f);
         }
@@ -193,8 +191,7 @@ protected:
     void drawBody() override
     {
         drawGrid();
-        drawLevelMeter(meterL, lvl[0], hold[0], -48.0f, 6.0f);
-        drawLevelMeter(meterR, lvl[1], hold[1], -48.0f, 6.0f);
+        drawOutMeter(outMeter, meterL, meterR);
         textAt(meterL.r() + 1, gridR.b() - 9, "OUT", kLabel, 9.0f, theme.ink2, ALIGN_CENTER | ALIGN_MIDDLE, 0.8f);
 
         caption(shiftLBtn->r.x - 52, shiftLBtn->r.cy(), "SHIFT");
@@ -596,7 +593,7 @@ private:
     enum DragMode { kNone, kToggle, kLevel, kPaint, kDraw };
     PluginGate* plug = nullptr;
     Rect gridR, bars, lane, meterL, meterR, rhythmP, envP, modeP, outP;
-    float lvl[2] = { -120.0f, -120.0f }, hold[2] = { -120.0f, -120.0f }, holdT[2] = { 0.0f, 0.0f };
+    OutMeter outMeter;
     float openShow[2] = { 1.0f, 1.0f };
     float laneDb[Engine::kMaxBins] = {};
     float envBuf[kEnvPoints] = {};

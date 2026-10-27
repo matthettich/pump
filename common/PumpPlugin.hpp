@@ -1,5 +1,8 @@
 // pump: DPF plugin base. Turns a ParamSpec table into host parameters, exposes the factory presets as host
-// programs, keeps the UI's A/B and theme state, and gives subclasses a block-processing hook.
+// programs and keeps the UI's A/B and theme state and the session version.
+// Subclasses prepare their engines in activate(). They don't override sampleRateChanged(): DPF deactivates, changes
+// the rate and activates again around a rate change of an active plugin, and an inactive one is prepared when it is
+// activated (preparing there too only did the work twice).
 #pragma once
 
 #include "DistrhoPlugin.hpp"
@@ -15,9 +18,13 @@ START_NAMESPACE_DISTRHO
 using pump::ParamSpec;
 using pump::Preset;
 
-// UI-only state keys (saved with the session, never read by the DSP)
-static constexpr const char* kPumpStateKeys[] = { "theme", "abA", "abB", "abSel", "preset", "ui" };
-static constexpr uint32_t kPumpNumStates = 6;
+// State keys of every plugin: the UI's (saved with the session, never read by the DSP), then "v", the version of
+// pump's session format, for migrating old sessions when something saved has to change meaning. A session saved
+// before "v" existed reads as version 0.
+static constexpr const char* kPumpStateKeys[] = { "theme", "abA", "abB", "abSel", "preset", "ui", "v" };
+static constexpr uint32_t kPumpNumStates = sizeof(kPumpStateKeys) / sizeof(kPumpStateKeys[0]);
+static constexpr uint32_t kPumpStateVersion = kPumpNumStates - 1;
+static constexpr int kPumpSessionVersion = 1;   // bump when a migration is added (and handle the older ones)
 
 class PumpPlugin : public Plugin {
 public:
@@ -129,18 +136,25 @@ protected:
         state.defaultValue = "";
         state.label = kPumpStateKeys[index];
         state.hints = kStateIsOnlyForUI;
+        if (index == kPumpStateVersion) { state.label = "Session version"; state.defaultValue = "0"; state.hints = 0; }
     }
     void setState(const char* key, const char* value) override
     {
+        if (std::strcmp(key, "v") == 0) { fSessionVersion = value ? std::atoi(value) : 0; return; }
         for (uint32_t i = 0; i < kPumpNumStates; ++i)
             if (std::strcmp(key, kPumpStateKeys[i]) == 0) fStates[i] = value;
     }
     String getState(const char* key) const override
     {
+        if (std::strcmp(key, "v") == 0) return String(kPumpSessionVersion);
         for (uint32_t i = 0; i < kPumpNumStates; ++i)
             if (std::strcmp(key, kPumpStateKeys[i]) == 0) return String(fStates[i].c_str());
         return String();
     }
+
+    // The session format the loaded session was saved in (0: none loaded: a session from before versions, or a
+    // fresh instance at its defaults; kPumpSessionVersion: this one).
+    int sessionVersion() const { return fSessionVersion; }
 
     // For subclasses: the current value of a parameter (any thread).
     float pv(uint32_t i) const { return fValues[i].load(std::memory_order_relaxed); }
@@ -177,6 +191,7 @@ protected:
     std::vector<std::atomic<bool>> fChanged;
     std::atomic<bool> fAnyChanged { true };
     std::string fStates[kPumpNumStates];
+    int fSessionVersion = 0;   // 0: no version was loaded (a session from before versions, or a fresh instance)
 };
 
 END_NAMESPACE_DISTRHO

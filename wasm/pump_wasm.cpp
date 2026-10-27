@@ -12,8 +12,10 @@
 // Interface (all exported, "C"):
 //   pump_types()                       number of effect types (9); type ids are kTypeNames' order
 //   pump_nparams(type)                 parameter count (parameter i is params()[i] of that plugin)
-//   pump_stage()                       float[512]: write a new slot's values here before pump_new
-//   pump_new(type, sr)                 a slot (handle >= 0) with the staged values, activated; -1 on failure
+//   pump_stage()                       float[512]: write a new slot's values here before pump_new (values not
+//                                      written are the parameter's default: pump_new clears the stage after use)
+//   pump_new(type, sr)                 a slot (an opaque handle >= 0, wasm/Handles.hpp) with the staged values,
+//                                      activated; -1 on failure. A freed slot's handle is refused from then on
 //   pump_free(h)
 //   pump_values(h)                     float[nparams]: the slot's requested values; write, then pump_commit(h)
 //   pump_commit(h)                     applies the values that changed (clamped as a host's setParameterValue)
@@ -30,6 +32,8 @@
 //   pump_hold(h, kind, a, b, c, d)     momentary listening, never saved: kind 0 = listen band / EQ solo (a = band,
 //                                      -1 off), 1 = audition filter (a = on, b = Hz, c = Q, d = region, CALM),
 //                                      2 = LIMIT: reset loudness
+#include <limits>
+#include "Handles.hpp"
 #include "../plugins/eq/EQEngine.hpp"
 #include "../plugins/comp/CompEngine.hpp"
 #include "../plugins/limit/LimitEngine.hpp"
@@ -55,6 +59,8 @@ namespace pumpwasm {
 using pump::ParamSpec;
 constexpr int kMaxBlock = 4096;   // the most samples one pump_process call takes (Thunder sends 128)
 constexpr int kStage = 512;
+// a number from JavaScript as an int (a float that is NaN or out of range has no int value: casting it is undefined)
+inline int toInt(float a) { return a == a ? (int)std::max(-1.0e6f, std::min(a, 1.0e6f)) : -1; }
 
 enum Type : int { kEQ = 0, kComp, kLimit, kCalm, kTone, kBand, kWide, kHeat, kMeter, kNumTypes };
 
@@ -249,7 +255,7 @@ public:
     const pump::ScopeRing* ring(int k) const override { return k == 0 ? &preRing : k == 1 ? &postRing : nullptr; }
     void hold(int kind, float a, float b, float c, float) override
     {
-        if (kind == 0) soloHold.store((int)a);
+        if (kind == 0) soloHold.store(toInt(a));
         if (kind == 1) { auditionFreq.store(b); auditionQ.store(c); auditionOn.store(a >= 0.5f); }
     }
 private:
@@ -734,7 +740,7 @@ public:
     }
     int numRings() const override { return 2; }
     const pump::ScopeRing* ring(int k) const override { return k == 0 ? &preRing : k == 1 ? &postRing : nullptr; }
-    void hold(int kind, float a, float, float, float) override { if (kind == 0) listenHold.store((int)a); }
+    void hold(int kind, float a, float, float, float) override { if (kind == 0) listenHold.store(toInt(a)); }
 private:
     pump::BypassMixer bypass;
     int lastLatency = -1;
@@ -847,7 +853,7 @@ public:
     }
     int numRings() const override { return 4; }
     const pump::ScopeRing* ring(int k) const override { return k == 0 ? &scopeL : k == 1 ? &scopeR : k == 2 ? &midRing : k == 3 ? &sideRing : nullptr; }
-    void hold(int kind, float a, float, float, float) override { if (kind == 0) listenHold.store((int)a); }
+    void hold(int kind, float a, float, float, float) override { if (kind == 0) listenHold.store(toInt(a)); }
 private:
     pump::BypassMixer bypass;
     int lastLatency = -1;
@@ -959,7 +965,7 @@ public:
     }
     int numRings() const override { return 2; }
     const pump::ScopeRing* ring(int k) const override { return k == 0 ? &preRing : k == 1 ? &postRing : nullptr; }
-    void hold(int kind, float a, float, float, float) override { if (kind == 0) listenHold.store((int)a); }
+    void hold(int kind, float a, float, float, float) override { if (kind == 0) listenHold.store(toInt(a)); }
 private:
     pump::BypassMixer bypass;
     int lastLatency = -1;
@@ -1036,13 +1042,14 @@ inline int telLen(int type)
     }
 }
 
-std::vector<std::unique_ptr<HostBase>> slots;
+pumpwasm_handles::HandleTable<HostBase> slots;
 float stage[kStage];
+const bool stageCleared = [] { for (float& v : stage) v = std::numeric_limits<float>::quiet_NaN(); return true; }();   // unwritten = default
 float io[4][kMaxBlock];
 float tel[512];
 float ringBuf[1 << 15];
 
-inline HostBase* at(int h) { return h >= 0 && h < (int)slots.size() ? slots[(size_t)h].get() : nullptr; }
+inline HostBase* at(int h) { return slots.at(h); }
 
 } // namespace pumpwasm
 
@@ -1053,19 +1060,17 @@ PUMP_API int pump_nparams(int type) { return type >= 0 && type < kNumTypes ? (in
 PUMP_API float* pump_stage() { return stage; }
 PUMP_API int pump_new(int type, double sr)
 {
-    if (type < 0 || type >= kNumTypes || !(sr > 1000.0)) return -1;
+    if (type < 0 || type >= kNumTypes || !(sr > 1000.0 && sr <= 768000.0)) return -1;
     HostBase* s = make(type, sr);
     if (!s) return -1;
     // a host restores the state, then activates
-    for (int i = 0; i < s->numParams && i < kStage; ++i) s->requested[(size_t)i] = stage[i];
+    for (int i = 0; i < s->numParams && i < kStage; ++i) if (stage[i] == stage[i]) s->requested[(size_t)i] = stage[i];
+    for (float& v : stage) v = std::numeric_limits<float>::quiet_NaN();   // unwritten = default, for the next one too
     s->commit();
     s->activate();
-    for (size_t k = 0; k < slots.size(); ++k)
-        if (!slots[k]) { slots[k].reset(s); return (int)k; }
-    slots.emplace_back(s);
-    return (int)slots.size() - 1;
+    return slots.add(s);
 }
-PUMP_API void pump_free(int h) { if (at(h)) slots[(size_t)h].reset(); }
+PUMP_API void pump_free(int h) { slots.remove(h); }
 PUMP_API float* pump_values(int h) { HostBase* s = at(h); return s ? s->requested.data() : nullptr; }
 PUMP_API void pump_commit(int h) { if (HostBase* s = at(h)) s->commit(); }
 PUMP_API float* pump_io(int ch) { return io[ch < 0 ? 0 : (ch > 3 ? 3 : ch)]; }

@@ -104,6 +104,7 @@ public:
         {
             bandE[b] = e0 + (e1 - e0) * b / (kBands - 1);
             bandF[b] = erbToHz(bandE[b]);
+            bandFPub[b].store(bandF[b], std::memory_order_relaxed);
             // Recover never lifts the sub-bass rumble region (fades in from 28 to 42 Hz)
             recWeight[b] = clampv(std::log2(bandF[b] / 28.0) / std::log2(42.0 / 28.0), 0.0, 1.0);
         }
@@ -151,7 +152,7 @@ public:
     }
 
     // ---- UI feeds -----------------------------------------------------------------------------------------------
-    double bandFreq(int b) const { return bandF[b]; }
+    double bandFreq(int b) const { return bandFPub[b].load(std::memory_order_relaxed); }   // any thread
     double bandErb(int b) const { return bandE[b]; }
     float uiGain(int b) const { return uiG[b].load(std::memory_order_relaxed); }       // total gain incl. tilt and auto level, dB
     float uiTarget(int b) const { return uiT[b].load(std::memory_order_relaxed); }     // target level in analyzer dB (pink flat)
@@ -539,6 +540,7 @@ private:
     int N = 2048, K = 1025, H = 512;
     long frames = 0;
     double bandE[kBands] = {}, bandF[kBands] = {}, bandTilt[kBands] = {}, recWeight[kBands] = {};
+    std::atomic<double> bandFPub[kBands] {};   // bandF for the UI
     double st[kBands] = {}, lt[kBands] = {}, stP[kBands] = {}, ltP[kBands] = {}, gS[kBands] = {};
     double makeupDb = 0.0;
     bool tiltDirty = true;

@@ -14,7 +14,7 @@ public:
     {
         sync();
         engine.prepare(getSampleRate(), (int)getBufferSize()); outLimit.prepare(getSampleRate());
-        if (const char* n = std::getenv("PUMP_TEST_NOTES"))   // headless screenshots: notes to hold, after the preset lands
+        if (const char* n = pump::testEnv("PUMP_TEST_NOTES"))   // headless screenshots: notes to hold, after the preset lands
             testNotes = n;
     }
 
@@ -30,7 +30,6 @@ protected:
     const char* getDescription() const override { return PUMP_PLUGIN_ABOUT; }
 
     void activate() override { sync(); engine.prepare(getSampleRate(), (int)getBufferSize()); outLimit.prepare(getSampleRate()); }
-    void sampleRateChanged(double) override { activate(); }
 
     void sync()
     {

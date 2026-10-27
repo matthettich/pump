@@ -1,6 +1,7 @@
 // pump TABLE: plugin (DSP side). Declared in a header so the UI can read its feeds, play its keyboard and see the
 // user tables directly. User wavetables are states holding file paths ("table_a", "table_b").
 #pragma once
+#include "dsp/Retained.hpp"
 #include "PumpPlugin.hpp"
 #include "TableParams.hpp"
 #include "TableEngine.hpp"
@@ -17,7 +18,7 @@ public:
         sync();
         engine.prepare(getSampleRate(), (int)getBufferSize()); outLimit.prepare(getSampleRate());
         // headless screenshots (tools/shot.sh): notes to hold from the start, e.g. PUMP_TEST_NOTES=48,55,60,64
-        if (const char* n = std::getenv("PUMP_TEST_NOTES"))
+        if (const char* n = pump::testEnv("PUMP_TEST_NOTES"))
             for (const char* p = n; *p; ) { const int v = std::atoi(p); if (v > 0 && v < 128) keys.push((uint8_t)v, 100); while (*p && *p != ',') ++p; if (*p) ++p; }
     }
 
@@ -28,7 +29,7 @@ public:
     pump::synth::NoteQueue keys;              // the window's keyboard
     pump::MeterValue outPeak[2];
     // the user table loaded on oscillator o (nullptr = none); its name / error for the window
-    const Table* userTable(int o) const { return userNow[o & 1]; }
+    const Table* userTable(int o) const { return tables[o & 1].peek(); }   // main / UI thread
     std::string userInfo(int o) const { std::lock_guard<std::mutex> g(lock); return o ? infoB : infoA; }
 
 protected:
@@ -56,11 +57,11 @@ protected:
             if (!path[o].empty()) t = loadUserTable(path[o], err);
         }
         catch (...) { t.reset(); err = "couldn't load the file"; }
+        const bool loaded = t != nullptr;
+        const std::string name = loaded ? t->name : "";
+        tables[o].publish(std::move(t));   // the audio thread picks it up at its next block; the old one is freed later
         std::lock_guard<std::mutex> g(lock);
-        if (t) { keep.push_back(t); userNow[o] = t.get(); }   // kept until the plugin goes (the audio thread may still read the old one)
-        else userNow[o] = nullptr;
-        engine.setUserTable(o, userNow[o]);
-        (o ? infoB : infoA) = path[o].empty() ? "" : (t ? t->name : "couldn't load: " + err);
+        (o ? infoB : infoA) = path[o].empty() ? "" : (loaded ? name : "couldn't load: " + err);
     }
     String getState(const char* key) const override
     {
@@ -70,7 +71,6 @@ protected:
     }
 
     void activate() override { sync(); engine.prepare(getSampleRate(), (int)getBufferSize()); outLimit.prepare(getSampleRate()); }
-    void sampleRateChanged(double) override { activate(); }
 
     void sync()
     {
@@ -108,6 +108,7 @@ protected:
             sync();
         }
         engine.setTransport(transport());
+        for (int o = 0; o < 2; ++o) engine.setUserTable(o, tables[o].acquire());
         keys.drain([&](uint8_t note, uint8_t vel) { engine.uiNote(note, vel); });
         uint32_t done = 0, ev = 0;
         while (done < frames)
@@ -137,8 +138,7 @@ private:
     pump::synth::Midi midi[kMaxMidi] = {};
     std::string path[2];
     mutable std::mutex lock;
-    std::vector<std::shared_ptr<Table>> keep;
-    const Table* userNow[2] = { nullptr, nullptr };
+    pump::Retained<Table> tables[2];   // the loaded wavetables (freed once the audio thread has moved on)
     std::string infoA, infoB;
 
     DISTRHO_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PluginTable)

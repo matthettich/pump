@@ -1,5 +1,6 @@
 // pump SING: plugin (DSP side). Declared in a header so the UI can read its feeds and play its keyboard directly.
 #pragma once
+#include "dsp/Retained.hpp"
 #include "PumpPlugin.hpp"
 #include "SingParams.hpp"
 #include "SingEngine.hpp"
@@ -15,10 +16,10 @@ public:
     {
         sync();
         engine.prepare(getSampleRate(), (int)getBufferSize()); outLimit.prepare(getSampleRate());
-        if (const char* t = std::getenv("PUMP_TEST_LYRICS")) lyrics = t;
+        if (const char* t = pump::testEnv("PUMP_TEST_LYRICS")) lyrics = t;
         engine.setLyrics(lyrics);
-        if (const char* n = std::getenv("PUMP_TEST_NOTES")) testNotes = n;   // headless screenshots: notes to hold (after 0.5 s)
-        if (const char* b = std::getenv("PUMP_TEST_BANK")) setState("voicebank", b);        // headless screenshots: a voicebank
+        if (const char* n = pump::testEnv("PUMP_TEST_NOTES")) testNotes = n;   // headless screenshots: notes to hold (after 0.5 s)
+        if (const char* b = pump::testEnv("PUMP_TEST_BANK")) setState("voicebank", b);        // headless screenshots: a voicebank
     }
 
     // gain staging (the volume pass, 2026-10-26): VOLUME 0 dB is a typical voice at about -20 dBFS RMS
@@ -29,7 +30,7 @@ public:
     pump::MeterValue outPeak[2];
     std::atomic<bool> restartRequest { false };
     // the voicebank loaded (nullptr: none) and what to say about it
-    const Bank* bankNow() const { return bankPtr.load(std::memory_order_acquire); }
+    const Bank* bankNow() const { return banks.peek(); }   // main / UI thread
     std::string bankInfo() const { std::lock_guard<std::mutex> g(bankLock); return bankMsg; }
 
 protected:
@@ -63,9 +64,8 @@ protected:
                 }
                 catch (...) { b.reset(); msg = "couldn't load the voicebank"; }
             }
+            banks.publish(std::move(b));   // the audio thread picks it up at its next block; the old one is freed later
             std::lock_guard<std::mutex> g(bankLock);
-            if (b) keepBanks.push_back(b);
-            bankPtr.store(b.get(), std::memory_order_release);
             bankMsg = msg;
             return;
         }
@@ -79,7 +79,6 @@ protected:
     }
 
     void activate() override { sync(); engine.prepare(getSampleRate(), (int)getBufferSize()); outLimit.prepare(getSampleRate()); }
-    void sampleRateChanged(double) override { activate(); }
 
     void sync()
     {
@@ -104,7 +103,7 @@ protected:
             sync();
         }
         engine.setTransport(transport().playing);
-        engine.setBank(bankPtr.load(std::memory_order_acquire));
+        engine.setBank(banks.acquire());
         if (restartRequest.exchange(false)) engine.restart();
         if (!testNotes.empty() && (testWait += frames) > getSampleRate() * 0.5)
         {
@@ -140,8 +139,7 @@ protected:
 private:
     pump::synth::Midi midi[512 + 64] = {}, uiKeys[64] = {};
     std::string lyrics = kDefaultLyrics, testNotes, bankPath, bankMsg;
-    std::atomic<const Bank*> bankPtr { nullptr };
-    std::vector<std::shared_ptr<Bank>> keepBanks;
+    pump::Retained<Bank> banks;   // the loaded voicebank (freed once the audio thread has moved on)
     mutable std::mutex bankLock;
     double testWait = 0.0;
 

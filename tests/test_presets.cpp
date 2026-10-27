@@ -2,6 +2,12 @@
 // preset sets a momentary/output parameter, names are unique within a plugin, "Default" comes first, and the
 // CHAINS presets carry the same names in every mastering plugin that has them (so a chain can be loaded plugin by
 // plugin; the creative effects have none).
+//
+// It also guards saved sessions. Hosts store automation and parameter values by parameter INDEX (VST3 and CLAP ids
+// are the index), so an existing index must never change meaning: tests/data/param_ids.txt records every plugin's
+// index -> symbol, and a parameter may only be added at the end. After adding parameters (at the end), run
+//   PUMP_WRITE_PARAM_IDS=1 ./build/tests/test_presets
+// to append them to the file, and commit it.
 #include "../plugins/eq/EQParams.hpp"
 #include "../plugins/comp/CompParams.hpp"
 #include "../plugins/limit/LimitParams.hpp"
@@ -45,9 +51,13 @@
 #include "../plugins/strike/StrikeParams.hpp"
 #include "../plugins/freeze/FreezeParams.hpp"
 #include "../plugins/tract/TractParams.hpp"
+#include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
+#include <fstream>
 #include <map>
+#include <sstream>
 #include <set>
 #include <string>
 #include <vector>
@@ -61,7 +71,71 @@ struct Plugin {
     const char* name;
     const std::vector<ParamSpec>& specs;
     const std::vector<Preset>& presets;
+    int numParams;   // the plugin's kNumParams (the size its code indexes with)
 };
+
+// the table matches the enum the code indexes with, symbols are unique, choice lists are sane
+static void checkTable(const Plugin& p)
+{
+    if ((int)p.specs.size() != p.numParams) FAIL("%s: %zu parameters in the table, kNumParams is %d", p.name, p.specs.size(), p.numParams);
+    std::set<std::string> syms;
+    for (size_t i = 0; i < p.specs.size(); ++i)
+    {
+        const ParamSpec& s = p.specs[i];
+        if (!syms.insert(s.symbol).second) FAIL("%s: symbol \"%s\" is used twice", p.name, s.symbol);
+        if (!(s.min <= s.def && s.def <= s.max)) FAIL("%s: %s default %g is outside %g..%g", p.name, s.symbol, s.def, s.min, s.max);
+        if (s.scale == PScale::Log && !(s.min > 0.0f)) FAIL("%s: %s has a log scale from %g (must start above 0)", p.name, s.symbol, s.min);
+        if (s.choices && (s.numChoices() < 1 || s.numChoices() > 255 || s.min != std::floor(s.min)))
+            FAIL("%s: %s has %d choices from %g", p.name, s.symbol, s.numChoices(), s.min);
+        if (s.choices) for (int c = 0; c < s.numChoices(); ++c) if (!s.choices[c]) FAIL("%s: %s choice %d has no name", p.name, s.symbol, c);
+    }
+}
+
+// every index recorded in tests/data/param_ids.txt still has the symbol it had; new parameters only at the end
+static void checkIds(const Plugin* plugins, size_t count)
+{
+    const char* path = "tests/data/param_ids.txt";
+    std::map<std::string, std::vector<std::string>> recorded;
+    {
+        std::ifstream in(path);
+        std::string line;
+        while (std::getline(in, line))
+        {
+            if (line.empty() || line[0] == '#') continue;
+            std::istringstream ls(line);
+            std::string plug, sym; size_t idx = 0;
+            if (!(ls >> plug >> idx >> sym)) { FAIL("%s: bad line \"%s\"", path, line.c_str()); continue; }
+            auto& v = recorded[plug];
+            if (idx != v.size()) { FAIL("%s: %s index %zu out of order", path, plug.c_str(), idx); continue; }
+            v.push_back(sym);
+        }
+    }
+    const bool write = std::getenv("PUMP_WRITE_PARAM_IDS") != nullptr, fresh = recorded.empty();
+    std::string appended;
+    int added = 0;
+    for (size_t k = 0; k < count; ++k)
+    {
+        const Plugin& p = plugins[k];
+        const auto& rec = recorded[p.name];
+        for (size_t i = 0; i < rec.size(); ++i)
+        {
+            if (i >= p.specs.size()) { FAIL("%s: parameter %zu (\"%s\") was removed: hosts' saved sessions use its index", p.name, i, rec[i].c_str()); break; }
+            if (rec[i] != p.specs[i].symbol)
+                FAIL("%s: parameter %zu is now \"%s\" but sessions saved it as \"%s\" (add new parameters at the end only)", p.name, i, p.specs[i].symbol, rec[i].c_str());
+        }
+        for (size_t i = rec.size(); i < p.specs.size(); ++i)
+        {
+            appended += std::string(p.name) + " " + std::to_string(i) + " " + p.specs[i].symbol + "\n";
+            ++added;
+        }
+    }
+    if (added == 0) { std::printf("  parameter ids: every plugin matches %s\n", path); return; }
+    if (!write) { FAIL("%d parameters are not in %s yet (run with PUMP_WRITE_PARAM_IDS=1 to record them)", added, path); return; }
+    std::ofstream out(path, std::ios::app);
+    if (fresh) out << "# plugin index symbol. Hosts save parameters by index: never change or remove a line, only append (tests/test_presets.cpp)\n";
+    out << appended;
+    std::printf("  parameter ids: recorded %d new parameters in %s\n", added, path);
+}
 
 static std::vector<std::string> checkPlugin(const Plugin& p, std::map<std::string, int>& sectionCounts)
 {
@@ -112,53 +186,54 @@ int main()
 {
     std::printf("== preset tables\n");
     const Plugin plugins[] = {
-        { "EQ", eq::params(), eq::presets() },
-        { "COMP", comp::params(), comp::presets() },
-        { "LIMIT", limit::params(), limit::presets() },
-        { "CALM", calm::params(), calm::presets() },
-        { "TONE", tone::params(), tone::presets() },
-        { "BAND", band::params(), band::presets() },
-        { "WIDE", wide::params(), wide::presets() },
-        { "HEAT", heat::params(), heat::presets() },
-        { "METER", meter::params(), meter::presets() },
-        { "TUBE", tube::params(), tube::presets() },
-        { "SNAP", snap::params(), snap::presets() },
-        { "GRAIN", grain::params(), grain::presets() },
-        { "GATE", gate::params(), gate::presets() },
-        { "ECHO", echo::params(), echo::presets() },
-        { "VERB", verb::params(), verb::presets() },
-        { "SPRING", spring::params(), spring::presets() },
-        { "VOX", vox::params(), vox::presets() },
-        { "TUNE", tune::params(), tune::presets() },
-        { "CRUSH", crush::params(), crush::presets() },
-        { "SWIRL", swirl::params(), swirl::presets() },
-        { "STUTTER", stutter::params(), stutter::presets() },
-        { "CHOP", chop::params(), chop::presets() },
-        { "AMP", amp::params(), amp::presets() },
-        { "TWANG", twang::params(), twang::presets() },
-        { "TABLE", table::params(), table::presets() },
-        { "MONO", mono::params(), mono::presets() },
-        { "POLY", poly::params(), poly::presets() },
-        { "WOB", wob::params(), wob::presets() },
-        { "KIT", kit::params(), kit::presets() },
-        { "MACHINE", machine::params(), machine::presets() },
-        { "SING", sing::params(), sing::presets() },
-        { "COIL", coil::params(), coil::presets() },
-        { "PHASE", phase::params(), phase::presets() },
-        { "LIFE", life::params(), life::presets() },
-        { "BOING", boing::params(), boing::presets() },
-        { "PRISM", prism::params(), prism::presets() },
-        { "MODAL", modal::params(), modal::presets() },
-        { "ORBIT", orbit::params(), orbit::presets() },
-        { "FOLD", fold::params(), fold::presets() },
-        { "VECTOR", vector::params(), vector::presets() },
-        { "STRIKE", strike::params(), strike::presets() },
-        { "FREEZE", freeze::params(), freeze::presets() },
-        { "TRACT", tract::params(), tract::presets() },
+        { "EQ", eq::params(), eq::presets(), eq::kNumParams },
+        { "COMP", comp::params(), comp::presets(), comp::kNumParams },
+        { "LIMIT", limit::params(), limit::presets(), limit::kNumParams },
+        { "CALM", calm::params(), calm::presets(), calm::kNumParams },
+        { "TONE", tone::params(), tone::presets(), tone::kNumParams },
+        { "BAND", band::params(), band::presets(), band::kNumParams },
+        { "WIDE", wide::params(), wide::presets(), wide::kNumParams },
+        { "HEAT", heat::params(), heat::presets(), heat::kNumParams },
+        { "METER", meter::params(), meter::presets(), meter::kNumParams },
+        { "TUBE", tube::params(), tube::presets(), tube::kNumParams },
+        { "SNAP", snap::params(), snap::presets(), snap::kNumParams },
+        { "GRAIN", grain::params(), grain::presets(), grain::kNumParams },
+        { "GATE", gate::params(), gate::presets(), gate::kNumParams },
+        { "ECHO", echo::params(), echo::presets(), echo::kNumParams },
+        { "VERB", verb::params(), verb::presets(), verb::kNumParams },
+        { "SPRING", spring::params(), spring::presets(), spring::kNumParams },
+        { "VOX", vox::params(), vox::presets(), vox::kNumParams },
+        { "TUNE", tune::params(), tune::presets(), tune::kNumParams },
+        { "CRUSH", crush::params(), crush::presets(), crush::kNumParams },
+        { "SWIRL", swirl::params(), swirl::presets(), swirl::kNumParams },
+        { "STUTTER", stutter::params(), stutter::presets(), stutter::kNumParams },
+        { "CHOP", chop::params(), chop::presets(), chop::kNumParams },
+        { "AMP", amp::params(), amp::presets(), amp::kNumParams },
+        { "TWANG", twang::params(), twang::presets(), twang::kNumParams },
+        { "TABLE", table::params(), table::presets(), table::kNumParams },
+        { "MONO", mono::params(), mono::presets(), mono::kNumParams },
+        { "POLY", poly::params(), poly::presets(), poly::kNumParams },
+        { "WOB", wob::params(), wob::presets(), wob::kNumParams },
+        { "KIT", kit::params(), kit::presets(), kit::kNumParams },
+        { "MACHINE", machine::params(), machine::presets(), machine::kNumParams },
+        { "SING", sing::params(), sing::presets(), sing::kNumParams },
+        { "COIL", coil::params(), coil::presets(), coil::kNumParams },
+        { "PHASE", phase::params(), phase::presets(), phase::kNumParams },
+        { "LIFE", life::params(), life::presets(), life::kNumParams },
+        { "BOING", boing::params(), boing::presets(), boing::kNumParams },
+        { "PRISM", prism::params(), prism::presets(), prism::kNumParams },
+        { "MODAL", modal::params(), modal::presets(), modal::kNumParams },
+        { "ORBIT", orbit::params(), orbit::presets(), orbit::kNumParams },
+        { "FOLD", fold::params(), fold::presets(), fold::kNumParams },
+        { "VECTOR", vector::params(), vector::presets(), vector::kNumParams },
+        { "STRIKE", strike::params(), strike::presets(), strike::kNumParams },
+        { "FREEZE", freeze::params(), freeze::presets(), freeze::kNumParams },
+        { "TRACT", tract::params(), tract::presets(), tract::kNumParams },
     };
     std::map<std::string, int> sections;
     std::vector<std::vector<std::string>> chains;
-    for (const Plugin& p : plugins) chains.push_back(checkPlugin(p, sections));
+    for (const Plugin& p : plugins) { checkTable(p); chains.push_back(checkPlugin(p, sections)); }
+    checkIds(plugins, sizeof plugins / sizeof plugins[0]);
 
     // every plugin that has chains has the same ones, in the same order
     std::vector<std::string> ref;

@@ -44,7 +44,6 @@ protected:
         setLatency((uint32_t)engine.latency());
         bypass.setLatency(engine.latency());
     }
-    void sampleRateChanged(double) override { activate(); }
 
     void sync()
     {

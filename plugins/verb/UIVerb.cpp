@@ -207,13 +207,7 @@ protected:
     {
         updateControls();
         if (!plug) return;
-        for (int c = 0; c < 2; ++c)
-        {
-            const float pk = pump::gainToDbF(plug->outPeak[c].exchange(0.0f));
-            lvl[c] = std::max(pk, lvl[c] - 26.0f * dt);
-            if (pk >= hold[c]) { hold[c] = pk; holdT[c] = 1.5f; }
-            else if ((holdT[c] -= dt) <= 0.0f) hold[c] = std::max(pk, hold[c] - 18.0f * dt);
-        }
+        outMeter.tick(plug->outPeak, dt);
         // the live envelope: a hit on the input (a jump of 9 dB over its recent level) restarts the capture of the
         // wet level, so each hit's tail is drawn over the schematic from the dry hit on
         const uint32_t end = std::min(plug->inLevel.smoothPosition(), plug->wetLevel.position());
@@ -241,8 +235,7 @@ protected:
         }
         drawDecay();
         drawEnvelope();
-        drawLevelMeter(meterL, lvl[0], hold[0], -48.0f, 6.0f);
-        drawLevelMeter(meterR, lvl[1], hold[1], -48.0f, 6.0f);
+        drawOutMeter(outMeter, meterL, meterR);
         textAt(meterL.r() + 1, decayR.b() - 7, "OUT", kLabel, 9.0f, theme.ink2, ALIGN_CENTER | ALIGN_MIDDLE, 0.8f);
 
         strokeRect(spacePanel, theme.dim, 1.0f);
@@ -718,7 +711,7 @@ private:
     Segmented* famSeg[kNumFamilies] = {};
     const char* famCaption[kNumFamilies] = {};
     Rect decayR, envR, meterL, meterR, spacePanel, dampPanel, charPanel, outPanel, readout;
-    float lvl[2] = { -120.0f, -120.0f }, hold[2] = { -120.0f, -120.0f }, holdT[2] = { 0.0f, 0.0f };
+    OutMeter outMeter;
     // live envelope capture
     uint32_t livePos = 0;
     float capDb[kCap] = {}, inAvg = -90.0f, sinceHit = 100.0f, liveAge = 100.0f, livePeakDb = -200.0f;

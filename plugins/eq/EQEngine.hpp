@@ -147,9 +147,10 @@ public:
         startWorker();
     }
     int latency() const { return phaseMode == 1 ? linLatency : 0; }
+    int latencyForUI() const { return latencyPub.load(std::memory_order_relaxed); }   // any thread
 
-    // dB offsets for the UI
-    double dynOffset(int i) const { return bands[i].offset; }
+    // dB offsets for the UI (any thread: published once per block)
+    double dynOffset(int i) const { return (i >= 0 && i < kBands) ? offsetPub[i].load(std::memory_order_relaxed) : 0.0; }
     double autoGainValue() const { return autoGainDb; }
 
     // Effective static gain of a band (gain scale applied)
@@ -175,6 +176,9 @@ public:
             const float g = (float)outSmooth.next();
             L[i] *= g; R[i] *= g;
         }
+        // for the UI
+        for (int b = 0; b < kBands; ++b) offsetPub[b].store((float)bands[b].offset, std::memory_order_relaxed);
+        latencyPub.store(latency(), std::memory_order_relaxed);
     }
 
     // Combined static response (dB) at f, as heard (zero latency: digital; linear: analog). For displays.
@@ -699,6 +703,8 @@ private:
 
     // phase mode: what's running (audio thread) vs. what was asked for
     int phaseMode = 0, linLatency = 0, convN = 0;
+    std::atomic<float> offsetPub[kNumBands] {};
+    std::atomic<int> latencyPub { 0 };
     int wantMode = 0, wantQuality = 1, wantGen = 0, curGen = 0;
     bool linDirty = true;
     std::shared_ptr<StereoConvolver> conv;

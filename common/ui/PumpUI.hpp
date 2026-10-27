@@ -286,11 +286,14 @@ public:
         fGestureOpen.assign(numParams, 0);
         for (uint32_t i = 0; i < numParams; ++i) fValues[i] = specs[i].def;
         const double sf = getScaleFactor();
+        fScaleSeen = sf;
         if (sf != 1.0) setSize((uint)(W * sf), (uint)(H * sf));
         setGeometryConstraints((uint)(W * 0.6 * sf), (uint)(H * 0.6 * sf), true, false);
         fFontLabel = createFontFromMemory("label", pump::fonts::kFontLabel, pump::fonts::kFontLabelSize, false);
         fFontMono = createFontFromMemory("mono", pump::fonts::kFontMono, pump::fonts::kFontMonoSize, false);
         fFontBold = createFontFromMemory("bold", pump::fonts::kFontMonoBold, pump::fonts::kFontMonoBoldSize, false);
+        if (fFontLabel < 0 || fFontMono < 0 || fFontBold < 0)   // text would silently not draw: at least say why
+            d_stderr2("pump: an embedded font could not be loaded (label %d, mono %d, bold %d)", (int)fFontLabel, (int)fFontMono, (int)fFontBold);
         fDark = readGlobalTheme();
         theme.build(fAccent, fDark);
         buildHeader();
@@ -528,6 +531,23 @@ public:
     }
 
     // Vertical level meter (dBFS), with a held peak line and a scale on one side.
+    // The output meter every plugin shows (two channels): the level falls 26 dB/s, the peak holds 1.5 s, then falls
+    // 18 dB/s. tick() takes the peaks the DSP published since the last frame.
+    struct OutMeter {
+        float lvl[2] = { -120.0f, -120.0f }, hold[2] = { -120.0f, -120.0f }, holdT[2] = { 0.0f, 0.0f };
+        void tickDb(int c, float pk, float dt)
+        {
+            lvl[c] = std::max(pk, lvl[c] - 26.0f * dt);
+            if (pk >= hold[c]) { hold[c] = pk; holdT[c] = 1.5f; }
+            else if ((holdT[c] -= dt) <= 0.0f) hold[c] = std::max(pk, hold[c] - 18.0f * dt);
+        }
+        void tick(pump::MeterValue* peaks, float dt) { for (int c = 0; c < 2; ++c) tickDb(c, pump::gainToDbF(peaks[c].exchange(0.0f)), dt); }
+    };
+    void drawOutMeter(const OutMeter& m, const Rect& l, const Rect& r, float dbMin = -48.0f, float dbMax = 6.0f)
+    {
+        drawLevelMeter(l, m.lvl[0], m.hold[0], dbMin, dbMax);
+        drawLevelMeter(r, m.lvl[1], m.hold[1], dbMin, dbMax);
+    }
     void drawLevelMeter(const Rect& r, float levelDb, float peakDb, float dbMin = -60.0f, float dbMax = 6.0f)
     {
         fillRect(r, theme.panel2);
@@ -565,6 +585,9 @@ public:
     virtual std::string footerInfo() { return ""; }
     virtual bool keyPress(uint /*key*/, uint /*mod*/) { return false; }
     virtual bool keyRelease(uint /*key*/, uint /*mod*/) { return false; }
+    // The window lost focus (Alt-Tab, a click in another window): key releases won't arrive, so let go of anything
+    // held by a key (pads, Alt overlays). Mouse drags are finished by the base class.
+    virtual void releaseAllHeld() {}
     // Plugin-specific lines for the "?" key overlay: { keys, what they do }
     virtual std::vector<std::pair<std::string, std::string>> helpLines() { return {}; }
     // UI-only settings saved with the session ("key=value;..." in the "ui" state)
@@ -707,6 +730,18 @@ protected:
         repaint();
     }
     void sampleRateChanged(double newRate) override { onSampleRateChanged(newRate); repaint(); }
+    // the window moved to a screen with another scale (or the host changed it): keep the size and the minimum in step
+    void uiScaleFactorChanged(double sf) override
+    {
+        UI::uiScaleFactorChanged(sf);
+        if (!(sf > 0.0)) return;
+        const double old = fScaleSeen;
+        fScaleSeen = sf;
+        setGeometryConstraints((uint)(W * 0.6 * sf), (uint)(H * 0.6 * sf), true, false);
+        if (old > 0.0 && std::fabs(sf - old) > 1e-6)
+            setSize((uint)std::lround(getWidth() * sf / old), (uint)std::lround(getHeight() * sf / old));
+        repaint();
+    }
     void uiIdle() override
     {
         // the frame clock drives the window on Windows; the host's idle only stands in when it falls silent
@@ -735,9 +770,9 @@ protected:
         {
             layoutHeader(); layout(); fLaidOut = true;
             // test hooks for headless screenshots (unused in normal runs)
-            if (const char* tp = std::getenv("PUMP_TEST_PRESET")) applyPreset(std::atoi(tp));
-            if (const char* td = std::getenv("PUMP_TEST_DARK")) if (td[0] == '1') { fDark = true; theme.build(fAccent, true); }
-            if (const char* tw = std::getenv("PUMP_TEST_WIDTH")) { const int w = std::atoi(tw); if (w > 200) setSize((uint)w, (uint)(w * H / W)); }
+            if (const char* tp = pump::testEnv("PUMP_TEST_PRESET")) applyPreset(std::atoi(tp));
+            if (const char* td = pump::testEnv("PUMP_TEST_DARK")) if (td[0] == '1') { fDark = true; theme.build(fAccent, true); }
+            if (const char* tw = pump::testEnv("PUMP_TEST_WIDTH")) { const int w = std::atoi(tw); if (w > 200) setSize((uint)w, (uint)(w * H / W)); }
             fFrameClock = pump::winFrameClockStart(getWindow().getNativeWindowHandle(), &PumpUI::frameFromClock, this);
         }
         drawHeader();
@@ -855,7 +890,7 @@ protected:
     void uiFocus(bool focus, DGL_NAMESPACE::CrossingMode mode) override
     {
         UI::uiFocus(focus, mode);
-        if (!focus) { finishPointer(fLastClickX, fLastClickY); repaint(); }
+        if (!focus) { finishPointer(fLastClickX, fLastClickY); releaseAllHeld(); repaint(); }
     }
 
     bool onMotion(const MotionEvent& ev) override
@@ -925,8 +960,9 @@ protected:
         if (!fEdit.active)
         {
             const uint k = ev.key >= 'A' && ev.key <= 'Z' ? ev.key + 32 : ev.key;
-            if (fMenu.open || fHelpOpen)   // a popup is up: keys don't reach the plugin (Esc / ? close it)
+            if (fMenu.open || fHelpOpen)   // a popup is up: key presses don't reach the plugin (Esc / ? close it)
             {
+                if (!ev.press) { keyRelease(ev.key, ev.mod); return true; }   // releases do: a key held before stays held otherwise
                 if (ev.press && (ev.key == kKeyEscape || (fHelpOpen && (ev.key == '?' || k == '/' || ev.key == kKeyF1))))
                 { fHelpOpen = false; fMenu.open = false; repaint(); }
                 return true;
@@ -938,7 +974,7 @@ protected:
             if (ev.key == '?' || k == '/' || ev.key == kKeyF1) { fHelpOpen = !fHelpOpen; repaint(); return true; }
             return keyPress(ev.key, ev.mod);
         }
-        if (!ev.press) return false;
+        if (!ev.press) { keyRelease(ev.key, ev.mod); return true; }   // typing: a key held before still lets go
         if (cmdKey(ev.mod) && (ev.key == 'v' || ev.key == 'V'))   // paste (line breaks become spaces)
         {
             size_t n = 0;
@@ -1610,6 +1646,7 @@ protected:
     std::vector<float> fValues;
     std::vector<double> fLocalSet;   // when this UI last changed each parameter (seconds)
     std::vector<int> fGestureOpen;   // open host gestures per parameter (openGesture / closeGesture)
+    double fScaleSeen = 1.0;         // the scale factor the window's size was last set for
     std::vector<std::unique_ptr<Control>> fControls;
     Control* fActive = nullptr;
     bool fBodyActive = false;

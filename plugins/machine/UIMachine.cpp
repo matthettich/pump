@@ -119,8 +119,7 @@ protected:
         for (int c = 0; c < 2; ++c)
         {
             const float pk = pump::gainToDbF(plug->outPeak[c].exchange(0.0f));
-            lvl[c] = std::max(pk, lvl[c] - 26.0f * dt);
-            if (pk >= hold[c]) { hold[c] = pk; holdT[c] = 1.5f; } else if ((holdT[c] -= dt) <= 0.0f) hold[c] = std::max(pk, hold[c] - 18.0f * dt);
+            outMeter.tickDb(c, pk, dt);
         }
         for (int s = 0; s < kSounds; ++s)
         {
@@ -143,8 +142,7 @@ protected:
     {
         for (int s = 0; s < kSounds; ++s) drawPad(s);
         drawScope();
-        drawLevelMeter(meterL, lvl[0], hold[0], -48.0f, 6.0f);
-        drawLevelMeter(meterR, lvl[1], hold[1], -48.0f, 6.0f);
+        drawOutMeter(outMeter, meterL, meterR);
         const int v = voiceOfSound(sel);
         char b[96];
         std::snprintf(b, sizeof b, "%s · THE MACHINE'S OWN KNOBS (0-127)", kVoiceNames[v]);
@@ -271,7 +269,7 @@ private:
     float glow[kSounds] = {}, colLo[kCols] = {}, colHi[kCols] = {}, scale = 1.0f;
     uint32_t colW = 0, scopeRead = 0;
     bool scopeInit = false;
-    float lvl[2] = { -120.0f, -120.0f }, hold[2] = { -120.0f, -120.0f }, holdT[2] = { 0.0f, 0.0f };
+    OutMeter outMeter;
 
     DISTRHO_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(UIMachine)
 };

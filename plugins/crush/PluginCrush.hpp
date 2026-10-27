@@ -21,7 +21,7 @@ public:
 
     // feeds for the UI: input and output (mono sums; the output lags by the latency) for the scope and the
     // spectrum, and the output peaks
-    pump::ScopeRing inRing { 1 << 15 }, outRing { 1 << 15 };
+    pump::ScopeRing inRing { pump::kAnalyzerRing }, outRing { pump::kAnalyzerRing };
     pump::MeterValue outPeak[2];
     Engine engine;
     int latencyNow() const { return engine.latency(); }
@@ -43,7 +43,6 @@ protected:
         setLatency((uint32_t)lastLatency);
         bypass.setLatency(lastLatency);
     }
-    void sampleRateChanged(double) override { activate(); }
 
     void sync()
     {

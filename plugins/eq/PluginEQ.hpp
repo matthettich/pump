@@ -19,7 +19,7 @@ public:
     }
 
     // feeds for the UI (analyzers)
-    pump::ScopeRing preRing { 1 << 15 }, postRing { 1 << 15 };
+    pump::ScopeRing preRing { pump::kAnalyzerRing }, postRing { pump::kAnalyzerRing };
     pump::MeterValue outPeak[2];   // max-hold since the UI last read it
     Engine engine;
 
@@ -30,7 +30,7 @@ public:
     std::atomic<float> auditionFreq { 1000.0f }, auditionQ { 2.0f };
 
     double dynOffset(int band) const { return engine.dynOffset(band); }
-    int latencyNow() const { return engine.latency(); }
+    int latencyNow() const { return engine.latencyForUI(); }
 
 protected:
     const char* getLabel() const override { return "pump_eq"; }
@@ -48,7 +48,6 @@ protected:
         setLatency((uint32_t)lastLatency);
         bypass.setLatency(lastLatency);
     }
-    void sampleRateChanged(double) override { activate(); }
 
     void syncAll()
     {

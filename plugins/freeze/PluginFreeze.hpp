@@ -2,6 +2,7 @@
 // keyboard directly. A loaded sound is a state holding a file path ("file"); it is read and cut into spectra in
 // setState (not the audio thread) and kept until the plugin goes (the audio thread may still read an old one).
 #pragma once
+#include "dsp/Retained.hpp"
 #include "PumpPlugin.hpp"
 #include "FreezeParams.hpp"
 #include "FreezeEngine.hpp"
@@ -18,10 +19,10 @@ public:
     PluginFreeze() : PumpPlugin(params().data(), kNumParams, &presets(), 1)
     {
         Builtins::get().retain();
-        if (std::getenv("PUMP_TEST_NOTES") || std::getenv("PUMP_RENDER_DIR") || std::getenv("PUMP_WAIT_SOURCES")) { Builtins::get().start(); Builtins::get().waitReady(); }
+        if (pump::testEnv("PUMP_TEST_NOTES") || pump::testEnv("PUMP_RENDER_DIR") || pump::testEnv("PUMP_WAIT_SOURCES")) { Builtins::get().start(); Builtins::get().waitReady(); }
         sync();
         engine.prepare(getSampleRate(), (int)getBufferSize()); outLimit.prepare(getSampleRate());
-        if (const char* n = std::getenv("PUMP_TEST_NOTES")) testNotes = n;
+        if (const char* n = pump::testEnv("PUMP_TEST_NOTES")) testNotes = n;
     }
 
     // gain staging (the volume pass): VOLUME 0 dB is a typical voice at about -20 dBFS RMS
@@ -70,9 +71,8 @@ protected:
             }
         }
         catch (...) { s.reset(); inf = "couldn't load the file"; }
+        files.publish(std::move(s));   // the audio thread picks it up at its next block; the old one is freed later
         std::lock_guard<std::mutex> g(lock);
-        if (s) keep.push_back(s);
-        file.store(s.get(), std::memory_order_release);
         info = inf;
     }
     String getState(const char* key) const override
@@ -83,7 +83,6 @@ protected:
 
     // the built-in sounds are made when a plugin is first activated (not when a host only creates one to read it)
     void activate() override { Builtins::get().start(); sync(); engine.prepare(getSampleRate(), (int)getBufferSize()); outLimit.prepare(getSampleRate()); }
-    void sampleRateChanged(double) override { activate(); }
 
     void sync()
     {
@@ -96,12 +95,14 @@ protected:
         s.volumeDb = pv(kVolume) + kTrimDb;
         engine.setSettings(s);
         // a file's root is ROOT (its spectra keep the note they were cut with; ROOT is read again here)
-        if (const Spectra* f = file.load(std::memory_order_acquire)) const_cast<Spectra*>(f)->root = s.root;
+        rootNow = s.root;
     }
     void pickSource()
     {
         const int a = (int)pv(kSource);
-        const Spectra* S = a == 0 ? file.load(std::memory_order_acquire) : Builtins::get().source(a);
+        const Spectra* f = files.acquire();   // every block: acknowledges the file the audio thread now uses
+        if (f && f->root != rootNow) const_cast<Spectra*>(f)->root = rootNow;   // only the audio thread reads root
+        const Spectra* S = a == 0 ? f : Builtins::get().source(a);
         now.store(S, std::memory_order_release);
         engine.setSource(S);
     }
@@ -146,8 +147,9 @@ protected:
 private:
     pump::synth::Midi midi[512] = {};
     std::string path, info, testNotes;
-    std::atomic<const Spectra*> file { nullptr }, now { nullptr };
-    std::vector<std::shared_ptr<Spectra>> keep;
+    pump::Retained<Spectra> files;   // the loaded sound (freed once the audio thread has moved on)
+    std::atomic<const Spectra*> now { nullptr };
+    int rootNow = 60;   // ROOT, for a loaded file (audio thread)
     mutable std::mutex lock;
     uint64_t testClock = 0;
 

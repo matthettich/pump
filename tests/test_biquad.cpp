@@ -5,6 +5,8 @@
 
 using namespace pump;
 
+static int fails = 0;
+
 // BLT of an analog section with prewarping at its own centre (what RBJ cookbook filters do).
 static BiquadCoeffs bilinear(const AnalogSection& a, double wc)
 {
@@ -86,8 +88,13 @@ int main()
                 if (e.matched > wm) { wm = e.matched; fm = f; }
                 wb = std::max(wb, e.blt);
             }
-            printf("  %-18s %7.3f dB (at %5.0f Hz)   | %7.3f dB\n", c.name, wm, fm, wb);
+            // the matched design is never meaningfully worse than the bilinear one, and stays within 4.5 dB of the
+            // analog curve all the way to 0.97 Nyquist (today's worst: under 4 dB, a steep cut near the top)
+            const bool ok = wm <= wb + 0.1 && wm < 4.5;
+            if (!ok) ++fails;
+            printf("  %s%-18s %7.3f dB (at %5.0f Hz)   | %7.3f dB\n", ok ? "" : "FAIL: ", c.name, wm, fm, wb);
         }
     }
-    return 0;
+    printf(fails ? "\n%d FAILED\n" : "\nall passed\n", fails);
+    return fails ? 1 : 0;
 }

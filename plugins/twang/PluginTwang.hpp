@@ -35,7 +35,6 @@ protected:
         bypass.prepare(getSampleRate(), 1 << 15, (int)std::max<uint32_t>(getBufferSize(), 8192));
         bypass.setLatency(0);
     }
-    void sampleRateChanged(double) override { activate(); }
 
     void sync()
     {

@@ -43,7 +43,6 @@ protected:
         setLatency((uint32_t)lastLatency);
         bypass.setLatency(lastLatency);
     }
-    void sampleRateChanged(double) override { activate(); }
 
     void sync()
     {

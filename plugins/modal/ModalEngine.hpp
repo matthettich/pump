@@ -87,6 +87,7 @@ public:
     void prepare(double sampleRate, int /*maxBlock*/)
     {
         sr = sampleRate;
+        (void)modelTable(0);   // built here, not by the first note on the audio thread (it allocates)
         for (int i = 0; i < kMaxVoices; ++i) { voices[(size_t)i] = Voice(); voices[(size_t)i].rng.seed(0xA11u + 131u * (uint32_t)i); }
         configure();
         volS.setRamp(std::max(1, (int)(0.02 * sr))); volS.reset(dbToGain(set.volumeDb));

@@ -116,13 +116,7 @@ protected:
     {
         updateShape();
         if (!plug) return;
-        for (int c = 0; c < 2; ++c)
-        {
-            const float pk = pump::gainToDbF(plug->outPeak[c].exchange(0.0f));
-            lvl[c] = std::max(pk, lvl[c] - 26.0f * dt);
-            if (pk >= hold[c]) { hold[c] = pk; holdT[c] = 1.5f; }
-            else if ((holdT[c] -= dt) <= 0.0f) hold[c] = std::max(pk, hold[c] - 18.0f * dt);
-        }
+        outMeter.tick(plug->outPeak, dt);
         Engine& e = plug->engine;
         const float hi = e.gainHi.exchange(0.0f), lo = e.gainLo.exchange(0.0f);
         gHi = std::max(hi, gHi - 40.0f * dt);
@@ -179,8 +173,7 @@ protected:
     {
         drawHistory();
         drawGainMeter();
-        drawLevelMeter(outM[0], lvl[0], hold[0], -48.0f, 6.0f);
-        drawLevelMeter(outM[1], lvl[1], hold[1], -48.0f, 6.0f);
+        drawOutMeter(outMeter, outM[0], outM[1]);
         textAt(gainM.cx(), shapeR.b() - 10, "GAIN", kLabel, 9.0f, theme.ink2, ALIGN_CENTER | ALIGN_MIDDLE, 0.8f);
         textAt(outM[0].r() + 1, shapeR.b() - 10, "OUT", kLabel, 9.0f, theme.ink2, ALIGN_CENTER | ALIGN_MIDDLE, 0.8f);
         drawShape();
@@ -533,7 +526,7 @@ private:
     PluginSnap* plug = nullptr;
     Rect histR, gainM, outM[2], shapeR, shapeP, tranPanel, detPanel, bandPanel, outPanel, atkBar, susBar;
     float atkShow = 0.0f, susShow = 0.0f;
-    float lvl[2] = { -120.0f, -120.0f }, hold[2] = { -120.0f, -120.0f }, holdT[2] = { 0.0f, 0.0f };
+    OutMeter outMeter;
     float gHi = 0.0f, gLo = 0.0f, gHiHold = 0.0f, gLoHold = 0.0f, gHiT = 0.0f, gLoT = 0.0f;
     float hin[kMaxCols] = {}, hout[kMaxCols] = {}, hatk[kMaxCols] = {}, hsus[kMaxCols] = {};
     std::vector<float> before, after;

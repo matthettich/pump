@@ -48,7 +48,6 @@ protected:
     void ioChanged(uint16_t numInputs, uint16_t) override { fNumInputs = numInputs; }
 
     void activate() override { prepareAll(); }
-    void sampleRateChanged(double) override { prepareAll(); }
 
     void prepareAll()
     {

@@ -101,8 +101,7 @@ protected:
         for (int c = 0; c < 2; ++c)
         {
             const float pk = pump::gainToDbF(plug->outPeak[c].exchange(0.0f));
-            lvl[c] = std::max(pk, lvl[c] - 26.0f * dt);
-            if (pk >= hold[c]) { hold[c] = pk; holdT[c] = 1.5f; } else if ((holdT[c] -= dt) <= 0.0f) hold[c] = std::max(pk, hold[c] - 18.0f * dt);
+            outMeter.tickDb(c, pk, dt);
         }
         for (int n = 0; n < 128; ++n) keyboard.lit[n] = plug->engine.noteLit(n);
         plug->engine.foldRing.readLatest(wave, kWave);
@@ -175,8 +174,7 @@ protected:
     void drawBody() override
     {
         drawTransfer(); drawWave(); drawGate();
-        drawLevelMeter(meterL, lvl[0], hold[0], -48.0f, 6.0f);
-        drawLevelMeter(meterR, lvl[1], hold[1], -48.0f, 6.0f);
+        drawOutMeter(outMeter, meterL, meterR);
         auto panel = [&](const Rect& r, const char* c) { strokeRect(r, theme.dim, 1.0f); caption(r.x + 12, r.y + 13, c); };
         panel(oscPanel, "COMPLEX OSCILLATOR · MODULATOR"); panel(foldPanel, "FOLDER"); panel(gatePanel, "LOW-PASS GATE");
         panel(funcPanel, "FUNCTION"); panel(randPanel, "RANDOM"); panel(voicePanel, "VOICE");
@@ -221,7 +219,7 @@ private:
     KeyboardUI keyboard;
     bool kbDown = false, playing = false;
     float wave[kWave] = {}, gate = 0.0f, func = 0.0f, amt = 0.0f;
-    float lvl[2] = { -120.0f, -120.0f }, hold[2] = { -120.0f, -120.0f }, holdT[2] = { 0.0f, 0.0f };
+    OutMeter outMeter;
 
     DISTRHO_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(UIFold)
 };

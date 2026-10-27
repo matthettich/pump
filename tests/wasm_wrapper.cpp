@@ -118,6 +118,25 @@ int main()
         CHECK(pump_latency(h) > 4000 && db(pk) < -15.0f, "EQ linear phase: latency %d, -12 dB bell at 1 kHz gives %.1f dB", pump_latency(h), db(pk));
         pump_free(h);
     }
+    {
+        // handles: a freed one is refused, even after its slot is reused; unwritten staged values are the defaults
+        const int h = make(kEQ, {});
+        pump_free(h);
+        const int g = make(kEQ, {});
+        CHECK(g != h && pump_values(h) == nullptr && pump_latency(h) == 0 && pump_values(g) != nullptr,
+              "a freed handle (%d) is refused after its slot is reused (new handle %d)", h, g);
+        pump_free(g);
+        const int out = idx(kEQ, "out_gain");
+        pump_stage()[out] = 3.0f;
+        const int a = pump_new(kEQ, 48000.0), b = pump_new(kEQ, 48000.0);   // b: nothing staged
+        CHECK(pump_values(a)[out] == 3.0f && pump_values(b)[out] == specsOf(kEQ)[(size_t)out].def,
+              "staged values go to one new slot only (the next gets the defaults: %g)", pump_values(b)[out]);
+        pump_free(a); pump_free(b);
+        bool telOk = true;
+        for (int t = 0; t < pump_types(); ++t) telOk = telOk && pump_tel_len(t) <= 512;
+        CHECK(telOk, "every type's telemetry fits pump_tel()'s 512 floats");
+        CHECK(pump_new(kEQ, 1e12) == -1 && pump_new(kEQ, std::nan("")) == -1, "an absurd sample rate is refused");
+    }
     printf(fails ? "%d FAILED\n" : "all passed\n", fails);
     return fails ? 1 : 0;
 }

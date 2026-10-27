@@ -22,6 +22,7 @@
 #include "NAM/dsp.h"
 #include "NAM/get_dsp.h"
 #include <filesystem>
+#include "FilePath.hpp"
 #include <memory>
 #include <mutex>
 #include <string>
@@ -145,7 +146,7 @@ private:
     {
         ModelInfo info;
         info.path = path;
-        info.name = std::filesystem::path(path).stem().string();
+        info.name = pathUtf8(utf8Path(path).stem());
         // NAM's core can read past its weights on a file whose architecture and weights disagree (memory corruption,
         // not an exception): turn away what is plainly not a model before it gets that far (ModelGuard.hpp)
         { const std::string bad = checkModelFile(path); if (!bad.empty()) { info.error = bad; return info; } }
@@ -155,7 +156,7 @@ private:
             for (int ch = 0; ch < 2; ++ch)
             {
                 nam::DspLoadOptions opt; opt.prewarm = false;
-                slot->dsp[ch] = nam::get_dsp(std::filesystem::path(path), opt);
+                slot->dsp[ch] = nam::get_dsp(utf8Path(path), opt);
                 if (!slot->dsp[ch]) throw std::runtime_error("not a model");
             }
         }
@@ -188,7 +189,7 @@ private:
     {
         IrInfo info;
         info.path = path;
-        info.name = std::filesystem::path(path).stem().string();
+        info.name = pathUtf8(utf8Path(path).stem());
         WavData w = readWav(path, (size_t)1 << 20);
         if (!w.ok()) { info.error = w.error.empty() ? "empty file" : w.error; return info; }
         info.rate = w.sampleRate;
@@ -259,7 +260,7 @@ public:
 
     // feeds (UI)
     MeterValue inPeak, gateFeed;                 // input peak after the input gain; gate gain (min hold)
-    ScopeRing outRing { 1 << 15 };               // the output (mono sum), for the spectrum
+    ScopeRing outRing { kAnalyzerRing };               // the output (mono sum), for the spectrum
 
     void process(float* L, float* R, int n)
     {

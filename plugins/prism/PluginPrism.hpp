@@ -2,6 +2,7 @@
 // keyboard directly. Loaded sounds are states holding file paths ("file_a", "file_b"); they are read and analysed
 // in setState (not the audio thread), and kept until the plugin goes (the audio thread may still read an old one).
 #pragma once
+#include "dsp/Retained.hpp"
 #include "PumpPlugin.hpp"
 #include "PrismParams.hpp"
 #include "PrismEngine.hpp"
@@ -20,7 +21,7 @@ public:
         Builtins::get().retain();
         sync();
         engine.prepare(getSampleRate(), (int)getBufferSize()); outLimit.prepare(getSampleRate());
-        if (const char* n = std::getenv("PUMP_TEST_NOTES")) testNotes = n;
+        if (const char* n = pump::testEnv("PUMP_TEST_NOTES")) testNotes = n;
     }
 
     // gain staging (the volume pass): VOLUME 0 dB is a typical voice at about -20 dBFS RMS
@@ -77,9 +78,8 @@ protected:
             }
         }
         catch (...) { a.reset(); info = "couldn't load the file"; }
+        files[o].publish(std::move(a));   // the audio thread picks it up at its next block; the old one is freed later
         std::lock_guard<std::mutex> g(lock);
-        if (a) keep.push_back(a);
-        file[o] = a.get();
         (o ? infoB : infoA) = info;
     }
     String getState(const char* key) const override
@@ -91,7 +91,6 @@ protected:
 
     // the built-in sounds are made when a plugin is first activated (not when a host only creates one to read it)
     void activate() override { Builtins::get().start(); sync(); engine.prepare(getSampleRate(), (int)getBufferSize()); outLimit.prepare(getSampleRate()); }
-    void sampleRateChanged(double) override { activate(); }
 
     void sync()
     {
@@ -108,8 +107,9 @@ protected:
     void pickSources()
     {
         const int a = (int)pv(kSourceA), b = (int)pv(kSourceB);
-        const Analysis* A = a == 0 ? file[0].load(std::memory_order_acquire) : Builtins::get().source(a);
-        const Analysis* B = b == 0 ? nullptr : (b == 1 ? file[1].load(std::memory_order_acquire) : Builtins::get().source(b - 1));
+        const Analysis* fa = files[0].acquire(), *fb = files[1].acquire();   // every block: acknowledges what is in use
+        const Analysis* A = a == 0 ? fa : Builtins::get().source(a);
+        const Analysis* B = b == 0 ? nullptr : (b == 1 ? fb : Builtins::get().source(b - 1));
         nowA.store(A, std::memory_order_release); nowB.store(B, std::memory_order_release);
         engine.setSources(A, B);
     }
@@ -154,9 +154,8 @@ protected:
 private:
     pump::synth::Midi midi[512] = {};
     std::string path[2], infoA, infoB, testNotes;
-    std::atomic<const Analysis*> file[2] { { nullptr }, { nullptr } };
+    pump::Retained<Analysis> files[2];   // the loaded sounds (freed once the audio thread has moved on)
     std::atomic<const Analysis*> nowA { nullptr }, nowB { nullptr };
-    std::vector<std::shared_ptr<Analysis>> keep;
     mutable std::mutex lock;
     uint64_t testClock = 0;
 

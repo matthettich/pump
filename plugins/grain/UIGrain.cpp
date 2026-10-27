@@ -155,9 +155,7 @@ protected:
         for (int c = 0; c < 2; ++c)
         {
             const float pk = pump::gainToDbF(plug->outPeak[c].exchange(0.0f));
-            lvl[c] = std::max(pk, lvl[c] - 26.0f * dt);
-            if (pk >= hold[c]) { hold[c] = pk; holdT[c] = 1.5f; }
-            else if ((holdT[c] -= dt) <= 0.0f) hold[c] = std::max(pk, hold[c] - 18.0f * dt);
+            outMeter.tickDb(c, pk, dt);
         }
         GrainView v;
         if (plug->engine.snapshot.read(v))
@@ -230,10 +228,10 @@ protected:
         drawFilterCurve();
         // output level
         textAt(meterL.x, meterL.y - 10, "OUT", kLabel, 9.0f, theme.ink2, ALIGN_LEFT | ALIGN_MIDDLE, 0.8f);
-        char t[24]; std::snprintf(t, sizeof t, "%.1f dB", std::max(-60.0f, hold[0] > hold[1] ? hold[0] : hold[1]));
-        textAt(meterL.r(), meterL.y - 10, hold[0] > -60.0f || hold[1] > -60.0f ? t : "-INF", kMono, 9.5f, theme.ink2, ALIGN_RIGHT | ALIGN_MIDDLE);
-        hMeter(meterL, lvl[0], hold[0]);
-        hMeter(meterR, lvl[1], hold[1]);
+        char t[24]; std::snprintf(t, sizeof t, "%.1f dB", std::max(-60.0f, outMeter.hold[0] > outMeter.hold[1] ? outMeter.hold[0] : outMeter.hold[1]));
+        textAt(meterL.r(), meterL.y - 10, outMeter.hold[0] > -60.0f || outMeter.hold[1] > -60.0f ? t : "-INF", kMono, 9.5f, theme.ink2, ALIGN_RIGHT | ALIGN_MIDDLE);
+        hMeter(meterL, outMeter.lvl[0], outMeter.hold[0]);
+        hMeter(meterR, outMeter.lvl[1], outMeter.hold[1]);
     }
 
     void hMeter(const Rect& r, float levelDb, float peakDb)
@@ -712,7 +710,7 @@ private:
     int waveCount = 0, spanSel = 0;
     float hopSec = 0.00133f, span = 2.0f, waveScale = 0.1f, bpm = 120.0f;
     bool spanInit = false, playing = false;
-    float lvl[2] = { -120.0f, -120.0f }, hold[2] = { -120.0f, -120.0f }, holdT[2] = { 0.0f, 0.0f };
+    OutMeter outMeter;
     Drag drag = kDragNone;
     float dragX = 0, dragY = 0, dragA = 0, dragB = 0;
     bool dragFine = false;

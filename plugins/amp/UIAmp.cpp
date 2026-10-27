@@ -76,7 +76,7 @@ protected:
         o.title = which == 0 ? "Load an amp model (.nam)" : "Load a cabinet impulse response (.wav)";
         const std::string cur = which == 0 ? model.path : ir.path;
         std::string dir;
-        if (!cur.empty()) dir = std::filesystem::path(cur).parent_path().string();
+        if (!cur.empty()) dir = pump::pathUtf8(pump::utf8Path(cur).parent_path());
         if (!dir.empty()) o.startDir = dir.c_str();
         openFileBrowser(o);
     }
@@ -91,19 +91,22 @@ protected:
         const std::string cur = which == 0 ? model.path : ir.path;
         if (cur.empty()) { browse(which); return; }
         std::error_code ec;
-        const std::filesystem::path p(cur);
+        const std::filesystem::path p = pump::utf8Path(cur);
         std::vector<std::string> files;
-        for (const auto& e : std::filesystem::directory_iterator(p.parent_path(), ec))
+        // error codes throughout (a UI callback must not throw), UTF-8 names (pump::utf8Path)
+        std::filesystem::directory_iterator it(p.parent_path(), ec), end;
+        for (; !ec && it != end; it.increment(ec))
         {
-            if (!e.is_regular_file(ec)) continue;
-            std::string ext = e.path().extension().string();
+            std::error_code fe;
+            if (!it->is_regular_file(fe)) continue;
+            std::string ext = pump::pathUtf8(it->path().extension());
             for (char& c : ext) c = (char)std::tolower((unsigned char)c);
-            if ((which == 0 && ext == ".nam") || (which == 1 && ext == ".wav")) files.push_back(e.path().string());
+            if ((which == 0 && ext == ".nam") || (which == 1 && ext == ".wav")) files.push_back(pump::pathUtf8(it->path()));
         }
         if (files.empty()) return;
         std::sort(files.begin(), files.end());
-        auto it = std::find(files.begin(), files.end(), p.string());
-        int i = it == files.end() ? 0 : (int)(it - files.begin());
+        auto it2 = std::find(files.begin(), files.end(), pump::pathUtf8(p));
+        int i = it2 == files.end() ? 0 : (int)(it2 - files.begin());
         i = (i + dir + (int)files.size()) % (int)files.size();
         setState(which == 0 ? "model" : "ir", files[(size_t)i].c_str());
     }
@@ -162,13 +165,7 @@ protected:
     void tick(float dt) override
     {
         if (!plug) return;
-        for (int c = 0; c < 2; ++c)
-        {
-            const float pk = pump::gainToDbF(plug->outPeak[c].exchange(0.0f));
-            lvl[c] = std::max(pk, lvl[c] - 26.0f * dt);
-            if (pk >= hold[c]) { hold[c] = pk; holdT[c] = 1.5f; }
-            else if ((holdT[c] -= dt) <= 0.0f) hold[c] = std::max(pk, hold[c] - 18.0f * dt);
-        }
+        outMeter.tick(plug->outPeak, dt);
         const float ip = pump::gainToDbF(plug->engine.inPeak.exchange(0.0f));
         inLvl = std::max(ip, inLvl - 30.0f * dt);
         const float g = plug->engine.gateFeed.exchange(1.0f);
@@ -182,8 +179,7 @@ protected:
         drawAmp();
         drawSpectrumScreen();
         drawCab();
-        drawLevelMeter(meterL, lvl[0], hold[0], -48.0f, 6.0f);
-        drawLevelMeter(meterR, lvl[1], hold[1], -48.0f, 6.0f);
+        drawOutMeter(outMeter, meterL, meterR);
         textAt(meterL.r() + 1, ampR.b() - 7, "OUT", kLabel, 9.0f, theme.ink2, ALIGN_CENTER | ALIGN_MIDDLE, 0.8f);
         strokeRect(inPanel, theme.dim, 1.0f);
         strokeRect(tonePanel, theme.dim, 1.0f);
@@ -365,7 +361,7 @@ private:
     unsigned seenSerial = ~0u;
     int pendingBrowse = 0;
     Rect ampR, specR, cabR, meterL, meterR, inPanel, tonePanel, cabPanel;
-    float lvl[2] = { -120.0f, -120.0f }, hold[2] = { -120.0f, -120.0f }, holdT[2] = { 0.0f, 0.0f };
+    OutMeter outMeter;
     float inLvl = -120.0f, gateShow = 1.0f;
 
     Dial *inDial, *gateDial, *outDial, *bassDial, *midDial, *trebDial, *presDial, *lowDial, *highDial;

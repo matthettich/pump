@@ -20,7 +20,7 @@ public:
     }
 
     // feeds for the UI: output L/R (vectorscope) and mid/side (spectra)
-    pump::ScopeRing scopeL { 1 << 15 }, scopeR { 1 << 15 }, midRing { 1 << 15 }, sideRing { 1 << 15 };
+    pump::ScopeRing scopeL { 1 << 15 }, scopeR { 1 << 15 }, midRing { pump::kAnalyzerRing }, sideRing { pump::kAnalyzerRing };
     pump::MeterValue outPeak[2];
     Engine engine;
     int latencyNow() const { return engine.latency(); }
@@ -47,7 +47,6 @@ protected:
         setLatency((uint32_t)lastLatency);
         bypass.setLatency(lastLatency);
     }
-    void sampleRateChanged(double) override { activate(); }
 
     void syncBand(int b)
     {

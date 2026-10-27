@@ -113,6 +113,18 @@ docs/ROADMAP.md          planned work and known issues deferred from audits
   stored in undo or A/B snapshots.
 - Parameters that change latency or topology (lookahead, oversampling, FFT size, band count, crossover type) are not
   automatable; changing them fades out, switches, and fades back in.
+- **Parameters are only ever added at the end.** Hosts save parameter values and automation by index (the VST3 and
+  CLAP ids are the index), so inserting one, reordering or removing one remaps every saved session. A parameter that
+  is no longer used stays as a hidden placeholder (`kPHidden`). `make tests` checks this against
+  `tests/data/param_ids.txt`; after adding parameters at the end, run `PUMP_WRITE_PARAM_IDS=1 ./build/tests/test_presets`
+  and commit the file. If a saved value ever has to change meaning, bump `kPumpSessionVersion` (common/PumpPlugin.hpp)
+  and migrate on `sessionVersion()`.
+- Real-time rules: nothing on the audio thread allocates, frees, locks or throws. Objects loaded off the audio thread
+  (sounds, wavetables, voicebanks) go through `pump::Retained` (common/dsp/Retained.hpp); kernels and lists that the
+  audio thread swaps in use an atomic pointer and give the old one back on an `SpscPtrQueue` (common/dsp/Util.hpp).
+- `setState()` runs in the host's session load: a file loader there catches everything (an exception escaping it
+  takes the host down). File names are UTF-8: open and list files through common/FilePath.hpp, never with a plain
+  `fopen` / `std::ifstream(std::string)` (they read the ANSI code page on Windows).
 
 ## Build and test locally
 
@@ -126,7 +138,8 @@ make tests-tsan           # and under ThreadSanitizer (slow: heat takes several 
 DISPLAY_NUM=:101 tools/shot.sh bin/pump-eq /tmp/eq.png 1 0 4  # preset 1, light, after 4 s of the test mix
 ```
 
-The standalone (`jack`) build runs headless with `PUMP_TEST_AUDIO=tests/data/mix.f32` (made by tools/make_mix.py; 8 bars of drums,
+Only the standalone (`jack`) builds read the `PUMP_TEST_*` variables (through `pump::testEnv`; `make jack` builds them
+with `PUMP_TEST_HOOKS=1` in a build folder of their own), so the released plugins never do. The standalone build runs headless with `PUMP_TEST_AUDIO=tests/data/mix.f32` (made by tools/make_mix.py; 8 bars of drums,
 bass, pads and a lead with two deliberate resonances, peaking at -6 dBFS). `PUMP_TEST_PRESET=<n>` loads a factory
 preset at startup and `PUMP_TEST_DARK=1` starts dark — both only matter for screenshots.
 
@@ -134,7 +147,7 @@ preset at startup and `PUMP_TEST_DARK=1` starts dark — both only matter for sc
 that isn't a git checkout (DPF_PATH=...) it uses patch(1).
 
 CI (`.github/workflows/build.yml`) cross-compiles Windows x64 with MinGW (posix threads), builds macOS universal,
-builds Linux, runs `make tests`, and refreshes the `latest` pre-release on every push to main.
+builds Linux, runs `make tests` and the sanitizer runs (`tests-asan`, `tests-tsan`), and refreshes the `latest` pre-release on every push to main.
 
 ## WebAssembly (Thunder Plus's bus and master effects)
 
@@ -144,6 +157,9 @@ the list is at the top of the file). Each `Host<Name>` there is its plugin's DSP
 the same prepare / activate / sync / run code, chunk sizes, `BypassMixer`, sanitising, `ScopeRing`s and `MeterValue`s.
 `HostBase` stands in for `PumpPlugin` (values with change flags, `pv`, `takeAnyChanged`, `takeChanged`).
 **When a `Plugin<Name>.hpp` changes, change its `Host<Name>` the same way**, and rebuild.
+Handles from `pump_new` / `psyn_new` are opaque (slot and generation, wasm/Handles.hpp): JavaScript must not treat
+them as small array indices, and a handle used after `pump_free` is ignored. Staged values that aren't written before
+`pump_new` take the parameter's default.
 
 ```
 WASI_SDK=/path/to/wasi-sdk-25.0-x86_64-linux make wasm     # = sh wasm/build.sh: build/wasm/pump.wasm, build/wasm/pump-meta.js

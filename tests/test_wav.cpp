@@ -46,7 +46,7 @@ static Bytes makeWav(const Spec& s, const Bytes& payload)
 static std::string put(const char* name, const Bytes& b)
 {
     const std::string path = std::string("build/tests/") + name;
-    if (FILE* f = std::fopen(path.c_str(), "wb")) { std::fwrite(b.data(), 1, b.size(), f); std::fclose(f); }
+    if (FILE* f = std::fopen(path.c_str(), "wb")) { if (!b.empty()) std::fwrite(b.data(), 1, b.size(), f); std::fclose(f); }
     return path;
 }
 

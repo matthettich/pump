@@ -109,9 +109,7 @@ protected:
         for (int c = 0; c < 2; ++c)
         {
             const float pk = pump::gainToDbF(plug->outPeak[c].exchange(0.0f));
-            lvl[c] = std::max(pk, lvl[c] - 26.0f * dt);
-            if (pk >= hold[c]) { hold[c] = pk; holdT[c] = 1.5f; }
-            else if ((holdT[c] -= dt) <= 0.0f) hold[c] = std::max(pk, hold[c] - 18.0f * dt);
+            outMeter.tickDb(c, pk, dt);
         }
         for (int l = 0; l < kLanes; ++l)
         {
@@ -131,8 +129,7 @@ protected:
         drawTank();
         drawChirps();
         drawKick();
-        drawLevelMeter(meterL, lvl[0], hold[0], -48.0f, 6.0f);
-        drawLevelMeter(meterR, lvl[1], hold[1], -48.0f, 6.0f);
+        drawOutMeter(outMeter, meterL, meterR);
         textAt(meterL.r() + 1, tankR.b() - 7, "OUT", kLabel, 9.0f, theme.ink2, ALIGN_CENTER | ALIGN_MIDDLE, 0.8f);
 
         strokeRect(tankPanel, theme.dim, 1.0f);
@@ -179,7 +176,7 @@ protected:
         // the transducers (digital: the converters)
         const float tw = 46.0f, th = std::min(pan.h - 40.0f, 150.0f);
         const Rect inT(pan.x + 14, pan.cy() - th * 0.5f, tw, th), outT(pan.r() - 14 - tw, pan.cy() - th * 0.5f, tw, th);
-        const float outE = pump::clampv((std::max(lvl[0], lvl[1]) + 48.0f) / 48.0f, 0.0f, 1.0f);
+        const float outE = pump::clampv((std::max(outMeter.lvl[0], outMeter.lvl[1]) + 48.0f) / 48.0f, 0.0f, 1.0f);
         drawTransducer(inT, pump::clampv(shown(drvShow), 0.0f, 1.0f), digital ? "ADC" : "IN", digital);
         drawTransducer(outT, outE, digital ? "DAC" : "OUT", digital);
         // the springs
@@ -574,7 +571,7 @@ private:
     enum Drag { DragNone, DragTank, DragChirp, DragKick };
     PluginSpring* plug = nullptr;
     Rect tankR, chirpR, kickR, meterL, meterR, tankPanel, tonePanel, outPanel, eqR;
-    float lvl[2] = { -120.0f, -120.0f }, hold[2] = { -120.0f, -120.0f }, holdT[2] = { 0.0f, 0.0f };
+    OutMeter outMeter;
     float energy[kLanes] = {}, drvShow = 0.0f, kickAgeS = 100.0f, kickPress = 0.0f;
     float waveF[kLanes][kWaveN] = {}, waveB[kLanes][kWaveN] = {};
     bool kickHeld = false;

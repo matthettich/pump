@@ -152,8 +152,7 @@ protected:
         for (int c = 0; c < 2; ++c)
         {
             const float pk = pump::gainToDbF(plug->outPeak[c].exchange(0.0f));
-            lvl[c] = std::max(pk, lvl[c] - 26.0f * dt);
-            if (pk >= hold[c]) { hold[c] = pk; holdT[c] = 1.5f; } else if ((holdT[c] -= dt) <= 0.0f) hold[c] = std::max(pk, hold[c] - 18.0f * dt);
+            outMeter.tickDb(c, pk, dt);
         }
         const uint32_t end = plug->engine.outRing.smoothPosition();
         for (int i = 0; i < kScopeN; ++i) scope[i] = plug->engine.outRing.at(end - (uint32_t)kScopeN + (uint32_t)i);
@@ -168,8 +167,7 @@ protected:
         drawScope();
         drawFilter();
         drawVoices();
-        drawLevelMeter(meterL, lvl[0], hold[0], -48.0f, 6.0f);
-        drawLevelMeter(meterR, lvl[1], hold[1], -48.0f, 6.0f);
+        drawOutMeter(outMeter, meterL, meterR);
         auto panel = [&](const Rect& r, const char* c) { strokeRect(r, theme.dim, 1.0f); caption(r.x + 12, r.y + 16, c); };
         panel(voicePanel, "VOICE"); panel(oscAPanel, "OSC A"); panel(oscBPanel, "OSC B"); panel(mixPanel, "MIXER"); panel(filterPanel, "FILTER");
         panel(fenvPanel, "FILTER ENVELOPE"); panel(aenvPanel, "AMP ENVELOPE"); panel(pmPanel, "POLY-MOD"); panel(lfoPanel, "LFO");
@@ -360,7 +358,7 @@ private:
     bool kbDown = false, dragging = false;
     float dx = 0, dy = 0, dCut = 0, dRes = 0, scope[kScopeN] = {}, scale = 1.0f, cutShow = 11.1f;
     uint32_t mask = 0;
-    float lvl[2] = { -120.0f, -120.0f }, hold[2] = { -120.0f, -120.0f }, holdT[2] = { 0.0f, 0.0f };
+    OutMeter outMeter;
 
     DISTRHO_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(UIPoly)
 };

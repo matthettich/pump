@@ -14,7 +14,7 @@ public:
     {
         sync();
         engine.prepare(getSampleRate(), (int)getBufferSize()); outLimit.prepare(getSampleRate());
-        if (std::getenv("PUMP_TEST_NOTES")) testLoop = true;   // headless screenshots: a beat plays from the start
+        if (pump::testEnv("PUMP_TEST_NOTES")) testLoop = true;   // headless screenshots: a beat plays from the start
     }
 
     // gain staging (the volume pass, 2026-10-26): VOLUME 0 dB is a typical voice at about -20 dBFS RMS
@@ -29,7 +29,6 @@ protected:
     const char* getDescription() const override { return PUMP_PLUGIN_ABOUT; }
 
     void activate() override { sync(); engine.prepare(getSampleRate(), (int)getBufferSize()); outLimit.prepare(getSampleRate()); }
-    void sampleRateChanged(double) override { activate(); }
 
     void sync()
     {

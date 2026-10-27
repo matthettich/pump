@@ -17,7 +17,7 @@ public:
         engine.prepare(getSampleRate(), (int)getBufferSize());
         bypass.prepare(getSampleRate(), 1 << 15, (int)std::max<uint32_t>(getBufferSize(), 8192));
         bypass.setLatency(0);
-        if (std::getenv("PUMP_TEST_AUDIO") && std::getenv("PUMP_TEST_CHOP")) testPads = true;   // screenshots: the pads play by themselves
+        if (pump::testEnv("PUMP_TEST_AUDIO") && pump::testEnv("PUMP_TEST_CHOP")) testPads = true;   // screenshots: the pads play by themselves
     }
 
     Engine engine;
@@ -36,7 +36,6 @@ protected:
         bypass.prepare(getSampleRate(), 1 << 15, (int)std::max<uint32_t>(getBufferSize(), 8192));
         midiHeld = 0;
     }
-    void sampleRateChanged(double) override { activate(); }
 
     void sync()
     {

@@ -12,6 +12,19 @@
 
 namespace pump {
 
+// Hooks for headless screenshots and renders (tools/shot.sh, tools/render_presets.cpp): environment variables that are
+// read only in builds made with PUMP_TEST_HOOKS=1 (`make jack` and the render tool do that). Released plugins never
+// look at them.
+inline const char* testEnv(const char* name)
+{
+#if defined(PUMP_TEST_HOOKS) && PUMP_TEST_HOOKS
+    return std::getenv(name);
+#else
+    (void)name;
+    return nullptr;
+#endif
+}
+
 enum class PScale : int { Linear = 0, Log, Power };   // Log: geometric (frequencies, times); Power: skew toward min
 enum class PUnit : int { None = 0, dB, Hz, ms, Percent, Ratio, Octave, Times, LU, Seconds };
 

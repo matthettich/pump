@@ -2,7 +2,7 @@
 // factory preset with a fixed test phrase and prints each preset's sample peak and loudness. Used to set the
 // instruments' output gain (the volume pass) and to check that no factory preset clips.
 // Build (from the repo root), e.g. for MONO:
-//   c++ -O2 -std=c++17 -Iplugins/mono -Idpf/distrho -Idpf/distrho/src -Icommon -DPARAMS_HDR='"MonoParams.hpp"' -DNS=mono \
+//   c++ -O2 -std=c++17 -DPUMP_TEST_HOOKS=1 -Iplugins/mono -Idpf/distrho -Idpf/distrho/src -Icommon -DPARAMS_HDR='"MonoParams.hpp"' -DNS=mono \
 //       -DKIND=0 tools/render_presets.cpp plugins/mono/PluginMono.cpp plugins/mono/pffft.c -lpthread -o build/render_mono
 // KIND: 0 a synth (a chord, then a melody), 1 drums (GM notes), 2 LIFE (it plays itself), 3 SING (one voice).
 // Output: one line per preset, then "median peak" and "max peak" (dBFS). With PUMP_RENDER_DIR set, each preset's audio

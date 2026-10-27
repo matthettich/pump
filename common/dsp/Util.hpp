@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <memory>
 #include <new>
 #include <vector>
 
@@ -45,6 +46,9 @@ inline int analyzerSize(double sampleRate)
     while (n < 32768 && sampleRate / (n / 8192) > 66000.0) n *= 2;
     return n;
 }
+// Size of a ScopeRing an analyzer reads: twice its largest FFT, so a window read behind the newest sample
+// (ScopeRing::readSmooth) is never partly overwritten by newer audio.
+constexpr int kAnalyzerRing = 1 << 16;
 
 template <typename T> inline T clampv(T v, T lo, T hi) { return v < lo ? lo : (v > hi ? hi : v); }
 
@@ -171,15 +175,18 @@ inline void sanitizeBlock(float* x, int n)
 }
 
 // Lock-free single-producer/single-consumer sample ring for UI feeds (analyzers, scopes, history).
-// The audio thread writes; the UI reads the most recent `count` samples. Reads are not synchronised
-// against concurrent writes beyond the write index (the ring is large enough that tearing is invisible).
+// The audio thread writes; the UI reads the most recent `count` samples. The samples are relaxed atomics (free on
+// x86 and ARM), so a read racing a write is well-defined; the ring is large enough that such a read is never visible.
 class ScopeRing {
 public:
-    explicit ScopeRing(int sizePow2 = 1 << 15) { buf.assign((size_t)sizePow2, 0.0f); mask = sizePow2 - 1; }
+    explicit ScopeRing(int sizePow2 = 1 << 15) : buf(new std::atomic<float>[(size_t)sizePow2]), mask(sizePow2 - 1)
+    {
+        for (int i = 0; i < sizePow2; ++i) buf[(size_t)i].store(0.0f, std::memory_order_relaxed);
+    }
     inline void push(float x)
     {
         const uint32_t i = w.load(std::memory_order_relaxed);
-        buf[i & (uint32_t)mask] = x;
+        buf[i & (uint32_t)mask].store(x, std::memory_order_relaxed);
         w.store(i + 1, std::memory_order_release);
     }
     // Copies the newest `count` samples into dst (oldest first). Returns the write position read.
@@ -187,7 +194,7 @@ public:
     {
         const uint32_t end = w.load(std::memory_order_acquire);
         for (int k = 0; k < count; ++k)
-            dst[k] = buf[(end - (uint32_t)count + (uint32_t)k) & (uint32_t)mask];
+            dst[k] = buf[(end - (uint32_t)count + (uint32_t)k) & (uint32_t)mask].load(std::memory_order_relaxed);
         return end;
     }
     uint32_t position() const { return w.load(std::memory_order_acquire); }
@@ -219,13 +226,16 @@ public:
     }
     void readSmooth(float* dst, int count) const
     {
-        const uint32_t end = smoothPosition();
-        for (int k = 0; k < count; ++k) dst[k] = buf[(end - (uint32_t)count + (uint32_t)k) & (uint32_t)mask];
+        uint32_t end = smoothPosition();
+        // the window must lie wholly in what the ring still holds: never further back than capacity - count
+        const uint32_t newest = position(), room = (uint32_t)std::max(0, capacity() - count);
+        if ((uint32_t)(newest - end) > room) end = newest - room;
+        for (int k = 0; k < count; ++k) dst[k] = buf[(end - (uint32_t)count + (uint32_t)k) & (uint32_t)mask].load(std::memory_order_relaxed);
     }
-    float at(uint32_t index) const { return buf[index & (uint32_t)mask]; }
+    float at(uint32_t index) const { return buf[index & (uint32_t)mask].load(std::memory_order_relaxed); }
     int capacity() const { return mask + 1; }
 private:
-    std::vector<float> buf;
+    std::unique_ptr<std::atomic<float>[]> buf;
     int mask;
     std::atomic<uint32_t> w { 0 };
     // smoothPosition()'s state (UI thread)

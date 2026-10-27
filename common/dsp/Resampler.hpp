@@ -9,7 +9,6 @@
 #pragma once
 
 #include "Util.hpp"
-#include <functional>
 
 namespace pump {
 
@@ -85,7 +84,6 @@ private:
 // match it passes straight through (latency 0).
 class RateBridge {
 public:
-    using Fn = std::function<void(const float*, float*, int)>;
     void prepare(double hostRate, double innerRate, int maxBlock)
     {
         same = std::fabs(hostRate - innerRate) < 0.5;
@@ -116,8 +114,10 @@ public:
     int latency() const { return lat; }
     int maxInner() const { return (int)inner.size(); }
 
-    // in -> out (may alias), n <= maxBlock
-    void process(const float* in, float* out, int n, const Fn& fn)
+    // in -> out (may alias), n <= maxBlock. fn(in, out, n) is any callable: taken as a template so a capturing lambda
+    // is called directly (a std::function can allocate on every call, and this runs on the audio thread)
+    template <typename F>
+    void process(const float* in, float* out, int n, F&& fn)
     {
         if (same) { fn(in, out, n); return; }
         for (int i = 0; i < n; ++i) a.push(in[i]);

@@ -187,13 +187,7 @@ protected:
         polyDial->enabled = value(kVoiceMode) < 0.5f;
         drvDial->enabled = true;
         if (!plug) return;
-        for (int c = 0; c < 2; ++c)
-        {
-            const float pk = pump::gainToDbF(plug->outPeak[c].exchange(0.0f));
-            lvl[c] = std::max(pk, lvl[c] - 26.0f * dt);
-            if (pk >= hold[c]) { hold[c] = pk; holdT[c] = 1.5f; }
-            else if ((holdT[c] -= dt) <= 0.0f) hold[c] = std::max(pk, hold[c] - 18.0f * dt);
-        }
+        outMeter.tick(plug->outPeak, dt);
         const int vn = plug->engine.voicesNow();
         for (int o = 0; o < 2; ++o)
         {
@@ -218,8 +212,7 @@ protected:
         for (int o = 0; o < 2; ++o) drawTable(o);
         drawFilter();
         drawVoices();
-        drawLevelMeter(meterL, lvl[0], hold[0], -48.0f, 6.0f);
-        drawLevelMeter(meterR, lvl[1], hold[1], -48.0f, 6.0f);
+        drawOutMeter(outMeter, meterL, meterR);
         for (int o = 0; o < 2; ++o) { strokeRect(osc[o].panel, theme.dim, 1.0f); caption(osc[o].panel.x + 12, osc[o].panel.y + 16, o == 0 ? "OSC A" : "OSC B"); }
         for (auto pr : { std::make_pair(filterPanel, "FILTER"), std::make_pair(voicePanel, "VOICE"), std::make_pair(ampPanel, "AMP ENVELOPE"),
                          std::make_pair(modPanel, "MOD ENVELOPE"), std::make_pair(lfo1Panel, "LFO 1"), std::make_pair(lfo2Panel, "LFO 2"), std::make_pair(matrixPanel, "MOD MATRIX") })
@@ -459,7 +452,7 @@ private:
     bool kbDown = false;
     int which = 0, dragOsc = -1, voicesShow = 0;
     float dragY = 0, dragV = 0, posShow[2] = { 0.4f, 0.3f }, cutShow = 12.5f;
-    float lvl[2] = { -120.0f, -120.0f }, hold[2] = { -120.0f, -120.0f }, holdT[2] = { 0.0f, 0.0f };
+    OutMeter outMeter;
 
     DISTRHO_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(UITable)
 };

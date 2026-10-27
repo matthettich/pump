@@ -18,7 +18,7 @@ public:
     }
 
     // feeds for the UI
-    pump::ScopeRing preRing { 1 << 15 }, postRing { 1 << 15 };
+    pump::ScopeRing preRing { pump::kAnalyzerRing }, postRing { pump::kAnalyzerRing };
     pump::MeterValue outPeak[2];
     Engine engine;
     int latencyNow() const { return engine.latency(); }
@@ -47,7 +47,6 @@ protected:
         bypass.setLatency(lastLatency);
     }
     void activate() override { prepareAll(); }
-    void sampleRateChanged(double) override { prepareAll(); }
 
     void syncSettings()
     {

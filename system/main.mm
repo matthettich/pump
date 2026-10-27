@@ -261,15 +261,24 @@ struct Engine
         fmt.mChannelsPerFrame = 2;
         fmt.mBitsPerChannel = 32;
 
-        AudioUnitSetProperty(au, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Input, 0, &fmt, sizeof(fmt));
-        AudioUnitSetProperty(au, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Output, 0, &fmt, sizeof(fmt));
-
+        // the render callback hands over exactly this format (stereo, float, non-interleaved) and slices of at most
+        // kMaxFrames: if the unit won't take any of it, it can't run (initializing anyway could pick another layout)
         UInt32 maxFrames = kMaxFrames;
-        AudioUnitSetProperty(au, kAudioUnitProperty_MaximumFramesPerSlice, kAudioUnitScope_Global, 0,
-                             &maxFrames, sizeof(maxFrames));
-
         AURenderCallbackStruct cb = { renderInput, this };
-        AudioUnitSetProperty(au, kAudioUnitProperty_SetRenderCallback, kAudioUnitScope_Input, 0, &cb, sizeof(cb));
+        OSStatus st = AudioUnitSetProperty(au, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Input, 0, &fmt, sizeof(fmt));
+        if (st == noErr)
+            st = AudioUnitSetProperty(au, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Output, 0, &fmt, sizeof(fmt));
+        if (st == noErr)
+            st = AudioUnitSetProperty(au, kAudioUnitProperty_MaximumFramesPerSlice, kAudioUnitScope_Global, 0,
+                                      &maxFrames, sizeof(maxFrames));
+        if (st == noErr)
+            st = AudioUnitSetProperty(au, kAudioUnitProperty_SetRenderCallback, kAudioUnitScope_Input, 0, &cb, sizeof(cb));
+        if (st != noErr)
+        {
+            NSLog(@"%@: the EQ refused its stereo format at %.0f Hz (error %d)", kAppName, rate, (int)st);
+            auRate = 0.0;
+            return false;
+        }
 
         if (AudioUnitInitialize(au) != noErr)
         {
@@ -333,6 +342,20 @@ struct Engine
 
         NSString* tapUID = desc.UUID.UUIDString;
 
+        // the IO callback reads the tap as interleaved 32-bit float: make sure that is what it delivers
+        {
+            AudioStreamBasicDescription tf = {};
+            UInt32 sz = sizeof(tf);
+            AudioObjectPropertyAddress fa = addr(kAudioTapPropertyFormat);
+            const OSStatus fe = AudioObjectGetPropertyData(tap, &fa, 0, nullptr, &sz, &tf);
+            if (fe != noErr || tf.mFormatID != kAudioFormatLinearPCM || !(tf.mFormatFlags & kAudioFormatFlagIsFloat)
+                || (tf.mFormatFlags & kAudioFormatFlagIsNonInterleaved) || tf.mBitsPerChannel != 32 || tf.mChannelsPerFrame == 0)
+            {
+                stop();
+                return [NSString stringWithFormat:@"System audio comes in a format the EQ can't read (error %d).", (int)fe];
+            }
+        }
+
         NSDictionary* aggDesc = @{
             @kAudioAggregateDeviceNameKey: kAppName,
             @kAudioAggregateDeviceUIDKey: [NSString stringWithFormat:@"com.wake.pump.systemeq.%@", NSUUID.UUID.UUIDString],
@@ -357,14 +380,21 @@ struct Engine
         Float64 aggRate = rate;
         {
             AudioObjectPropertyAddress a = addr(kAudioDevicePropertyNominalSampleRate);
-            AudioObjectSetPropertyData(aggregate, &a, 0, nullptr, sizeof(aggRate), &aggRate);
+            const OSStatus re = AudioObjectSetPropertyData(aggregate, &a, 0, nullptr, sizeof(aggRate), &aggRate);
+            if (re != noErr)
+            {
+                stop();
+                return [NSString stringWithFormat:@"Couldn't run at the output's rate of %.0f Hz (error %d).", rate, (int)re];
+            }
         }
 
         // keep IO slices within what the EQ was told to expect
         {
             UInt32 frames = 512;
             AudioObjectPropertyAddress a = addr(kAudioDevicePropertyBufferFrameSize);
-            AudioObjectSetPropertyData(aggregate, &a, 0, nullptr, sizeof(frames), &frames);
+            const OSStatus be = AudioObjectSetPropertyData(aggregate, &a, 0, nullptr, sizeof(frames), &frames);
+            if (be != noErr)   // not fatal: the IO callback works through any slice size in kMaxFrames pieces
+                NSLog(@"%@: couldn't set the buffer size (error %d); using the device's", kAppName, (int)be);
         }
 
         if (!prepareUnit(rate))
@@ -374,8 +404,12 @@ struct Engine
         }
 
         err = AudioDeviceCreateIOProcID(aggregate, ioProcFn, this, &ioProc);
-        if (err == noErr)
-            useOnlyTapInput();
+        if (err == noErr && !useOnlyTapInput())
+        {
+            // starting anyway would read the device's real inputs: the microphone prompt, Bluetooth call quality
+            stop();
+            return @"Couldn't switch the output device's own inputs off.";
+        }
         if (err == noErr)
             err = AudioDeviceStart(aggregate, ioProc);
         if (err != noErr)
@@ -393,26 +427,32 @@ struct Engine
     // The aggregate's inputs are the output device's own inputs (a microphone, an interface's inputs) followed by
     // the tap. Switch everything but the tap off: reading a real input would ask for microphone access and would put
     // Bluetooth headphones into their low-quality call mode.
-    void useOnlyTapInput()
+    // Returns false when the other inputs couldn't be switched off.
+    bool useOnlyTapInput()
     {
         AudioObjectPropertyAddress streamsAddr = addr(kAudioDevicePropertyStreams, kAudioObjectPropertyScopeInput);
         UInt32 size = 0;
-        AudioObjectGetPropertyDataSize(aggregate, &streamsAddr, 0, nullptr, &size);
+        if (AudioObjectGetPropertyDataSize(aggregate, &streamsAddr, 0, nullptr, &size) != noErr)
+            return false;
         const UInt32 streams = size / sizeof(AudioStreamID);
-        tapBuffer = streams > 0 ? streams - 1 : 0;   // the tap comes last
+        if (streams == 0)
+            return false;   // not even the tap
+        tapBuffer = streams - 1;   // the tap comes last
+        if (streams == 1)
+            return true;   // the tap alone: nothing to switch off
 
         AudioObjectPropertyAddress a = addr(kAudioDevicePropertyIOProcStreamUsage, kAudioObjectPropertyScopeInput);
         size = 0;
         if (AudioObjectGetPropertyDataSize(aggregate, &a, 0, nullptr, &size) != noErr || size == 0)
-            return;
+            return false;
         std::vector<uint8_t> mem(size);
         auto* usage = reinterpret_cast<AudioHardwareIOProcStreamUsage*>(mem.data());
         usage->mIOProc = reinterpret_cast<void*>(ioProc);
         if (AudioObjectGetPropertyData(aggregate, &a, 0, nullptr, &size, usage) != noErr)
-            return;
+            return false;
         for (UInt32 i = 0; i < usage->mNumberStreams; ++i)
             usage->mStreamIsOn[i] = (i == tapBuffer) ? 1 : 0;
-        AudioObjectSetPropertyData(aggregate, &a, 0, nullptr, size, usage);
+        return AudioObjectSetPropertyData(aggregate, &a, 0, nullptr, size, usage) == noErr;
     }
 
     // stop the device while nothing plays (the tap stays, still muting), and start it again

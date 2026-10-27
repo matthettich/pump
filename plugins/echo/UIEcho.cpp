@@ -566,7 +566,7 @@ protected:
         }
         dragging = true; dragSide = side; dragX = x; dragY = y;
         dragFb = value(kFeedback);
-        beginEdit(timeParam(side)); beginEdit(kFeedback);
+        dragTimeParam = timeParam(side); beginEdit(dragTimeParam); beginEdit(kFeedback);
         // clicking off the handle puts the echo where the mouse is
         if (!exact) setTimeFromSeconds(side, secondsAtX(side, x));
         double T[2];
@@ -592,7 +592,7 @@ protected:
     {
         if (!dragging) return;
         dragging = false;
-        endEdit(kFeedback); endEdit(timeParam(dragSide));
+        endEdit(kFeedback); endEdit(dragTimeParam);   // the one opened, even if SYNC changed meanwhile
     }
     void bodyHover(float x, float y) override
     {
@@ -663,7 +663,7 @@ private:
     float lvlWet[2] = { -120.0f, -120.0f }, holdWet[2] = { -120.0f, -120.0f }, holdWetT[2] = { 0.0f, 0.0f };
     float lag[2] = { 0.0f, 0.0f }, wobble = 0.0f, duck = 0.0f, phase = 0.0f, span = 0.0f, zoom = 1.0f;
     bool dragging = false;
-    int dragSide = 0, hoverSide = -1;
+    int dragSide = 0, hoverSide = -1, dragTimeParam = -1;
     float dragX = 0, dragY = 0, dragFb = 0;
     double dragT = 0.5;
 

@@ -14,7 +14,7 @@ public:
     PluginMachine() : PumpPlugin(params().data(), kNumParams, &presets())
     {
         activate();
-        if (std::getenv("PUMP_TEST_NOTES")) testLoop = true;   // headless screenshots: a beat plays from the start
+        if (pump::testEnv("PUMP_TEST_NOTES")) testLoop = true;   // headless screenshots: a beat plays from the start
     }
 
     // gain staging (the volume pass, 2026-10-26): VOLUME 0 dB is a typical voice at about -20 dBFS RMS
@@ -37,7 +37,6 @@ protected:
         engine.prepare(getSampleRate(), (int)getBufferSize(), fw.data()); outLimit.prepare(getSampleRate());
         for (uint32_t i = 0; i < (uint32_t)kNumParams; ++i) takeChanged(i);
     }
-    void sampleRateChanged(double) override { activate(); }
 
     void run(const float**, float** outputs, uint32_t frames, const MidiEvent* midiEvents, uint32_t midiEventCount) override
     {

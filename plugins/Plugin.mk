@@ -3,7 +3,14 @@
 
 DPF_PATH ?= ../../dpf
 DPF_TARGET_DIR ?= ../../bin
+# `make jack` (standalone apps for local testing and tools/shot.sh) turns on the test hooks (pump::testEnv), in a
+# build folder of its own so they never end up in the VST3 / CLAP / AU builds
+ifneq ($(filter jack,$(MAKECMDGOALS)),)
+PUMP_TEST_HOOKS = 1
+DPF_BUILD_DIR ?= ../../build/$(NAME)-test
+else
 DPF_BUILD_DIR ?= ../../build/$(NAME)
+endif
 UI_TYPE = opengl
 
 # DPF fixes pump carries (patches/dpf): also applied when a plugin is built directly (make -C plugins/eq)
@@ -20,6 +27,9 @@ include $(DPF_PATH)/Makefile.plugins.mk
 BUILD_CXX_FLAGS += -DDPF_VST3_TIMER_INTERVAL=10
 BUILD_CXX_FLAGS += -std=gnu++17 -I. -I../../common -fno-finite-math-only -Wno-unused-parameter -DPFFFT_STATIC_DEFINE
 BUILD_C_FLAGS += -fno-finite-math-only -Wno-unused-parameter -Wno-sign-compare -DPFFFT_STATIC_DEFINE
+ifeq ($(PUMP_TEST_HOOKS),1)
+BUILD_CXX_FLAGS += -DPUMP_TEST_HOOKS=1
+endif
 
 TARGETS = vst3 clap
 ifeq ($(MACOS),true)
