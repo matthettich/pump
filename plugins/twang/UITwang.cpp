@@ -13,7 +13,7 @@ using namespace pump::twang;
 
 class UITwang : public PumpUI {
 public:
-    UITwang() : PumpUI(params().data(), kNumParams, &presets(), pump::accents::twang(), "TWANG", 1000, 740, kBypass)
+    UITwang() : PumpUI(params().data(), kNumParams, &presets(), pump::accents::twang(), "TWANG", 1000, 800, kBypass)
     {
         auto dial = [&](int p, const char* l, bool bi = false, const char* tip = nullptr, Dial::Size sz = Dial::Small) { Dial* d = addDial(p, l, sz, bi); if (tip) d->tip = tip; return d; };
         tuneSeg = addSegmented(kTuning, { "CHORD", "MIDI", "LATCH" });
@@ -53,12 +53,12 @@ protected:
 
     void layout() override
     {
-        const float top = 58, sh = 166, hs = Dial::heightFor(Dial::Small);
+        const float top = 58, sh = 228, hs = Dial::heightFor(Dial::Small);
         springsR = Rect(14, top, 600, sh);
         kickR = Rect(626, top, 140, sh);
         scopeR = Rect(778, top, 182, sh);
         meterL = Rect(966, top, 8, sh - 12); meterR = Rect(977, top, 8, sh - 12);
-        const float y1 = 238, ph = 196;
+        const float y1 = 300, ph = 196;
         tunePanel = Rect(14, y1, 420, ph);
         tuneSeg->r = Rect(24, y1 + 28, 400, 22);
         rootD->r = Rect(34, y1 + 66, 120, hs); chordD->r = Rect(154, y1 + 66, 140, hs); octD->r = Rect(294, y1 + 66, 120, hs);
@@ -66,14 +66,14 @@ protected:
         modelSeg->r = Rect(456, y1 + 28, 520, 22);
         Dial* sd[5] = { tensionD, dripD, wobbleD, gritD, toneD };
         for (int k = 0; k < 5; ++k) sd[k]->r = Rect(460 + k * 104, y1 + 74, 104, hs);
-        const float y2 = 446, ph2 = 192;
+        const float y2 = 508, ph2 = 192;
         voicePanel = Rect(14, y2, 420, ph2);
         harmD->r = Rect(24, y2 + 34, 120, Dial::heightFor(Dial::Large));
         spreadD->r = Rect(150, y2 + 50, 90, hs); decayD->r = Rect(240, y2 + 50, 90, hs); relD->r = Rect(330, y2 + 50, 90, hs);
         outPanel = Rect(446, y2, 540, ph2);
         Dial* od[5] = { driveD, tankD, widthD, mixD, outD };
         for (int k = 0; k < 5; ++k) od[k]->r = Rect(460 + k * 104, y2 + 50, 104, hs);
-        keyboard.r = Rect(14, 650, 966, 56);
+        keyboard.r = Rect(14, 712, 966, 56);
     }
 
     void tick(float dt) override
@@ -86,6 +86,7 @@ protected:
         if (kickHeld) kickPress = 1.0f; else kickPress = std::max(0.0f, kickPress - dt * 8.0f);
         kickAge += dt;
         if (!plug) return;
+        springsView.update(&plug->engine, dt);
         for (int c = 0; c < 2; ++c)
         {
             const float pk = pump::gainToDbF(plug->outPeak[c].exchange(0.0f));
@@ -109,7 +110,7 @@ protected:
         }
         else std::snprintf(right, sizeof right, "%s", tu == pump::coil::kTuneMidi ? "TUNED BY THE NOTES HELD" : "TUNED BY THE LAST NOTES");
         std::string up = right; for (char& c : up) c = (char)std::toupper((unsigned char)c);
-        pump::coil::drawSprings(*this, springsR, plug ? &plug->engine : nullptr, t, "SPRINGS", up.c_str());
+        springsView.draw(*this, springsR, kickAge, "SPRINGS", up.c_str());
         drawKick();
         drawScope();
         drawLevelMeter(meterL, lvl[0], hold[0], -48.0f, 6.0f);
@@ -203,6 +204,7 @@ private:
     Segmented *tuneSeg, *modelSeg;
     Dial *rootD, *chordD, *octD, *tensionD, *dripD, *wobbleD, *gritD, *toneD, *harmD, *spreadD, *decayD, *relD, *driveD, *tankD, *widthD, *mixD, *outD;
     KeyboardUI keyboard;
+    pump::coil::SpringsView springsView;
     bool kbDown = false, kickHeld = false;
     float t = 0.0f, kickPress = 0.0f, kickAge = 10.0f, scope[kScopeN] = {}, scale = 1.0f;
     float lvl[2] = { -120.0f, -120.0f }, hold[2] = { -120.0f, -120.0f }, holdT[2] = { 0.0f, 0.0f };

@@ -429,6 +429,7 @@ public:
     void prepare(double sampleRate, int maxBlock)
     {
         sr = sampleRate;
+        decim = std::max(1, (int)std::lround(sr / 12000.0)); decimPos = 0;
         for (int i = 0; i < kMaxVoices; ++i) voices[(size_t)i].prepare(sr, (uint32_t)i + 1);
         body.prepare(sr, maxBlock);
         bodyIn.assign((size_t)std::max(1, maxBlock) + 16, 0.0f);
@@ -463,6 +464,9 @@ public:
     int sectionsNow() const { return sectFeed.load(std::memory_order_relaxed); }
     float lanePeriodNow(int l) const { return laneFeed[(size_t)clampv(l, 0, 3)].load(std::memory_order_relaxed); }
     bool noteLit(int n) const { return n >= 0 && n < 128 && ((litFeed[(n >> 6) & 1].load(std::memory_order_relaxed) >> (n & 63)) & 1); }
+    // each voice's sound, at visRate(): the wave the SPRINGS screen sends along its spring
+    std::array<ScopeRing, kMaxVoices> visV { ScopeRing(1024), ScopeRing(1024), ScopeRing(1024), ScopeRing(1024), ScopeRing(1024), ScopeRing(1024), ScopeRing(1024), ScopeRing(1024) };
+    double visRate() const { return sr / decim; }
     float voiceLevel(int i) const { return levelFeed[(size_t)clampv(i, 0, kMaxVoices - 1)].load(std::memory_order_relaxed); }
     int voiceNote(int i) const { return noteFeed[(size_t)clampv(i, 0, kMaxVoices - 1)].load(std::memory_order_relaxed); }
 
@@ -501,7 +505,14 @@ public:
                 x = ((double)fastTanh((float)(h * dd) + 0.2f) - kDrvBias) * makeup * 0.25;
             }
             double l = 0.0, r = 0.0;
-            for (auto& v : voices) v.process(x, frac, l, r);
+            const bool visNow = ++decimPos >= decim;
+            if (visNow) decimPos = 0;
+            for (int k = 0; k < kMaxVoices; ++k)
+            {
+                const double before = l + r;
+                voices[(size_t)k].process(x, frac, l, r);
+                if (visNow) visV[(size_t)k].push((float)(0.5 * (l + r - before)));
+            }
             // the output transducer: 70 Hz high-pass and the chirp-band peak (DRIP)
             l = dripPk[0].peak(outHp[0].highpass(l), dripGain);
             r = dripPk[1].peak(outHp[1].highpass(r), dripGain);
@@ -635,6 +646,7 @@ private:
     std::atomic<int> activeFeed { 0 }, sectFeed { 0 };
     std::array<std::atomic<float>, 4> laneFeed {};
     std::array<std::atomic<float>, kMaxVoices> levelFeed {};
+    int decim = 4, decimPos = 0;
     std::array<std::atomic<int>, kMaxVoices> noteFeed {};
     std::atomic<uint64_t> litFeed[2] {};
 };
