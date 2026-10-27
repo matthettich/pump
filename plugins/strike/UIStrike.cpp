@@ -11,19 +11,19 @@ using namespace pump::strike;
 
 class UIStrike : public PumpUI {
 public:
-    UIStrike() : PumpUI(params().data(), kNumParams, &presets(), pump::accents::strike(), "STRIKE", 1000, 690, -1)
+    UIStrike() : PumpUI(params().data(), kNumParams, &presets(), pump::accents::strike(), "STRIKE", 1000, 600, -1)
     {
         static const char* const lab[kPerPad] = { "ENGINE", "PITCH", "DECAY", "TONE", "CHAR A", "CHAR B", "BEND", "B-TIME", "NOISE", "LEVEL", "PAN" };
         for (int p = 0; p < kPads; ++p)
         {
             engSeg[p] = addSegmented(pp(p, kEngine), { kEngineKeys, kEngineKeys + kNumEngines });
             engSeg[p]->tip = "Modal objects · a waveguide string · an analog circuit · three-operator FM · west-coast fold and gate · additive partials · chaos";
-            for (int f = kPitch; f < kPerPad; ++f) edit[p][f] = addDial(pp(p, f), lab[f], Dial::Small, f == kPan || f == kLevel);
+            for (int f = kPitch; f < kPerPad; ++f) edit[p][f] = addDial(pp(p, f), lab[f], Dial::Medium, f == kPan || f == kLevel);
             edit[p][kBend]->tip = "The pitch starts this many semitones up and falls back in B-TIME";
             edit[p][kNoise]->tip = "Noise that bursts and then rattles with the body (snare wires, sizzle, snap)";
         }
-        auto dial = [&](int p, const char* l, const char* tip = nullptr) { Dial* d = addDial(p, l, Dial::Small); if (tip) d->tip = tip; return d; };
-        velD = dial(kVelocity, "VELOCITY"); driveD = dial(kDrive, "DRIVE"); volD = addDial(kVolume, "VOLUME", Dial::Small, true);
+        auto dial = [&](int p, const char* l, const char* tip = nullptr) { Dial* d = addDial(p, l, Dial::Medium); if (tip) d->tip = tip; return d; };
+        velD = dial(kVelocity, "VELOCITY"); driveD = dial(kDrive, "DRIVE"); volD = addDial(kVolume, "VOLUME", Dial::Medium, true);
         chokeB = addToggle(kChoke, "CHOKE");
         chokeB->tip = "The closed hat cuts the open hat";
         followB = addToggle(kFollow, "FOLLOW"); followB->tip = "Show the pad you play: every hit (MIDI, keys, a click) selects it for editing";
@@ -73,24 +73,29 @@ protected:
 
     void layout() override
     {
-        const float top = 58, hs = Dial::heightFor(Dial::Small);
-        hitsR = Rect(14, top, 560, 228);
-        padsR = Rect(586, top, 400, 228);
-        for (int p = 0; p < kPads; ++p) padR[p] = Rect(596 + (p % 4) * 96, top + 28 + (p / 4) * 98, 90, 92);
-        editR = Rect(14, 298, 972, 210);
+        // top: hits beside the pads
+        const float top = 58, sh = 216, hm = Dial::heightFor(Dial::Medium);
+        hitsR = Rect(14, top, 560, sh);
+        padsR = Rect(586, top, 400, sh);
+        for (int p = 0; p < kPads; ++p) padR[p] = Rect(596 + (p % 4) * 96, top + 28 + (p / 4) * 92, 90, 86);
+        // the selected pad: engine, then its ten dials in one row
+        const float ey = top + sh + 12, eh = 150;
+        editR = Rect(14, ey, 972, eh);
         static const int order[10] = { kPitch, kDecay, kTone, kCharA, kCharB, kBend, kBendTime, kNoise, kLevel, kPan };
         for (int p = 0; p < kPads; ++p)
         {
-            engSeg[p]->r = Rect(24, 326, 952, 22);
-            for (int k = 0; k < 10; ++k) edit[p][order[k]]->r = k < 5 ? Rect(22 + k * 192, 360, 192, hs) : Rect(22 + (k - 5) * 192, 432, 192, hs);
+            engSeg[p]->r = Rect(26, ey + 28, 948, 24);
+            for (int k = 0; k < 10; ++k) edit[p][order[k]]->r = Rect(26 + k * 94.8f, ey + 62, 94.8f, hm);
         }
-        kitR = Rect(14, 520, 560, 130);
+        followB->r = Rect(866, ey + 4, 110, 20);
+        // KIT (velocity, drive, volume, choke) beside the scope
+        const float ky = ey + eh + 12, kh = 116;
+        kitR = Rect(14, ky, 560, kh);
         Dial* kd[3] = { velD, driveD, volD };
-        for (int k = 0; k < 3; ++k) kd[k]->r = Rect(22 + k * 120, 556, 120, hs);
-        chokeB->r = Rect(400, 576, 140, 26);
-        followB->r = Rect(866, 304, 110, 20);
-        scopeR = Rect(586, 520, 372, 130);
-        meterL = Rect(964, 520, 8, 118); meterR = Rect(975, 520, 8, 118);
+        for (int k = 0; k < 3; ++k) kd[k]->r = Rect(26 + k * 128, ky + 28, 128, hm);
+        chokeB->r = Rect(422, ky + 52, 140, 26);
+        scopeR = Rect(586, ky, 372, kh);
+        meterL = Rect(964, ky, 8, kh - 12); meterR = Rect(975, ky, 8, kh - 12);
     }
 
     void tick(float dt) override

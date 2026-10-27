@@ -27,7 +27,7 @@
 #define DISTRHO_UI_USER_RESIZABLE      1
 #define DISTRHO_UI_FILE_BROWSER        0
 #define DISTRHO_UI_DEFAULT_WIDTH       1000
-#define DISTRHO_UI_DEFAULT_HEIGHT      690
+#define DISTRHO_UI_DEFAULT_HEIGHT      600
 
 #define DISTRHO_PLUGIN_VST3_CATEGORIES "Instrument|Drum"
 #define DISTRHO_PLUGIN_CLAP_FEATURES   "instrument", "drum-machine", "stereo"
