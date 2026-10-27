@@ -30,6 +30,7 @@
 #include "../plugins/wob/WobParams.hpp"
 #include "../plugins/kit/KitParams.hpp"
 #include "../plugins/machine/MachineParams.hpp"
+#include "../plugins/sing/SingParams.hpp"
 #include <cstdio>
 #include <cstring>
 #include <map>
@@ -125,6 +126,7 @@ int main()
         { "WOB", wob::params(), wob::presets() },
         { "KIT", kit::params(), kit::presets() },
         { "MACHINE", machine::params(), machine::presets() },
+        { "SING", sing::params(), sing::presets() },
     };
     std::map<std::string, int> sections;
     std::vector<std::vector<std::string>> chains;

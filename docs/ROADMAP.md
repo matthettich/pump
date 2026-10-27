@@ -22,9 +22,7 @@ Instruments (MIDI in, stereo out):
 - **KIT** drum synth — done (2026-10-24).
 - **MONO** analog mono / bass synth — done (2026-10-24).
 - **POLY** vintage polysynth — done (2026-10-24).
-- **Singing synth**: a vocal synthesizer that sings MIDI notes on vowels and phonemes (typed lyrics or a vowel
-  morph), with as many voice styles as we can make: soft, breathy, bright pop, choir, robotic, child-like, deep,
-  whisper, plus formant shift, vibrato and portamento.
+- **SING** singing synth — done (2026-10-26).
 - **Spring synth** (next after the singing synth): SPRING's tanks (two-, three-spring, short, long, and the two digital
   ones as tuned combs) played chromatically: each spring's loop tuned to the note (its allpass delay compensated),
   excited by SPRING's kick (velocity = strength); a REFERENCE end that rings at the tank's own length (the reverb

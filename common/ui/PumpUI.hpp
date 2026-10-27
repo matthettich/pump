@@ -621,12 +621,14 @@ public:
     }
 
     // Typed text that isn't a parameter value (a preset name): Enter calls onText, Esc or a click elsewhere cancels.
-    void openNameEntry(const Rect& r, const std::string& initial, std::function<void(const std::string&)> onText)
+    // maxLen: the longest text accepted (40 suits a name; SING's lyrics take more)
+    void openNameEntry(const Rect& r, const std::string& initial, std::function<void(const std::string&)> onText, size_t maxLen = 40)
     {
         fEdit.ring.clear();
         fEdit.active = true; fEdit.param = -1; fEdit.r = r;
         fEdit.text = initial; fEdit.original = "\x01";
         fEdit.selectAll = true;
+        fEdit.maxLen = maxLen;
         fEdit.onText = std::move(onText);
         takeKeyboardFocus();
         repaint();
@@ -921,6 +923,25 @@ protected:
             return keyPress(ev.key, ev.mod);
         }
         if (!ev.press) return false;
+        if (cmdKey(ev.mod) && (ev.key == 'v' || ev.key == 'V'))   // paste (line breaks become spaces)
+        {
+            size_t n = 0;
+            const char* d = static_cast<const char*>(getClipboard(n));
+            if (d && n)
+            {
+                if (fEdit.selectAll) { fEdit.text.clear(); fEdit.selectAll = false; }
+                const size_t cap = fEdit.param < 0 ? fEdit.maxLen : 16u;
+                for (size_t i = 0; i < n && fEdit.text.size() < cap; ++i)
+                {
+                    const unsigned char c = (unsigned char)d[i];
+                    if (c >= 32 && c < 127) fEdit.text.push_back((char)c);
+                    else if ((c == '\n' || c == '\r' || c == '\t') && !fEdit.text.empty() && fEdit.text.back() != ' ') fEdit.text.push_back(' ');
+                }
+                repaint();
+            }
+            return true;
+        }
+        if (cmdKey(ev.mod) && (ev.key == 'c' || ev.key == 'C')) { setClipboard("text/plain", fEdit.text.data(), fEdit.text.size()); return true; }
         if (ev.key == kKeyTab) { if (fEdit.param >= 0) tabTextEntry((ev.mod & kModifierShift) != 0); return true; }
         if (ev.key == kKeyEnter) { commitTextEntry(); return true; }
         if (ev.key == kKeyEscape) { if (fEdit.param < 0) setStatus("Not saved"); fEdit.active = false; fEdit.onText = nullptr; repaint(); return true; }
@@ -941,7 +962,7 @@ protected:
         if (c >= 32 && c < 127)
         {
             if (fEdit.selectAll) { fEdit.text.clear(); fEdit.selectAll = false; }
-            if (fEdit.text.size() < (fEdit.param < 0 ? 40u : 16u)) fEdit.text.push_back((char)c);
+            if (fEdit.text.size() < (fEdit.param < 0 ? fEdit.maxLen : 16u)) fEdit.text.push_back((char)c);
             repaint();
         }
         return true;
@@ -1126,6 +1147,16 @@ protected:
         {
             const float tw = textWidth(fEdit.text, kMono, 12.0f);
             fillRect(Rect(r.cx() - tw * 0.5f - 2, r.y + 3, tw + 4, r.h - 6), theme.neon);
+        }
+        const float full = textWidth(fEdit.text, kMono, 12.0f);
+        if (full > r.w - 16.0f)
+        {
+            // longer than the box: keep its end (where the typing is) in view
+            save(); scissor(r.x + 4, r.y, r.w - 8, r.h);
+            textAt(r.r() - 8, r.cy(), fEdit.text, kMono, 12.0f, theme.ink, ALIGN_RIGHT | ALIGN_MIDDLE);
+            restore();
+            if (!fEdit.selectAll) line(r.r() - 7, r.y + 4, r.r() - 7, r.b() - 4, theme.ink, 1.2f);
+            return;
         }
         textAt(r.cx(), r.cy(), fEdit.text, kMono, 12.0f, theme.ink, ALIGN_CENTER | ALIGN_MIDDLE);
         if (!fEdit.selectAll)
@@ -1589,7 +1620,7 @@ protected:
     Button* fThemeBtn = nullptr;
     Button* fBypassBtn = nullptr;
     struct { bool open = false; Rect r; std::vector<std::string> items; int current = -1, hover = -1; float itemH = 22, scroll = 0; std::function<void(int)> onPick; } fMenu;
-    struct { bool active = false; int param = -1; Rect r; std::string text, original; bool selectAll = true; std::vector<std::pair<int, Rect>> ring;
+    struct { bool active = false; int param = -1; Rect r; std::string text, original; bool selectAll = true; size_t maxLen = 40; std::vector<std::pair<int, Rect>> ring;
              std::function<void(const std::string&)> onText; } fEdit;
     std::vector<std::string> fUndo[2], fRedo[2];   // per A/B slot
     std::string fGestureBefore;
