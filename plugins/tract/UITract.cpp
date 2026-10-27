@@ -13,9 +13,9 @@ using namespace pump::tract;
 
 class UITract : public PumpUI {
 public:
-    UITract() : PumpUI(params().data(), kNumParams, &presets(), pump::accents::tract(), "TRACT", 1000, 738, -1)
+    UITract() : PumpUI(params().data(), kNumParams, &presets(), pump::accents::tract(), "TRACT", 1000, 708, -1)
     {
-        auto dial = [&](int p, const char* l, bool bi = false, const char* tip = nullptr) { Dial* d = addDial(p, l, Dial::Small, bi); if (tip) d->tip = tip; return d; };
+        auto dial = [&](int p, const char* l, bool bi = false, const char* tip = nullptr) { Dial* d = addDial(p, l, Dial::Medium, bi); if (tip) d->tip = tip; return d; };
         tenseD = dial(kTense, "TENSE", false, "Breathy, open folds (0) to a pressed, bright voice (100)");
         breathD = dial(kBreath, "BREATH", false, "Air through the folds: aspiration noise");
         vibD = dial(kVibrato, "VIBRATO"); vrateD = dial(kVibRate, "RATE");
@@ -56,27 +56,34 @@ protected:
 
     void layout() override
     {
-        const float top = 58, hs = Dial::heightFor(Dial::Small);
-        tubeR = Rect(14, top, 620, 220);
-        vowelR = Rect(646, top, 314, 104);
-        waveR = Rect(646, top + 116, 314, 104);
-        meterL = Rect(966, top, 8, 208); meterR = Rect(977, top, 8, 208);
-        srcPanel = Rect(14, 290, 472, 116);
-        Dial* sd[5] = { tenseD, breathD, vibD, vrateD, jitD };
-        for (int k = 0; k < 5; ++k) sd[k]->r = Rect(20 + k * 93, 324, 93, hs);
-        trPanel = Rect(498, 290, 488, 116);
-        Dial* td[5] = { vowelD, motionD, mrateD, sizeD, brightD };
-        for (int k = 0; k < 5; ++k) td[k]->r = Rect(504 + k * 96, 324, 96, hs);
-        ensPanel = Rect(14, 416, 472, 116);
-        Dial* ed[5] = { singersD, detuneD, sizesD, vowelsD, spreadD };
-        for (int k = 0; k < 5; ++k) ed[k]->r = Rect(20 + k * 93, 450, 93, hs);
-        envPanel = Rect(498, 416, 488, 116);
-        for (int k = 0; k < 4; ++k) envD[k]->r = Rect(504 + k * 120, 450, 120, hs);
-        voicePanel = Rect(14, 542, 972, 96);
-        Dial* vd[5] = { velD, voicesD, glideD, octD, volD };
-        for (int k = 0; k < 5; ++k) vd[k]->r = Rect(22 + k * 120, 564, 120, hs);
-        vmodeSeg->r = Rect(700, 584, 276, 22);
-        keyboard.r = Rect(14, 650, 966, 56);
+        // top: tract, vowel over wave, meters
+        const float top = 58, sh = 180, hm = Dial::heightFor(Dial::Medium);
+        tubeR = Rect(14, top, 620, sh);
+        vowelR = Rect(646, top, 314, (sh - 12) * 0.5f);
+        waveR = Rect(646, top + vowelR.h + 12, 314, (sh - 12) * 0.5f);
+        meterL = Rect(966, top, 8, sh - 12); meterR = Rect(977, top, 8, sh - 12);
+        // spread n dials across w px of a panel
+        const float ph = 112;
+        auto rowOf = [&](float x, float y, float w, Dial** d, int n) {
+            const float cw = w / n;
+            for (int k = 0; k < n; ++k) d[k]->r = Rect(x + k * cw, y + 28, cw, hm);
+        };
+        // VOICE SOURCE | TRACT
+        const float y1 = top + sh + 12;
+        srcPanel = Rect(14, y1, 480, ph); trPanel = Rect(506, y1, 480, ph);
+        Dial* sd[5] = { tenseD, breathD, vibD, vrateD, jitD }; rowOf(24, y1, 460, sd, 5);
+        Dial* td[5] = { vowelD, motionD, mrateD, sizeD, brightD }; rowOf(516, y1, 460, td, 5);
+        // ENSEMBLE | ENVELOPE
+        const float y2 = y1 + ph + 12;
+        ensPanel = Rect(14, y2, 480, ph); envPanel = Rect(506, y2, 480, ph);
+        Dial* ed[5] = { singersD, detuneD, sizesD, vowelsD, spreadD }; rowOf(24, y2, 460, ed, 5);
+        rowOf(516, y2, 460, envD, 4);
+        // VOICE: five dials, the mode beside them
+        const float y3 = y2 + ph + 12;
+        voicePanel = Rect(14, y3, 972, ph);
+        Dial* vd[5] = { velD, voicesD, glideD, octD, volD }; rowOf(24, y3, 640, vd, 5);
+        vmodeSeg->r = Rect(690, y3 + ph * 0.5f - 12, 284, 24);
+        keyboard.r = Rect(14, y3 + ph + 12, 966, 52);
     }
 
     void tick(float dt) override
@@ -135,7 +142,7 @@ protected:
         const Rect& r = vowelR;
         screenBox(r);
         caption(r.x + 10, r.y + 14, "VOWEL");
-        const Rect p(r.x + 24, r.y + 34, r.w - 48, r.h - 50);
+        const Rect p(r.x + 24, r.y + 30, r.w - 48, r.h - 46);
         line(p.x, p.cy(), p.r(), p.cy(), theme.dim, 2.0f);
         for (int k = 0; k < 5; ++k)
         {
@@ -169,7 +176,7 @@ protected:
         drawTube(); drawVowel(); drawWave();
         drawLevelMeter(meterL, lvl[0], hold[0], -48.0f, 6.0f);
         drawLevelMeter(meterR, lvl[1], hold[1], -48.0f, 6.0f);
-        auto panel = [&](const Rect& r, const char* c) { strokeRect(r, theme.dim, 1.0f); caption(r.x + 12, r.y + 13, c); };
+        auto panel = [&](const Rect& r, const char* c) { strokeRect(r, theme.dim, 1.0f); caption(r.x + 12, r.y + 16, c); };
         panel(srcPanel, "VOICE SOURCE"); panel(trPanel, "TRACT"); panel(ensPanel, "ENSEMBLE"); panel(envPanel, "ENVELOPE"); panel(voicePanel, "VOICE");
         keyboard.draw(*this);
     }
@@ -183,7 +190,7 @@ protected:
     }
     void setVowelFrom(float x)
     {
-        const Rect p(vowelR.x + 24, vowelR.y + 34, vowelR.w - 48, vowelR.h - 50);
+        const Rect p(vowelR.x + 24, vowelR.y + 30, vowelR.w - 48, vowelR.h - 46);
         setParam(kVowel, pump::clampv((x - p.x) / p.w, 0.0f, 1.0f) * 100.0f);
     }
     void bodyMouseDrag(float x, float y, uint) override
