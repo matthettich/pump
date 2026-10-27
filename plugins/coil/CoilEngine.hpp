@@ -478,8 +478,17 @@ public:
         mixS.setTarget(set.mix);
         if (kickReq > 0.0)
         {
-            for (auto& v : voices) v.kick(kickReq);
+            bool ringing = false;
+            for (auto& v : voices) if (v.isActive()) { v.kick(kickReq); ringing = true; }
             body.kick(kickReq);
+            // nothing ringing (no note played yet, or all rung out): KICK strikes the last note played, so it always
+            // sounds (struck and let go at once: it rings out by DECAY / RELEASE)
+            if (!ringing && !set.resonator)
+            {
+                const uint8_t vel = (uint8_t)clampv((int)std::lround(kickReq * 100.0), 1, 127);
+                handle(synth::Midi { 0, 0x90, (uint8_t)lastNote, vel });
+                handle(synth::Midi { 0, 0x80, (uint8_t)lastNote, 0 });
+            }
             kickReq = 0.0;
         }
         if ((int)bodyIn.size() < n) { bodyIn.resize((size_t)n); bodyInR.resize((size_t)n); }
@@ -604,7 +613,7 @@ private:
         const bool on = st == 0x90 && m.d2 > 0, off = st == 0x80 || (st == 0x90 && m.d2 == 0);
         // LATCH: a new chord (a key after all were up) replaces the ringing one
         if (on && set.resonator && set.tuning == kTuneLatch && keysDown == 0) for (auto& v : voices) if (v.isActive()) v.release(set);
-        if (on) ++keysDown; else if (off && keysDown > 0) --keysDown;
+        if (on) { ++keysDown; lastNote = m.d1 & 0x7F; } else if (off && keysDown > 0) --keysDown;
         vm.midi(m.status, m.d1, m.d2, [&](const synth::VoiceCmd& c) {
             Voice& v = voices[(size_t)clampv(c.voice, 0, kMaxVoices - 1)];
             switch (c.kind)
@@ -638,6 +647,7 @@ private:
     synth::VoiceManager vm;
     fx::Svf drvHp, outHp[2], dripPk[2];
     double sr = 48000.0, kickReq = 0.0, dripGain = 1.6;
+    int lastNote = 48;   // what KICK strikes when nothing rings (C3 until a note is played)
     double envF = 0.0, envS = 0.0, envFk = 0.1, envFr = 0.01, envSk = 0.01, envSr = 0.001;
     int tickPos = 0, lastStarted = -1, keysDown = 0;
     bool prepared = false, bodyOn = false;

@@ -58,6 +58,24 @@ int main()
     {
         printf("== %.0f Hz\n", sr);
         const int N = 32768;
+        // KICK with nothing ringing (no note yet, TANK 0): it strikes C3, then the last note played
+        {
+            Engine e; Settings s; s.wobble = 0.0; s.spread = 0.0; e.setSettings(s); e.prepare(sr, 512);
+            run(e, 4096, {});
+            e.kick(1.0);
+            const auto L = run(e, N + 8192, {});
+            double pk = 0.0; for (float v : L) pk = std::max(pk, (double)std::fabs(v));
+            const auto sp = spectrum(L, 4096, N, sr);
+            const double f0 = synth::midiToHz(48), f = peakHz(sp, f0 / 1.12, f0 * 1.12);
+            CHECK(pk > 0.01 && std::fabs(cents(f, f0)) < 12.0, "KICK with nothing ringing strikes C3 (peak %.3f, %.1f Hz)", pk, f);
+            run(e, 2048, { { 0, 0x90, 57, 100 }, { 1000, 0x80, 57, 0 } });
+            run(e, (int)(sr * 12), {});   // rung out
+            e.kick(1.0);
+            const auto M = run(e, N + 8192, {});
+            const auto sq = spectrum(M, 4096, N, sr);
+            const double g0 = synth::midiToHz(57), g = peakHz(sq, g0 / 1.12, g0 * 1.12);
+            CHECK(std::fabs(cents(g, g0)) < 12.0, "then the last note played (A3: %.1f Hz)", g);
+        }
         // tuning: every model, A2 A3 A4 A5 C7, HARMONIC 0 and 100
         for (double h : { 0.0, 1.0 })
         {
