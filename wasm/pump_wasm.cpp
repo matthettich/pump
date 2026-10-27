@@ -92,6 +92,7 @@ public:
     virtual void activate() = 0;
     virtual void run(const float** inputs, float** outputs, uint32_t frames) = 0;
     virtual int latencyNow() const = 0;
+    int reportedLatency() const { return reported; }   // what run() last reported (as a plugin reports to its host)
     virtual int telemetry(float* t) = 0;    // returns the number of values written
     virtual int numRings() const { return 0; }
     virtual const pump::ScopeRing* ring(int) const { return nullptr; }

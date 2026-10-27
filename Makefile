@@ -58,6 +58,18 @@ build/tests/wasm_wrapper: tests/wasm_wrapper.cpp wasm/pump_wasm.cpp build/tests/
 	@mkdir -p build/tests
 	$(CXX) $(TEST_FLAGS) -DPUMP_SYNC_KERNELS=1 $< build/tests/pffft.o -o $@
 
+# The web build against the plugins (tests/parity.cpp): each of the nine effects in wasm/pump_wasm.cpp, run beside the
+# real plugin through DPF's exporter on the test mix, every factory preset, the same output and latency.
+PARITY := eq:EQ:kEQ comp:Comp:kComp limit:Limit:kLimit calm:Calm:kCalm tone:Tone:kTone band:Band:kBand wide:Wide:kWide heat:Heat:kHeat meter:Meter:kMeter
+PARITY_TESTS := $(foreach p,$(PARITY),build/tests/parity_$(word 1,$(subst :, ,$(p))))
+PARITY_FLAGS = -O2 -std=c++17 -DPUMP_SYNC_KERNELS=1 -DPFFFT_STATIC_DEFINE -fno-finite-math-only -Wno-unused-parameter -Idpf/distrho -Idpf/distrho/src -Icommon -Itests
+define PARITY_RULE
+build/tests/parity_$(1): tests/parity.cpp wasm/pump_wasm.cpp wasm/Handles.hpp plugins/$(1)/Plugin$(2).cpp build/tests/pffft.o $$(wildcard common/*.hpp common/dsp/*.hpp tests/*.hpp plugins/*/*.hpp) | dpf-patches
+	@mkdir -p build/tests
+	$$(CXX) $$(PARITY_FLAGS) -Iplugins/$(1) -DPTYPE=$(3) -DPNS=$(1) tests/parity.cpp plugins/$(1)/Plugin$(2).cpp build/tests/pffft.o -lpthread -o $$@
+endef
+$(foreach p,$(PARITY),$(eval $(call PARITY_RULE,$(word 1,$(subst :, ,$(p))),$(word 2,$(subst :, ,$(p))),$(word 3,$(subst :, ,$(p))))))
+
 # AMP's test links the NAM core (float samples, Eigen from the NAM submodule; EIGEN_PATH= to use another copy)
 NAM_DIR := third_party/NeuralAmpModelerCore
 EIGEN_PATH ?= $(NAM_DIR)/Dependencies/eigen
@@ -87,8 +99,8 @@ build/tests/test_machine: tests/test_machine.cpp build/tests/pffft.o build/tests
 licence-check:
 	@sh tools/check-licence-boundary.sh
 
-tests: licence-check $(TESTS) $(SYNC_TESTS) build/tests/wasm_wrapper
-	@for t in $(TESTS) $(SYNC_TESTS) build/tests/wasm_wrapper; do echo "== $$t"; ./$$t || exit 1; done
+tests: licence-check $(TESTS) $(SYNC_TESTS) build/tests/wasm_wrapper $(PARITY_TESTS)
+	@for t in $(TESTS) $(SYNC_TESTS) build/tests/wasm_wrapper $(PARITY_TESTS); do echo "== $$t"; ./$$t || exit 1; done
 
 # --- sanitizer runs: the same DSP tests built with ASan+UBSan, or with TSan (the engines hand data to the UI through
 # atomic feeds and to a worker thread, which TSan checks). Sanitized builds go to build/asan, build/tsan, and the
