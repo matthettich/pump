@@ -185,8 +185,10 @@ private:
         // Y and the nasals, ~24 ms into a vowel (scaled by diction)
         const double tfm = g && (g->k == Hold || g->k == Glide) ? 24.0 : g && g->k == Son ? 16.0 : 10.0;
         const double kf = 1.0 - std::exp(-dt * 1000.0 / (tfm / std::max(0.3, p.diction))), ka = 1.0 - std::exp(-dt * 1000.0 / 4.0);
+        // frication fades in over ~8 ms and out over ~12 ms (a hard-edged noise gate sounds like a burst); P T K bursts stay sharp
+        const double kn1 = 1.0 - std::exp(-dt * 1000.0 / 8.0), kn2 = 1.0 - std::exp(-dt * 1000.0 / 12.0);
         k.f1 += (tg.f1 - k.f1) * kf; k.f2 += (tg.f2 - k.f2) * kf; k.f3 += (tg.f3 - k.f3) * kf;
-        k.av += (tg.av - k.av) * ka; k.an += (tg.an - k.an) * ka; k.ah += (tg.ah - k.ah) * ka; k.nf += (tg.nf - k.nf) * ka; k.nb += (tg.nb - k.nb) * ka; k.nz += (tg.nz - k.nz) * ka;
+        k.av += (tg.av - k.av) * ka; k.an += (tg.an - k.an) * (g && g->k == Burst ? ka : tg.an > k.an ? kn1 : kn2); k.ah += (tg.ah - k.ah) * ka; k.nf += (tg.nf - k.nf) * ka; k.nb += (tg.nb - k.nb) * ka; k.nz += (tg.nz - k.nz) * ka;
         // the amplitude envelope
         const double er = envT > env ? 1.0 - std::exp(-dt * 1000.0 / std::max(0.5, p.attack)) : 1.0 - std::exp(-dt * 1000.0 * 4.6 / std::max(1.0, p.release));
         env += (envT - env) * er;
