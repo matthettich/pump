@@ -46,10 +46,22 @@ Instruments (MIDI in, stereo out):
   velocity to strength and brightness; a shared spring tank as a send.
 - **WOB upgrade** — done (2026-10-26): up to 256 partials, an inharmonic / stretched mode, per-partial drift and spray, a morph between two
   spectra.
-- Ideas the user liked, in order: **spectral additive resynthesis** (a sample rebuilt as partials: stretch, freeze,
-  morph two sounds), **modal / physical** synth (struck bars, plates, membranes, bowed and blown resonators),
+- **PRISM** spectral resynthesis — done (2026-10-26): a sample rebuilt as partials and noise: stretch, freeze, morph two
+  sounds, keep formants.
+- Ideas the user liked, in order: **modal / physical** synth (struck bars, plates, membranes, bowed and blown resonators),
   **strange-attractor oscillator** (Lorenz / Rössler as audio and modulation), **vector / wave-sequencing**,
   **granular spectral-freeze** synth, **formant / vocal-tract** pad.
+- Asked for on 2026-10-26 (after those):
+  - **A multi-engine drum synth**: per channel a tone
+    engine (subtractive, FM, resonant / physical models), a noise engine with its own filter and envelope, a click
+    engine, blended, with pitch bend envelopes; more engines than BOING's analog layer.
+  - **STUTTER pattern editor**: program and edit the retrigger patterns (steps, lengths, moves per step) instead of only
+    the dice and pads.
+  - **A live-stream chopper** (grid-chopping a live input): the input is always streaming into a buffer; 8 slice / retrigger
+    pads cut and replay the live stream, loop a section of it and manipulate it; per retrigger options such as
+    pitch change and specific effects; each of the 8 retriggers MIDI-mappable to a note or a key, as a momentary switch.
+  - **SING voicebanks** (last of all): a second SING engine that plays sampled voicebanks (oto.ini format), the formant
+    engine staying as its classic voice.
 
 ## Instance List — planned, nice to have
 

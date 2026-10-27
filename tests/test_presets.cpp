@@ -36,6 +36,7 @@
 #include "../plugins/phase/PhaseParams.hpp"
 #include "../plugins/life/LifeParams.hpp"
 #include "../plugins/boing/BoingParams.hpp"
+#include "../plugins/prism/PrismParams.hpp"
 #include <cstdio>
 #include <cstring>
 #include <map>
@@ -137,6 +138,7 @@ int main()
         { "PHASE", phase::params(), phase::presets() },
         { "LIFE", life::params(), life::presets() },
         { "BOING", boing::params(), boing::presets() },
+        { "PRISM", prism::params(), prism::presets() },
     };
     std::map<std::string, int> sections;
     std::vector<std::vector<std::string>> chains;
