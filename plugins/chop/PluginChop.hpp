@@ -22,8 +22,6 @@ public:
 
     Engine engine;
     pump::MeterValue outPeak[2];
-    // the pads the window holds (mouse and computer keys); momentary, never parameters
-    std::atomic<uint32_t> uiHeld { 0 };
     // the last MIDI note that came in (for LEARN): note | count << 8
     std::atomic<uint32_t> lastNote { 0 };
 
@@ -51,6 +49,8 @@ protected:
             notes[p] = q.note;
         }
         s.slices = pv(kSlices) >= 0.5f ? 16 : 8; s.length = (int)pv(kLengthP); s.quant = (int)pv(kQuantise);
+        notesOn = pv(kMidiNotes) >= 0.5f;
+        if (!notesOn) midiHeld = 0;
         s.hold = pv(kHold) >= 0.5f; s.loopTwo = pv(kLoopTwo) >= 0.5f; s.bpm = pv(kBpm); s.mix = pv(kMix) * 0.01; s.outDb = pv(kOutGain);
         engine.setSettings(s);
     }
@@ -62,7 +62,7 @@ protected:
         const uint8_t st = m.data[0] & 0xF0, note = m.data[1], vel = m.data[2];
         const bool on = st == 0x90 && vel > 0, off = st == 0x80 || (st == 0x90 && vel == 0);
         if (on) lastNote.store((uint32_t)note | ((lastNote.load(std::memory_order_relaxed) >> 8) + 1) << 8, std::memory_order_relaxed);
-        for (int p = 0; p < kPads; ++p) if (notes[p] == note) { if (on) midiHeld |= 1u << p; else if (off) midiHeld &= ~(1u << p); }
+        if (notesOn) for (int p = 0; p < kPads; ++p) if (notes[p] == note) { if (on) midiHeld |= 1u << p; else if (off) midiHeld &= ~(1u << p); }
         if (st == 0xB0 && (note == 123 || note == 120)) midiHeld = 0;
     }
 
@@ -90,7 +90,8 @@ protected:
             const int n = (int)(end - done);
             float* l = L + done;
             float* r = R + done;
-            uint32_t mask = midiHeld | uiHeld.load(std::memory_order_relaxed);
+            uint32_t mask = midiHeld;
+            for (int p = 0; p < kPads; ++p) if (pv(kTrigger0 + p) >= 0.5f) mask |= 1u << p;   // the host's mapping, automation, the window
             if (testPads) { testClock += n; const int k = (int)(testClock / (getSampleRate() * 0.5)) % 12; mask |= k < 8 && k % 2 == 0 ? 1u << ((k * 3) % 8) : 0u; }
             engine.setHeld(mask);
             bypass.capture(l, r, n);
@@ -109,6 +110,7 @@ protected:
 private:
     pump::BypassMixer bypass;
     uint32_t midiHeld = 0;
+    bool notesOn = true;
     int notes[kPads] = {};
     bool testPads = false;
     uint64_t testClock = 0;

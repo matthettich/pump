@@ -29,13 +29,14 @@ public:
         lenMenu = addMenu(kLengthP); lenMenu->arrows = true; lenMenu->tip = "How much of the past the pads chop";
         quantMenu = addMenu(kQuantise); quantMenu->arrows = true; quantMenu->tip = "A press waits for the next grid line (a release never waits)";
         holdB = addToggle(kHold, "HOLD"); holdB->tip = "Keep the captured bar after the pads are up (chop it again and again)";
+        notesB = addToggle(kMidiNotes, "PADS ON MIDI NOTES"); notesB->tip = "Off: the pads ignore MIDI notes (map Pad 1-8 Trigger in your host instead)";
         loopB = addToggle(kLoopTwo, "TWO-PAD LOOP"); loopB->tip = "Holding two or more pads loops from the lowest slice to the end of the highest";
         bpmD = addDial(kBpm, "TEMPO", Dial::Small); bpmD->tip = "The tempo when the host sends none";
         mixD = addDial(kMix, "MIX", Dial::Small); outD = addDial(kOutGain, "OUTPUT", Dial::Small, true);
         if (auto* p = static_cast<PluginChop*>(pluginPtr())) { plug = p; noteSeen = p->lastNote.load() >> 8; }
         select(0);
     }
-    ~UIChop() override { if (plug) plug->uiHeld.store(0); }
+    ~UIChop() override { for (int p = 0; p < kPads; ++p) if (heldBits >> p & 1) setHeldBit(p, false); }
 
 protected:
     static std::string noteName(int n)
@@ -94,6 +95,7 @@ protected:
         quantMenu->r = Rect(268, 588, 110, 24);
         holdB->r = Rect(392, 588, 90, 24);
         loopB->r = Rect(494, 588, 140, 24);
+        notesB->r = Rect(392, 620, 242, 24);
         bpmD->r = Rect(650, 562, 100, hs); mixD->r = Rect(760, 562, 100, hs); outD->r = Rect(870, 562, 100, hs);
     }
 
@@ -194,7 +196,7 @@ protected:
         const int pit = (int)value(pp(p, kPitch));
         std::snprintf(b, sizeof b, "%s%s%s", value(pp(p, kReverse)) >= 0.5f ? "REV " : "", pit ? (std::to_string(pit > 0 ? pit : pit) + "ST ").c_str() : "", fx == "-" ? "" : fx.c_str());
         textAt(r.x + 8, r.y + 58, b, kLabel, 8.5f, ink2, ALIGN_LEFT | ALIGN_MIDDLE, 0.4f);
-        std::snprintf(b, sizeof b, "%s · %s", noteName((int)value(pp(p, kNote))).c_str(), keyName((int)value(pp(p, kKey))).c_str());
+        std::snprintf(b, sizeof b, "%s · %s", value(kMidiNotes) >= 0.5f ? noteName((int)value(pp(p, kNote))).c_str() : "HOST", keyName((int)value(pp(p, kKey))).c_str());
         textAt(r.x + 8, r.b() - 12, b, kMono, 9.0f, ink2, ALIGN_LEFT | ALIGN_MIDDLE);
         const Rect& lr = learnR[p];
         if (learn == p) fillRect(lr, theme.ink);
@@ -216,12 +218,15 @@ protected:
         caption(slicesSeg->r.x, slicesSeg->r.y - 10, "SLICES"); caption(lenMenu->r.x, lenMenu->r.y - 10, "LENGTH"); caption(quantMenu->r.x, quantMenu->r.y - 10, "QUANTISE");
     }
 
+    // a pad held from the window: its Trigger parameter, inside one edit gesture, so the host can record it
     void setHeldBit(int p, bool on)
     {
-        if (!plug) return;
-        uint32_t m = plug->uiHeld.load();
-        m = on ? (m | 1u << p) : (m & ~(1u << p));
-        plug->uiHeld.store(m);
+        const bool was = heldBits >> p & 1;
+        if (was == on) return;
+        heldBits = on ? (heldBits | 1u << p) : (heldBits & ~(1u << p));
+        const uint32_t i = (uint32_t)(kTrigger0 + p);
+        if (on) { editParameter(i, true); setParam((int)i, 1.0f); }
+        else { setParam((int)i, 0.0f); editParameter(i, false); }
     }
     bool bodyMouseDown(float x, float y, int button, uint, bool) override
     {
@@ -256,7 +261,7 @@ protected:
         for (int p = 0; p < kPads; ++p)
         {
             if (learnR[p].contains(x, y)) { setStatus("Learn: then press a MIDI note or a computer key for pad " + std::to_string(p + 1)); return; }
-            if (padR[p].contains(x, y)) { setStatus("Hold to play pad " + std::to_string(p + 1) + " (its key or MIDI note too); two held loop"); return; }
+            if (padR[p].contains(x, y)) { setStatus("Hold to play pad " + std::to_string(p + 1) + " (its key, its MIDI note, or map Pad " + std::to_string(p + 1) + " Trigger in the host); two held loop"); return; }
         }
         if (regionR.contains(x, y)) setStatus("The captured bar, cut into slices: it follows the song until a pad goes down");
     }
@@ -276,11 +281,11 @@ private:
     PluginChop* plug = nullptr;
     Rect regionR, nowR, meterL, meterR, padsR, padR[kPads], learnR[kPads], editR, kitR;
     Dial *sliceD[kPads], *pitchD[kPads], *amtD[kPads], *levelD[kPads], *bpmD, *mixD, *outD;
-    Button *revB[kPads], *holdB, *loopB;
+    Button *revB[kPads], *notesB, *holdB, *loopB;
     Segmented *fxSeg[kPads], *slicesSeg;
     MenuButton *lenMenu, *quantMenu;
     int sel = 0, learn = -1, mousePad = -1, padNow = -1;
-    uint32_t heldNow = 0, pendNow = 0, noteSeen = 0;
+    uint32_t heldBits = 0, heldNow = 0, pendNow = 0, noteSeen = 0;
     double rs = 0.0, rl = 1.0, ph = -1.0;
     float wave[kWave] = {}, glow[kPads] = {};
     float lvl[2] = { -120.0f, -120.0f }, hold[2] = { -120.0f, -120.0f }, holdT[2] = { 0.0f, 0.0f };

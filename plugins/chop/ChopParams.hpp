@@ -6,7 +6,9 @@
 // keeps it put after, too: chop the same bar again and again); with no pad down it follows the song. Each pad has its
 // own slice, pitch, reverse, an effect (low-pass, high-pass, crush, ratchet, tape stop, gate, drive) with an amount,
 // and a level. Pads answer a MIDI note each and a key on the computer keyboard each (LEARN: press a pad's LEARN, then
-// the note or key), as momentary switches; QUANTISE lands a press on the grid.
+// the note or key), as momentary switches; QUANTISE lands a press on the grid. Each pad is also a host parameter (Pad N
+// Trigger: map any key, pad or button to it in the host, or draw it as automation; the window's pads write it too), and
+// MIDI NOTES off leaves the incoming notes alone so the host's mapping is the only way in.
 #pragma once
 
 #include "PumpParams.hpp"
@@ -28,14 +30,15 @@ enum Quant : int { kQOff = 0, kQ32, kQ16, kQ8, kQ4, kNumQuant };
 static const char* const kQuantNames[] = { "Off", "1/32", "1/16", "1/8", "1/4" };
 static const char* const kSliceCountNames[] = { "8", "16" };
 
-enum KitParam : int { kSlices = kPads * kPerPad, kLengthP, kQuantise, kHold, kLoopTwo, kBpm, kMix, kOutGain, kBypass, kNumParams };
+enum KitParam : int { kSlices = kPads * kPerPad, kLengthP, kQuantise, kHold, kLoopTwo, kBpm, kMix, kOutGain, kBypass,
+                     kTrigger0, kMidiNotes = kTrigger0 + kPads, kNumParams };   // appended: host-mappable pads
 
 inline const std::vector<ParamSpec>& params()
 {
     static std::vector<ParamSpec> v;
     if (!v.empty()) return v;
     static std::vector<std::string> keep;
-    keep.reserve(kPads * kPerPad * 2 + 8);
+    keep.reserve(kPads * kPerPad * 2 + kPads * 3 + 8);
     auto s = [&](std::string x) { keep.push_back(std::move(x)); return keep.back().c_str(); };
     const unsigned A = kPAutomatable, I = kPAutomatable | kPInteger, B = kPAutomatable | kPBoolean;
     for (int p = 0; p < kPads; ++p)
@@ -59,6 +62,10 @@ inline const std::vector<ParamSpec>& params()
     v.push_back({ "mix", "Mix", "Mix", 0, 100, 100, PUnit::Percent, PScale::Linear, A, nullptr, 1 });
     v.push_back({ "out_gain", "Output Gain", "Output", -24, 24, 0, PUnit::dB, PScale::Linear, A, nullptr, 1 });
     v.push_back({ "bypass", "Bypass", "Bypass", 0, 1, 0, PUnit::None, PScale::Linear, A | kPBoolean | kPBypass, nullptr, 1 });
+    // momentary: held while 1 (never part of presets or undo)
+    for (int p = 0; p < kPads; ++p)
+        v.push_back({ s("pad" + std::to_string(p + 1) + "_trigger"), s("Pad " + std::to_string(p + 1) + " Trigger"), s("Pad " + std::to_string(p + 1)), 0, 1, 0, PUnit::None, PScale::Linear, B | kPNoUndo, nullptr, 1 });
+    v.push_back({ "midi_notes", "Pads Answer MIDI Notes", "Notes", 0, 1, 1, PUnit::None, PScale::Linear, B, nullptr, 1 });
     return v;
 }
 

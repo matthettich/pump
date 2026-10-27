@@ -67,7 +67,8 @@ Instruments (MIDI in, stereo out):
   - **STUTTER pattern editor** — done (2026-10-26): PATTERN mode, a step grid of moves with lengths, per-step slice and
     transposition, twelve factory patterns plus a user one saved with the session.
   - **A live-stream chopper** — done (2026-10-27) as **CHOP**: the last bar of the input in 8 / 16 slices on 8 momentary
-    pads, two-pad loops, per-pad pitch, reverse, effect and level, MIDI-note and computer-key mapping with learn.
+    pads, two-pad loops, per-pad pitch, reverse, effect and level, MIDI-note and computer-key mapping with learn; each
+    pad also a host parameter (Pad N Trigger) for the DAW's own MIDI mapping, with PADS ON MIDI NOTES to turn the notes off.
   - **SING voicebanks** — done (2026-10-27): ENGINE: VOICEBANK reads oto.ini voicebanks (oto.ini in Shift-JIS or UTF-8,
     subfolders), finds each syllable's alias (kana / romaji, VCV / CV, then the vowel) and sings it by PSOLA (formants
     kept, GENDER shifts them); the formant voice sings what the bank lacks.
