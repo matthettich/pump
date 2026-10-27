@@ -12,17 +12,17 @@ using namespace pump::chop;
 
 class UIChop : public PumpUI {
 public:
-    UIChop() : PumpUI(params().data(), kNumParams, &presets(), pump::accents::chop(), "CHOP", 1000, 690, kBypass)
+    UIChop() : PumpUI(params().data(), kNumParams, &presets(), pump::accents::chop(), "CHOP", 1000, 628, kBypass)
     {
         for (int p = 0; p < kPads; ++p)
         {
-            sliceD[p] = addDial(pp(p, kSlice), "SLICE", Dial::Small); sliceD[p]->tip = "Which slice of the bar this pad plays";
-            pitchD[p] = addDial(pp(p, kPitch), "PITCH", Dial::Small, true);
+            sliceD[p] = addDial(pp(p, kSlice), "SLICE", Dial::Medium); sliceD[p]->tip = "Which slice of the bar this pad plays";
+            pitchD[p] = addDial(pp(p, kPitch), "PITCH", Dial::Medium, true);
             revB[p] = addToggle(pp(p, kReverse), "REVERSE");
             fxSeg[p] = addSegmented(pp(p, kFx), { kFxKeys, kFxKeys + kNumFx });
             fxSeg[p]->tip = "The pad's effect: low-pass, high-pass, crush, ratchet (back to the slice's start), tape stop, gate, drive";
-            amtD[p] = addDial(pp(p, kFxAmount), "AMOUNT", Dial::Small);
-            levelD[p] = addDial(pp(p, kLevel), "LEVEL", Dial::Small, true);
+            amtD[p] = addDial(pp(p, kFxAmount), "AMOUNT", Dial::Medium);
+            levelD[p] = addDial(pp(p, kLevel), "LEVEL", Dial::Medium, true);
         }
         slicesSeg = addSegmented(kSlices, { "8", "16" });
         slicesSeg->tip = "How many slices the bar is cut into";
@@ -31,8 +31,8 @@ public:
         holdB = addToggle(kHold, "HOLD"); holdB->tip = "Keep the captured bar after the pads are up (chop it again and again)";
         notesB = addToggle(kMidiNotes, "PADS ON MIDI NOTES"); notesB->tip = "Off: the pads ignore MIDI notes (map Pad 1-8 Trigger in your host instead)";
         loopB = addToggle(kLoopTwo, "TWO-PAD LOOP"); loopB->tip = "Holding two or more pads loops from the lowest slice to the end of the highest";
-        bpmD = addDial(kBpm, "TEMPO", Dial::Small); bpmD->tip = "The tempo when the host sends none";
-        mixD = addDial(kMix, "MIX", Dial::Small); outD = addDial(kOutGain, "OUTPUT", Dial::Small, true);
+        bpmD = addDial(kBpm, "TEMPO", Dial::Medium); bpmD->tip = "The tempo when the host sends none";
+        mixD = addDial(kMix, "MIX", Dial::Medium); outD = addDial(kOutGain, "OUTPUT", Dial::Medium, true);
         if (auto* p = static_cast<PluginChop*>(pluginPtr())) { plug = p; noteSeen = p->lastNote.load() >> 8; }
         select(0);
     }
@@ -75,28 +75,34 @@ protected:
 
     void layout() override
     {
-        const float top = 58, hs = Dial::heightFor(Dial::Small);
-        regionR = Rect(14, top, 708, 190);
-        nowR = Rect(734, top, 226, 190);
-        meterL = Rect(966, top, 8, 178); meterR = Rect(977, top, 8, 178);
-        padsR = Rect(14, 260, 972, 120);
-        for (int p = 0; p < kPads; ++p) { padR[p] = Rect(22 + p * 120, 270, 112, 100); learnR[p] = Rect(padR[p].r() - 50, padR[p].y + 8, 44, 16); }
-        editR = Rect(14, 390, 972, 140);
+        const float top = 58, sh = 176, hm = Dial::heightFor(Dial::Medium);
+        regionR = Rect(14, top, 708, sh);
+        nowR = Rect(734, top, 226, sh);
+        meterL = Rect(966, top, 8, sh - 12); meterR = Rect(977, top, 8, sh - 12);
+        // the eight pads, edge to edge
+        const float y1 = top + sh + 12, padH = 92, pw = (972 - 7 * 10) / 8.0f;
+        padsR = Rect(14, y1, 972, padH);
+        for (int p = 0; p < kPads; ++p) { padR[p] = Rect(14 + p * (pw + 10), y1, pw, padH); learnR[p] = Rect(padR[p].r() - 50, padR[p].y + 8, 44, 16); }
+        // the selected pad in one row: SLICE PITCH REVERSE | EFFECT | AMOUNT LEVEL
+        const float y2 = y1 + padH + 12, ph = 116;
+        editR = Rect(14, y2, 972, ph);
         for (int p = 0; p < kPads; ++p)
         {
-            fxSeg[p]->r = Rect(24, 418, 952, 22);
-            sliceD[p]->r = Rect(22, 448, 110, hs); pitchD[p]->r = Rect(132, 448, 110, hs);
-            revB[p]->r = Rect(262, 470, 110, 24);
-            amtD[p]->r = Rect(392, 448, 110, hs); levelD[p]->r = Rect(502, 448, 110, hs);
+            sliceD[p]->r = Rect(22, y2 + 28, 80, hm); pitchD[p]->r = Rect(102, y2 + 28, 80, hm);
+            revB[p]->r = Rect(194, y2 + 54, 94, 24);
+            fxSeg[p]->r = Rect(302, y2 + 54, 486, 24);
+            amtD[p]->r = Rect(794, y2 + 28, 90, hm); levelD[p]->r = Rect(884, y2 + 28, 90, hm);
         }
-        kitR = Rect(14, 540, 972, 116);
-        slicesSeg->r = Rect(24, 588, 100, 24);
-        lenMenu->r = Rect(136, 588, 120, 24);
-        quantMenu->r = Rect(268, 588, 110, 24);
-        holdB->r = Rect(392, 588, 90, 24);
-        loopB->r = Rect(494, 588, 140, 24);
-        notesB->r = Rect(392, 620, 242, 24);
-        bpmD->r = Rect(650, 562, 100, hs); mixD->r = Rect(760, 562, 100, hs); outD->r = Rect(870, 562, 100, hs);
+        // the chopper in one row: SLICES LENGTH QUANTISE HOLD LOOP NOTES | TEMPO MIX OUTPUT
+        const float y3 = y2 + ph + 12, cy = y3 + 54;
+        kitR = Rect(14, y3, 972, ph);
+        slicesSeg->r = Rect(26, cy, 90, 24);
+        lenMenu->r = Rect(128, cy, 118, 24);
+        quantMenu->r = Rect(258, cy, 108, 24);
+        holdB->r = Rect(378, cy, 70, 24);
+        loopB->r = Rect(458, cy, 124, 24);
+        notesB->r = Rect(592, cy, 168, 24);
+        bpmD->r = Rect(766, y3 + 28, 70, hm); mixD->r = Rect(836, y3 + 28, 70, hm); outD->r = Rect(906, y3 + 28, 70, hm);
     }
 
     void tick(float dt) override
@@ -212,9 +218,10 @@ protected:
         for (int p = 0; p < kPads; ++p) drawPad(p);
         strokeRect(editR, theme.dim, 1.0f);
         char b[32]; std::snprintf(b, sizeof b, "PAD %d", sel + 1);
-        caption(editR.x + 12, editR.y + 14, b);
+        caption(editR.x + 12, editR.y + 16, b);
+        caption(fxSeg[sel]->r.x, fxSeg[sel]->r.y - 10, "EFFECT");
         strokeRect(kitR, theme.dim, 1.0f);
-        caption(kitR.x + 12, kitR.y + 14, "CHOPPER");
+        caption(kitR.x + 12, kitR.y + 16, "CHOPPER");
         caption(slicesSeg->r.x, slicesSeg->r.y - 10, "SLICES"); caption(lenMenu->r.x, lenMenu->r.y - 10, "LENGTH"); caption(quantMenu->r.x, quantMenu->r.y - 10, "QUANTISE");
     }
 
