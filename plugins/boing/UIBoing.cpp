@@ -12,7 +12,7 @@ using namespace pump::boing;
 
 class UIBoing : public PumpUI {
 public:
-    UIBoing() : PumpUI(params().data(), kNumParams, &presets(), pump::accents::boing(), "BOING", 1000, 800, -1)
+    UIBoing() : PumpUI(params().data(), kNumParams, &presets(), pump::accents::boing(), "BOING", 1000, 708, -1)
     {
         static const char* const lab[kPerPad] = { "TANK", "WAVE", "BLEND", "PITCH", "DECAY", "HARMONIC", "SPREAD", "DRIP", "BEND", "B-TIME", "NOISE", "N-TONE", "CLICK", "HITS", "LEVEL", "PAN", "SEND" };
         for (int p = 0; p < kPads; ++p)
@@ -21,7 +21,7 @@ public:
             tankSeg[p]->tip = "The spring layer's tank (SPRING's six models)";
             waveSeg[p] = addSegmented(pp(p, kWave), { "SINE", "TRI", "FOLD", "SQUARE", "SAW", "METAL" });
             waveSeg[p]->tip = "The analog layer's oscillator";
-            for (int f = kBlend; f < kPerPad; ++f) edit[p][f] = addDial(pp(p, f), lab[f], Dial::Small, f == kPan || f == kLevel);
+            for (int f = kBlend; f < kPerPad; ++f) edit[p][f] = addDial(pp(p, f), lab[f], Dial::Medium, f == kPan || f == kLevel);
             edit[p][kBlend]->tip = "0: all analog · 100: all spring";
             edit[p][kHarmonic]->tip = "Spring: its clang (0) to a clean tone (100) · Analog: the fold / square's edge";
             edit[p][kSpread]->tip = "Spring: its springs apart · Analog: a second, detuned oscillator (Metal: the partials' spread)";
@@ -32,10 +32,10 @@ public:
         }
         tankModel = addSegmented(kTankModel, { "TWO", "THREE", "SHORT", "LONG", "DIGITAL", "LO-FI" });
         tankModel->tip = "The kit's tank: a real spring reverb every pad's SEND feeds";
-        auto dial = [&](int p, const char* l, const char* tip = nullptr) { Dial* d = addDial(p, l, Dial::Small); if (tip) d->tip = tip; return d; };
+        auto dial = [&](int p, const char* l, const char* tip = nullptr) { Dial* d = addDial(p, l, Dial::Medium); if (tip) d->tip = tip; return d; };
         tankDecay = dial(kTankDecay, "DECAY"); tankLevel = dial(kTankLevel, "RETURN");
         velD = dial(kVelocity, "VELOCITY", "How much a hit's velocity changes its level (it always kicks the spring harder)");
-        driveD = dial(kDrive, "DRIVE"); volD = addDial(kVolume, "VOLUME", Dial::Small, true);
+        driveD = dial(kDrive, "DRIVE"); volD = addDial(kVolume, "VOLUME", Dial::Medium, true);
         chokeB = addToggle(kChoke, "CHOKE");
         chokeB->tip = "The closed hat cuts the open hat";
         followB = addToggle(kFollow, "FOLLOW"); followB->tip = "Show the pad you play: every hit (MIDI, keys, a click) selects it for editing";
@@ -77,30 +77,35 @@ protected:
 
     void layout() override
     {
-        const float top = 58, hs = Dial::heightFor(Dial::Small);
-        springsR = Rect(14, top, 560, 228);
-        padsR = Rect(586, top, 400, 228);
-        for (int p = 0; p < kPads; ++p) padR[p] = Rect(596 + (p % 4) * 96, top + 28 + (p / 4) * 98, 90, 92);
-        editR = Rect(14, 298, 972, 224);
+        // top: springs beside the pads
+        const float top = 58, sh = 216, hm = Dial::heightFor(Dial::Medium);
+        springsR = Rect(14, top, 560, sh);
+        padsR = Rect(586, top, 400, sh);
+        for (int p = 0; p < kPads; ++p) padR[p] = Rect(596 + (p % 4) * 96, top + 28 + (p / 4) * 92, 90, 86);
+        // the selected pad: tank + wave, then two rows of dials
+        const float ey = top + sh + 12;
+        editR = Rect(14, ey, 972, 226);
         static const int order[15] = { kBlend, kPitch, kDecay, kHarmonic, kSpread, kDrip, kBend, kBendTime, kNoise, kNoiseTone, kClick, kHits, kLevel, kPan, kSend };
         for (int p = 0; p < kPads; ++p)
         {
-            tankSeg[p]->r = Rect(118, 326, 380, 22);
-            waveSeg[p]->r = Rect(596, 326, 380, 22);
+            tankSeg[p]->r = Rect(118, ey + 28, 380, 24);
+            waveSeg[p]->r = Rect(596, ey + 28, 380, 24);
             for (int k = 0; k < 15; ++k)
             {
                 const int f = order[k];
-                edit[p][f]->r = k < 8 ? Rect(22 + k * 120, 360, 120, hs) : Rect(22 + (k - 8) * 137, 440, 137, hs);
+                edit[p][f]->r = k < 8 ? Rect(22 + k * 120, ey + 60, 120, hm) : Rect(22 + (k - 8) * 137, ey + 140, 137, hm);
             }
         }
-        kitR = Rect(14, 534, 560, 234);
-        tankModel->r = Rect(24, 562, 540, 22);
+        followB->r = Rect(866, ey + 4, 110, 20);
+        // KIT (tank model + choke, five dials) beside the scope
+        const float ky = ey + 226 + 12, kh = 150;
+        kitR = Rect(14, ky, 560, kh);
+        tankModel->r = Rect(26, ky + 28, 412, 24);
+        chokeB->r = Rect(450, ky + 28, 112, 24);
         Dial* kd[5] = { tankDecay, tankLevel, velD, driveD, volD };
-        for (int k = 0; k < 5; ++k) kd[k]->r = Rect(22 + k * 108, 600, 108, hs);
-        chokeB->r = Rect(24, 694, 120, 24);
-        followB->r = Rect(866, 304, 110, 20);
-        scopeR = Rect(586, 534, 372, 234);
-        meterL = Rect(964, 534, 8, 222); meterR = Rect(975, 534, 8, 222);
+        for (int k = 0; k < 5; ++k) kd[k]->r = Rect(26 + k * 107.2f, ky + 62, 107.2f, hm);
+        scopeR = Rect(586, ky, 372, kh);
+        meterL = Rect(964, ky, 8, kh - 12); meterR = Rect(975, ky, 8, kh - 12);
     }
 
     void tick(float dt) override
@@ -141,8 +146,8 @@ protected:
         char b[64];
         std::snprintf(b, sizeof b, "PAD %d · %s", sel + 1, kPadInfo[sel].label);
         caption(editR.x + 12, editR.y + 16, b);
-        textAt(118, 316, "SPRING TANK", kLabel, 8.5f, theme.ink2, ALIGN_LEFT | ALIGN_MIDDLE, 1.0f);
-        textAt(596, 316, "ANALOG WAVE", kLabel, 8.5f, theme.ink2, ALIGN_LEFT | ALIGN_MIDDLE, 1.0f);
+        textAt(118, editR.y + 18, "SPRING TANK", kLabel, 8.5f, theme.ink2, ALIGN_LEFT | ALIGN_MIDDLE, 1.0f);
+        textAt(596, editR.y + 18, "ANALOG WAVE", kLabel, 8.5f, theme.ink2, ALIGN_LEFT | ALIGN_MIDDLE, 1.0f);
         strokeRect(kitR, theme.dim, 1.0f); caption(kitR.x + 12, kitR.y + 16, "KIT · THE SHARED TANK");
         drawScope();
         drawLevelMeter(meterL, lvl[0], hold[0], -48.0f, 6.0f);
