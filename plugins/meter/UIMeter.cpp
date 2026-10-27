@@ -8,7 +8,7 @@ START_NAMESPACE_DISTRHO
 
 using namespace pump::meter;
 
-// A small value field (drag vertically, wheel, double-click to type).
+// A small value field (drag vertically, wheel, right-click to type, double-click to reset).
 struct ValueField : Control {
     float dragStart = 0, dragY = 0;
     std::string unit;
@@ -52,10 +52,10 @@ public:
         targetMenu->tip = "Loudness target: colours the readouts and draws the target band";
         customLufs = add(new ValueField());
         customLufs->param = kCustomLufs; customLufs->label = "LUFS";
-        customLufs->tip = "Custom target loudness (drag, wheel or double-click to type)";
+        customLufs->tip = "Custom target loudness (drag, wheel; right-click to type, double-click to reset)";
         customTP = add(new ValueField());
         customTP->param = kCustomTP; customTP->label = "TP";
-        customTP->tip = "Custom true-peak limit in dBTP (drag, wheel or double-click to type)";
+        customTP->tip = "Custom true-peak limit in dBTP (drag, wheel; right-click to type, double-click to reset)";
         customLufs->tabGroup = customTP->tabGroup = 1;
         histSeg = addSegmented(kHistory, { "1M", "3M", "10M", "30M" });
         histSeg->tip = "History length: 1, 3, 10 or 30 minutes";

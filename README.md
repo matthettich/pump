@@ -90,9 +90,9 @@ Every plugin shares the same mouse and key conventions. Press **?** in a plugin 
 
 In your host they sit in three folders (the vendor): **wake mastering**, **wake effects** and **wake instruments**; hosts that sort by category (Bitwig, Reaper, Studio One) also see EQ, Dynamics, Reverb, Synth, Drum and so on.
 
-- drag a control (Shift = fine), mouse wheel steps it, Ctrl-click (Cmd-click on a Mac) resets it; on a Mac,
+- drag a control (Shift = fine), mouse wheel steps it, double-click or Ctrl-click (Cmd-click on a Mac) resets it; on a Mac,
   Ctrl-click is a right-click, as everywhere else in macOS
-- double-click or right-click to type a value: `1k`, `A4`, `C#3+13`, `2x` (= +6 dB), `50%` (halfway); Tab = next field
+- right-click to type a value (in hosts that pass the keyboard to plugins): `1k`, `A4`, `C#3+13`, `2x` (= +6 dB), `50%` (halfway); Tab = next field
 - Ctrl/Cmd+Z undo, Shift+Ctrl/Cmd+Z or Ctrl+Y redo; A/B compare with COPY; factory presets with ◀ ▶
 - hold **Alt** on a band to solo it while held (EQ nodes, multiband regions); drag while soloed to move it (up = narrower,
   down = wider). On empty spectrum space, Alt-hold listens to the range under the mouse (drag to sweep; up/down or wheel = width)

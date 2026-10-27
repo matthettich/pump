@@ -23,6 +23,7 @@ public:
         kitBtn = addButton("LOAD KIT", [this]() { FileBrowserOptions o; o.title = "Load a kit file (.snd) from the machine's card"; openFileBrowser(o); });
         kitBtn->small = true;
         kitBtn->tip = "Load a kit file (.snd) from the machine's SD card: every voice's knobs";
+        followB = addToggle(kFollow, "FOLLOW"); followB->tip = "Show the sound you play: every hit (MIDI or a click) selects it for editing";
         if (auto* p = static_cast<PluginMachine*>(pluginPtr())) plug = p;
         select(0);
     }
@@ -61,6 +62,7 @@ protected:
         volD->r = Rect(904, top + 10, 56, Dial::heightFor(Dial::Small));
         meterL = Rect(966, top, 8, 92); meterR = Rect(977, top, 8, 92);
         kitBtn->r = Rect(886, 155, 100, 20);
+        followB->r = Rect(780, 155, 100, 20);
         for (int c = 0; c < 8; ++c) secR[c] = Rect(14 + (c % 4) * 245, 178 + (c / 4) * 262, 237, 254);
         // each voice's knobs into its sections: four slots a row, a modulation target takes two
         for (int v = 0; v < kNumVoices; ++v)
@@ -83,6 +85,12 @@ protected:
 
     void tick(float dt) override
     {
+        // FOLLOW: a pad played (MIDI, keys or a click) becomes the one being edited (not while a control is dragged)
+        if (plug)
+        {
+            const uint32_t lh = plug->engine.lastHit();
+            if (lh != lastHitSeen) { lastHitSeen = lh; if (lh >> 8 && value(kFollow) >= 0.5f && !dragging()) select((int)(lh & 0xFF)); }
+        }
         if (!plug) return;
         for (int c = 0; c < 2; ++c)
         {
@@ -117,7 +125,7 @@ protected:
         char b[96];
         std::snprintf(b, sizeof b, "%s · THE MACHINE'S OWN KNOBS (0-127)", kVoiceNames[v]);
         caption(14, 166, b);
-        textAt(876, 166, "VOICES OF AN OPEN-SOURCE DRUM MACHINE FIRMWARE · MODIFIED VERSION · GPL-3.0", kLabel, 8.5f, theme.ink2, ALIGN_RIGHT | ALIGN_MIDDLE, 0.4f);
+        textAt(770, 166, "VOICES OF AN OPEN-SOURCE DRUM MACHINE FIRMWARE · MODIFIED VERSION · GPL-3.0", kLabel, 8.5f, theme.ink2, ALIGN_RIGHT | ALIGN_MIDDLE, 0.4f);
         for (int c = 0; c < kNumSections; ++c)
         {
             strokeRect(secR[c], theme.dim, 1.0f);
@@ -233,7 +241,8 @@ private:
     Rect padR[kSounds], scopeR, meterL, meterR, secR[kNumSections];
     Dial* dials[kNumFw];
     Dial* volD;
-    Button* kitBtn;
+    Button *kitBtn, *followB;
+    uint32_t lastHitSeen = 0;
     int sel = 0;
     float glow[kSounds] = {}, colLo[kCols] = {}, colHi[kCols] = {}, scale = 1.0f;
     uint32_t colW = 0, scopeRead = 0;

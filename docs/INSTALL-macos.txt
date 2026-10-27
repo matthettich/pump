@@ -24,5 +24,5 @@ OR: copy the files yourself
 Then in Ableton Live: Settings > Plug-Ins, turn on VST3 (and Audio Units) system folders, press Rescan.
 The plugins appear under Plug-Ins > wake.
 
-In every plugin: drag to change a control (Shift = fine), double-click or right-click to type a value,
+In every plugin: drag to change a control (Shift = fine), right-click to type a value, double-click or
 Cmd-click to reset it, Cmd+Z to undo, ? for all shortcuts. A/B compares two settings; DARK switches the look.

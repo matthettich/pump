@@ -5,8 +5,8 @@
 // buttons, menus), lays them out in layout(), and draws its own screens in drawBody(). The base class handles the
 // header (brand, presets, A/B, theme, bypass), typed value entry, the status line, scaling and resizing.
 //
-// Interaction: drag to change (Shift = fine), double-click or right-click to type a
-// value, Ctrl/Cmd/Alt-click to reset to default, mouse wheel steps.
+// Interaction: drag to change (Shift = fine), right-click to type a value, double-click or Ctrl/Cmd/Alt-click to
+// reset to default, mouse wheel steps.
 #pragma once
 
 #include "DistrhoUI.hpp"
@@ -636,6 +636,8 @@ public:
     // Typing goes to whichever view has the keyboard: a host (or System EQ) may have given it to the view around
     // ours, so take it before asking for text.
     void takeKeyboardFocus() { getWindow().focus(); }
+    // a control is being dragged
+    bool dragging() const { return fActive != nullptr; }
 
     void* pluginPtr() const { return getPluginInstancePointer(); }
     double sampleRate() const { return getSampleRate(); }
@@ -797,7 +799,15 @@ protected:
                 const bool reset = cmdKey(mod) || (mod & kModifierAlt) != 0;
                 if (c->param >= 0 && c->wantsTextEntry())
                 {
-                    if (button == kMouseButtonRight || (dbl && button == kMouseButtonLeft))
+                    // double-click: back to the default (a host that keeps the keyboard, like Renoise, can't type
+                    // into the box; right-click still opens it)
+                    if (dbl && button == kMouseButtonLeft)
+                    {
+                        if (fActive) { fActive->mouseUp(*this, x, y); fActive = nullptr; }
+                        setParamGesture(c->param, fSpecs[c->param].def);
+                        return true;
+                    }
+                    if (button == kMouseButtonRight)
                     {
                         if (fActive) { fActive->mouseUp(*this, x, y); fActive = nullptr; }
                         std::vector<std::pair<int, Rect>> ring;
@@ -1515,9 +1525,9 @@ protected:
         std::vector<std::pair<std::string, std::string>> lines = {
             { "Drag", "change a control (up/right = more)" },
             { "Shift + drag / wheel", "fine adjustment" },
-            { "Double-click / right-click", "type a value: 1k, A4, C#3+13, 2x (= +6 dB), 50% (halfway)" },
+            { "Right-click", "type a value: 1k, A4, C#3+13, 2x (= +6 dB), 50% (halfway)" },
             { "Tab (while typing)", "next field" },
-            { "Ctrl/Cmd + click", "reset to default (Alt + click works too)" },
+            { "Double-click", "reset to default (Ctrl/Cmd or Alt + click too)" },
             { "Mouse wheel", "step a control" },
             { "Ctrl/Cmd + Z", "undo     Shift + Ctrl/Cmd + Z, Ctrl + Y: redo" },
             { "A / B, COPY", "compare two settings, copy this one to the other slot" },

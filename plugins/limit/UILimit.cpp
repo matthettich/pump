@@ -100,7 +100,7 @@ public:
         customBox = add(new ValueBox());
         customBox->param = kTargetCustom;
         customBox->textFn = [this]() { char b[24]; std::snprintf(b, sizeof b, "%.1f", value(kTargetCustom)); return std::string(b); };
-        customBox->tip = "Custom target in LUFS (drag, wheel or double-click to type)";
+        customBox->tip = "Custom target in LUFS (drag, wheel; right-click to type, double-click to reset)";
 
         rangeBtn = addButton("24 dB", [this]() {
             static const int r[] = { 12, 24, 36, 48 };

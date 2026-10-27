@@ -38,6 +38,7 @@ public:
         driveD = dial(kDrive, "DRIVE"); volD = addDial(kVolume, "VOLUME", Dial::Small, true);
         chokeB = addToggle(kChoke, "CHOKE");
         chokeB->tip = "The closed hat cuts the open hat";
+        followB = addToggle(kFollow, "FOLLOW"); followB->tip = "Show the pad you play: every hit (MIDI, keys, a click) selects it for editing";
         springsView.labels = kLabels;
         if (auto* p = static_cast<PluginBoing*>(pluginPtr())) plug = p;
         select(0);
@@ -97,6 +98,7 @@ protected:
         Dial* kd[5] = { tankDecay, tankLevel, velD, driveD, volD };
         for (int k = 0; k < 5; ++k) kd[k]->r = Rect(22 + k * 108, 600, 108, hs);
         chokeB->r = Rect(24, 694, 120, 24);
+        followB->r = Rect(866, 304, 110, 20);
         scopeR = Rect(586, 534, 372, 234);
         meterL = Rect(964, 534, 8, 222); meterR = Rect(975, 534, 8, 222);
     }
@@ -109,6 +111,11 @@ protected:
             const float pk = pump::gainToDbF(plug->outPeak[c].exchange(0.0f));
             lvl[c] = std::max(pk, lvl[c] - 26.0f * dt);
             if (pk >= hold[c]) { hold[c] = pk; holdT[c] = 1.5f; } else if ((holdT[c] -= dt) <= 0.0f) hold[c] = std::max(pk, hold[c] - 18.0f * dt);
+        }
+        // FOLLOW: a pad played (MIDI, keys or a click) becomes the one being edited (not while a control is dragged)
+        {
+            const uint32_t lh = plug->engine.lastHit();
+            if (lh != lastHitSeen) { lastHitSeen = lh; if (lh >> 8 && value(kFollow) >= 0.5f && !dragging()) select((int)(lh & 0xFF)); }
         }
         const uint32_t hits = plug->engine.takeHits();
         for (int p = 0; p < kPads; ++p)
@@ -224,9 +231,10 @@ private:
     Segmented *tankSeg[kPads], *waveSeg[kPads], *tankModel;
     Dial* edit[kPads][kPerPad] = {};
     Dial *tankDecay, *tankLevel, *velD, *driveD, *volD;
-    Button* chokeB;
+    Button *chokeB, *followB;
     pump::coil::SpringsView springsView;
     int sel = 0;
+    uint32_t lastHitSeen = 0;
     float glow[kPads] = {}, shakeAge = 10.0f, scope[kScopeN] = {}, scale = 1.0f;
     float lvl[2] = { -120.0f, -120.0f }, hold[2] = { -120.0f, -120.0f }, holdT[2] = { 0.0f, 0.0f };
 

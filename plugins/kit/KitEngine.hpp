@@ -49,6 +49,7 @@ inline int noteForPad(int pad) { return kPadInfo[clampv(pad, 0, kPads - 1)].note
 
 class Engine {
 public:
+    uint32_t lastHit() const { return lastHitFeed.load(std::memory_order_relaxed); }   // pad | count << 8
     void prepare(double sampleRate, int /*maxBlock*/)
     {
         sr = sampleRate;
@@ -66,6 +67,7 @@ public:
     void hit(int pad, double vel, double offset = 0.0)
     {
         if (pad < 0 || pad >= kPads) return;
+        noteLastHit(pad);
         if (pad == 3) for (auto& v : voices) if (v.active && v.pad == 4 && v.fade >= 1.0) v.fadeOut = true;   // the closed hat chokes the open one
         // the pad's previous voice fades; the other slot plays
         Voice* slot = nullptr;
@@ -301,6 +303,9 @@ private:
     uint32_t hits = 0;
     LinearSmoother volS;
     std::array<std::atomic<float>, kPads> padFeed {};
+    // the last pad hit (by MIDI or the window): pad | count << 8, for the window to follow
+    std::atomic<uint32_t> lastHitFeed { 0u };
+    void noteLastHit(int p) { lastHitFeed.store((uint32_t)p | (((lastHitFeed.load(std::memory_order_relaxed) >> 8) + 1u) << 8), std::memory_order_relaxed); }
 };
 
 }} // namespace pump::kit

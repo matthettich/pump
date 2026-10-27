@@ -57,6 +57,7 @@ inline double foldTri(double u, double edge)
 
 class Engine {
 public:
+    uint32_t lastHit() const { return lastHitFeed.load(std::memory_order_relaxed); }   // pad | count << 8
     static constexpr int kVoicesPerPad = 2, kCtl = 8;
 
     void prepare(double sampleRate, int /*maxBlock*/)
@@ -86,6 +87,7 @@ public:
     {
         if (p < 0 || p >= kPads) return;
         hitFeed.fetch_or(1u << p, std::memory_order_relaxed);
+        noteLastHit(p);
         if (set.choke && p == 5) for (auto& v : voice[6]) if (v.active) v.fade = std::min(v.fade, 1.0), v.fading = true;
         auto& vs = voice[(size_t)p];
         int k = vs[0].active ? (vs[1].active ? (vs[0].age < vs[1].age ? 0 : 1) : 1) : 0;
@@ -435,6 +437,9 @@ private:
     std::array<std::atomic<float>, kPads> padFeed {};
     std::atomic<int> activeFeed { 0 };
     std::atomic<uint32_t> hitFeed { 0u };
+    // the last pad hit (by MIDI or the window): pad | count << 8, for the window to follow
+    std::atomic<uint32_t> lastHitFeed { 0u };
+    void noteLastHit(int p) { lastHitFeed.store((uint32_t)p | (((lastHitFeed.load(std::memory_order_relaxed) >> 8) + 1u) << 8), std::memory_order_relaxed); }
 };
 
 }} // namespace pump::strike

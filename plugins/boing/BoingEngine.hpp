@@ -34,6 +34,7 @@ struct Settings {
 
 class Engine {
 public:
+    uint32_t lastHit() const { return lastHitFeed.load(std::memory_order_relaxed); }   // pad | count << 8
     static constexpr int kCtl = spring::kTick;
 
     void prepare(double sampleRate, int maxBlock)
@@ -179,6 +180,7 @@ private:
         d.hitsLeft = clampv(s.hits, 1, 4) - 1; d.hitGap = (int)(0.011 * sr); d.hitCount = 0;
         trigger(p, true);
         hitFeed.fetch_or(1u << p, std::memory_order_relaxed);
+        noteLastHit(p);
         // the closed hat chokes the open one
         if (set.choke && p == 5)
         {
@@ -292,6 +294,9 @@ private:
     std::array<std::atomic<float>, kPads> levelFeed {};
     std::array<std::atomic<bool>, kPads> activeFeed {};
     std::atomic<uint32_t> hitFeed { 0 };
+    // the last pad hit (by MIDI or the window): pad | count << 8, for the window to follow
+    std::atomic<uint32_t> lastHitFeed { 0u };
+    void noteLastHit(int p) { lastHitFeed.store((uint32_t)p | (((lastHitFeed.load(std::memory_order_relaxed) >> 8) + 1u) << 8), std::memory_order_relaxed); }
 };
 
 }} // namespace pump::boing

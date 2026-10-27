@@ -46,6 +46,7 @@ inline int noteForSound(int s) { static const int n[kSounds] = { 36, 45, 37, 38,
 
 class Engine {
 public:
+    uint32_t lastHit() const { return lastHitFeed.load(std::memory_order_relaxed); }   // pad | count << 8
     Engine() { for (auto& v : values) v.store(-1); }
     ~Engine()
     {
@@ -135,6 +136,7 @@ private:
     void trigger(int sound, int vel, int note)
     {
         if (sound < 0 || sound >= kSounds) return;
+        noteLastHit(sound);
         mfw_trigger(sound, clampv(vel, 1, 127), clampv(note, 0, 127));
         flashFeed[(size_t)sound].store(vel / 127.0f, std::memory_order_relaxed);
     }
@@ -154,6 +156,9 @@ private:
     std::array<int, kFwNumParams> applied {};
     std::atomic<bool> dirty { false };
     std::array<std::atomic<float>, kSounds> flashFeed {};
+    // the last pad hit (by MIDI or the window): pad | count << 8, for the window to follow
+    std::atomic<uint32_t> lastHitFeed { 0u };
+    void noteLastHit(int p) { lastHitFeed.store((uint32_t)p | (((lastHitFeed.load(std::memory_order_relaxed) >> 8) + 1u) << 8), std::memory_order_relaxed); }
 };
 
 }} // namespace pump::machine

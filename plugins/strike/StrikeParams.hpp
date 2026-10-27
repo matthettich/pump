@@ -34,7 +34,7 @@ static const char* const kEngineNames[] = { "Modal", "String", "Circuit", "FM", 
 static const char* const kEngineKeys[] = { "MODAL", "STRING", "CIRCUIT", "FM", "WEST", "ADDITIVE", "CHAOS" };
 enum PadField : int { kEngine = 0, kPitch, kDecay, kTone, kCharA, kCharB, kBend, kBendTime, kNoise, kLevel, kPan, kPerPad };
 constexpr int pp(int pad, int field) { return pad * kPerPad + field; }
-enum KitParam : int { kChoke = kPads * kPerPad, kVelocity, kDrive, kVolume, kNumParams };
+enum KitParam : int { kChoke = kPads * kPerPad, kVelocity, kDrive, kVolume, kFollow, kNumParams };
 
 struct PadInfo { const char* sym; const char* name; const char* key; int note; int engine; float pitch, decay, tone, a, b, bend, bendT, noise, level, pan; };
 static const PadInfo kPadInfo[kPads] = {
@@ -76,6 +76,7 @@ inline const std::vector<ParamSpec>& params()
     v.push_back({ "velocity", "Velocity", "Velocity", 0, 100, 70, PUnit::Percent, PScale::Linear, A, nullptr, 1 });
     v.push_back({ "drive", "Drive", "Drive", 0, 100, 10, PUnit::Percent, PScale::Linear, A, nullptr, 1 });
     v.push_back({ "volume", "Volume", "Volume", -48, 12, 0, PUnit::dB, PScale::Linear, A, nullptr, 1 });
+    v.push_back({ "follow", "Edit the Pad Played", "Follow", 0, 1, 1, PUnit::None, PScale::Linear, kPBoolean | kPNoUndo, nullptr, 1 });   // appended
     return v;
 }
 

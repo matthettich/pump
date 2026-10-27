@@ -29,6 +29,7 @@ public:
         humD = addDial(kHumanize, "HUMANIZE", Dial::Small);
         humD->tip = "Every hit varies a little in pitch, length and level";
         volD = addDial(kVolume, "VOLUME", Dial::Small, true);
+        followB = addToggle(kFollow, "FOLLOW"); followB->tip = "Show the pad you play: every hit (MIDI, keys, a click) selects it for editing";
         if (auto* p = static_cast<PluginKit*>(pluginPtr())) plug = p;
         select(0);
     }
@@ -66,9 +67,10 @@ protected:
         editR = Rect(14, 302, 972, 190);
         for (int p = 0; p < kPads; ++p)
         {
-            model[p]->r = Rect(150, 316, 826, 24);
+            model[p]->r = Rect(150, 316, 700, 24);
             for (int k = 0; k < 9; ++k) edit[p][k]->r = Rect(22 + k * 107, 356, 100, Dial::heightFor(Dial::Medium));
         }
+        followB->r = Rect(866, 318, 110, 20);
         mixR = Rect(14, 504, 760, 200);
         for (int p = 0; p < kPads; ++p)
         {
@@ -82,6 +84,12 @@ protected:
 
     void tick(float dt) override
     {
+        // FOLLOW: a pad played (MIDI, keys or a click) becomes the one being edited (not while a control is dragged)
+        if (plug)
+        {
+            const uint32_t lh = plug->engine.lastHit();
+            if (lh != lastHitSeen) { lastHitSeen = lh; if (lh >> 8 && value(kFollow) >= 0.5f && !dragging()) select((int)(lh & 0xFF)); }
+        }
         for (int p = 0; p < kPads; ++p)
         {
             const int m = (int)value(pp(p, kModel));
@@ -260,6 +268,8 @@ private:
     PluginKit* plug = nullptr;
     Rect padsR, padR[kPads], scopeR, envR, meterL, meterR, editR, mixR, kitR;
     Segmented* model[kPads];
+    Button* followB;
+    uint32_t lastHitSeen = 0;
     Dial* edit[kPads][9];
     Dial *levelD[kPads], *panD[kPads], *kitDrive, *velD, *humD, *volD;
     int sel = 0;

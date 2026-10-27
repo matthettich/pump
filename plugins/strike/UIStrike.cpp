@@ -26,6 +26,7 @@ public:
         velD = dial(kVelocity, "VELOCITY"); driveD = dial(kDrive, "DRIVE"); volD = addDial(kVolume, "VOLUME", Dial::Small, true);
         chokeB = addToggle(kChoke, "CHOKE");
         chokeB->tip = "The closed hat cuts the open hat";
+        followB = addToggle(kFollow, "FOLLOW"); followB->tip = "Show the pad you play: every hit (MIDI, keys, a click) selects it for editing";
         if (auto* p = static_cast<PluginStrike*>(pluginPtr())) plug = p;
         select(0);
     }
@@ -87,6 +88,7 @@ protected:
         Dial* kd[3] = { velD, driveD, volD };
         for (int k = 0; k < 3; ++k) kd[k]->r = Rect(22 + k * 120, 556, 120, hs);
         chokeB->r = Rect(400, 576, 140, 26);
+        followB->r = Rect(866, 304, 110, 20);
         scopeR = Rect(586, 520, 372, 130);
         meterL = Rect(964, 520, 8, 118); meterR = Rect(975, 520, 8, 118);
     }
@@ -104,6 +106,12 @@ protected:
             const float pk = pump::gainToDbF(plug->outPeak[c].exchange(0.0f));
             lvl[c] = std::max(pk, lvl[c] - 26.0f * dt);
             if (pk >= hold[c]) { hold[c] = pk; holdT[c] = 1.5f; } else if ((holdT[c] -= dt) <= 0.0f) hold[c] = std::max(pk, hold[c] - 18.0f * dt);
+        }
+        // FOLLOW: a pad played (MIDI, keys or a click) becomes the one being edited (not while a control is dragged)
+        if (plug)
+        {
+            const uint32_t lh = plug->engine.lastHit();
+            if (lh != lastHitSeen) { lastHitSeen = lh; if (lh >> 8 && value(kFollow) >= 0.5f && !dragging()) select((int)(lh & 0xFF)); }
         }
         const uint32_t hits = plug->engine.takeHits();
         lanePos = (lanePos + 1) % kLane;
@@ -245,7 +253,8 @@ private:
     Segmented* engSeg[kPads];
     Dial* edit[kPads][kPerPad] = {};
     Dial *velD, *driveD, *volD;
-    Button* chokeB;
+    Button *chokeB, *followB;
+    uint32_t lastHitSeen = 0;
     int sel = 0, lanePos = 0;
     float glow[kPads] = {}, scope[kScopeN] = {}, scale = 1.0f, lane[kPads][kLane] = {};
     bool hit[kPads][kLane] = {};

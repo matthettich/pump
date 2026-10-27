@@ -20,7 +20,7 @@ namespace pump { namespace boing {
 constexpr int kPads = 8;
 enum PadParam : int { kTank = 0, kWave, kBlend, kPitch, kDecay, kHarmonic, kSpread, kDrip, kBend, kBendTime, kNoise, kNoiseTone, kClick, kHits, kLevel, kPan, kSend, kPerPad };
 inline int pp(int pad, int what) { return pad * kPerPad + what; }
-enum KitParam : int { kTankModel = kPads * kPerPad, kTankDecay, kTankLevel, kChoke, kVelocity, kDrive, kVolume, kNumParams };
+enum KitParam : int { kTankModel = kPads * kPerPad, kTankDecay, kTankLevel, kChoke, kVelocity, kDrive, kVolume, kFollow, kNumParams };
 
 static const char* const kTankNames[] = { "Two-spring", "Three-spring", "Short tank", "Long tank", "Digital", "Lo-fi digital" };
 static const char* const kTankKeys[] = { "TWO", "THREE", "SHORT", "LONG", "DIGITAL", "LO-FI" };
@@ -78,6 +78,7 @@ inline const std::vector<ParamSpec>& params()
     v.push_back({ "velocity", "Velocity Sensitivity", "Velocity", 0, 100, 60, PUnit::Percent, PScale::Linear, A, nullptr, 1 });
     v.push_back({ "drive", "Kit Drive", "Drive", 0, 100, 0, PUnit::Percent, PScale::Linear, A, nullptr, 1 });
     v.push_back({ "volume", "Volume", "Volume", -48, 12, 0, PUnit::dB, PScale::Linear, A, nullptr, 1 });
+    v.push_back({ "follow", "Edit the Pad Played", "Follow", 0, 1, 1, PUnit::None, PScale::Linear, kPBoolean | kPNoUndo, nullptr, 1 });   // appended
     return v;
 }
 

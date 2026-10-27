@@ -102,8 +102,8 @@ docs/ROADMAP.md          planned work and known issues deferred from audits
   section labels, `kLabel` font for words, `kMono`/`kBold` for numbers. Neon = highlight fills/curves; ink = text,
   outlines, filled "on" keys; `second` = a contrasting curve (side channel, gain reduction).
 - Controls: `addDial` (flat dial), `addRow` (Simple slider row), `addToggle`, `addButton`,
-  `addSegmented`, `addMenu`. The interaction rules are built in: drag (Shift fine), double-click or right-click
-  to type, Ctrl/Cmd/Alt-click resets, wheel steps. Override `formatParam()` for plugin-specific value text ("OFF" at
+  `addSegmented`, `addMenu`. The interaction rules are built in: drag (Shift fine), right-click to type,
+  double-click or Ctrl/Cmd/Alt-click resets, wheel steps. Override `formatParam()` for plugin-specific value text ("OFF" at
   a filter's end stop, note names); controls and the status line use it.
 - Tempo-synced effects set `DISTRHO_PLUGIN_WANT_TIMEPOS 1` and read `transport()` at the top of `run()`. Engines
   only see `pump::Transport`, lock to the song position when the host plays and free-run at the host tempo when it

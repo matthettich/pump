@@ -12,7 +12,7 @@ namespace pump { namespace kit {
 constexpr int kPads = 8;
 enum PadParam : int { kModel = 0, kTune, kDecay, kPitch, kPitchDecay, kTone, kNoise, kClick, kChar, kDrive, kLevel, kPan, kPerPad };
 inline int pp(int pad, int what) { return pad * kPerPad + what; }
-enum KitParam : int { kKitDrive = kPads * kPerPad, kVelocity, kHumanize, kVolume, kNumParams };
+enum KitParam : int { kKitDrive = kPads * kPerPad, kVelocity, kHumanize, kVolume, kFollow, kNumParams };
 
 // The voice models. Every pad can be any of them; TONE and CHAR mean what suits each:
 //   Kick    a sine with a pitch drop; CLICK a noise / pulse transient; CHAR folds it toward a harder tone; TONE a low-pass
@@ -68,6 +68,7 @@ inline const std::vector<ParamSpec>& params()
     v.push_back({ "velocity", "Velocity Sensitivity", "Velocity", 0, 100, 60, PUnit::Percent, PScale::Linear, A, nullptr, 1 });
     v.push_back({ "humanize", "Humanize", "Humanize", 0, 100, 0, PUnit::Percent, PScale::Linear, A, nullptr, 1 });
     v.push_back({ "volume", "Volume", "Volume", -48, 12, 0, PUnit::dB, PScale::Linear, A, nullptr, 1 });
+    v.push_back({ "follow", "Edit the Pad Played", "Follow", 0, 1, 1, PUnit::None, PScale::Linear, kPBoolean | kPNoUndo, nullptr, 1 });   // appended
     return v;
 }
 
