@@ -27,7 +27,7 @@
 #define DISTRHO_UI_USER_RESIZABLE      1
 #define DISTRHO_UI_FILE_BROWSER        1   // LOAD KIT opens a file dialog for the machine's kit files
 #define DISTRHO_UI_DEFAULT_WIDTH       1000
-#define DISTRHO_UI_DEFAULT_HEIGHT      740
+#define DISTRHO_UI_DEFAULT_HEIGHT      548
 
 #define DISTRHO_PLUGIN_VST3_CATEGORIES "Instrument|Drum"
 #define DISTRHO_PLUGIN_CLAP_FEATURES   "instrument", "drum-machine", "stereo"

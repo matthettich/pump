@@ -11,7 +11,7 @@ using namespace pump::machine;
 
 class UIMachine : public PumpUI {
 public:
-    UIMachine() : PumpUI(params().data(), kNumParams, &presets(), pump::accents::machine(), "MACHINE", 1000, 740, -1)
+    UIMachine() : PumpUI(params().data(), kNumParams, &presets(), pump::accents::machine(), "MACHINE", 1000, 548, -1)
     {
         for (int i = 0; i < kNumFw; ++i)
         {
@@ -63,22 +63,46 @@ protected:
         meterL = Rect(966, top, 8, 92); meterR = Rect(977, top, 8, 92);
         kitBtn->r = Rect(886, 155, 100, 20);
         followB->r = Rect(780, 155, 100, 20);
-        for (int c = 0; c < 8; ++c) secR[c] = Rect(14 + (c % 4) * 245, 178 + (c / 4) * 262, 237, 254);
-        // each voice's knobs into its sections: four slots a row, a modulation target takes two
+        // three strips of sections in the machine's order, each section as wide as its most knobs on any voice
+        // (OSCILLATOR ENVELOPE PITCH·VELOCITY / FM TRANSIENT FILTER / LFO MIX), one row of knobs per section
+        int most[kNumSections] = {};
         for (int v = 0; v < kNumVoices; ++v)
         {
-            int slot[kNumSections] = {};
+            int n[kNumSections] = {};
+            for (int i = 0; i < kNumFw; ++i) if (kFw[i].voice == v) n[kFw[i].section] += kFw[i].kind == kTarget ? 2 : 1;
+            for (int c = 0; c < kNumSections; ++c) most[c] = std::max(most[c], n[c]);
+        }
+        static const int rows[3][4] = { { 0, 1, 2, -1 }, { 3, 4, 5, -1 }, { 6, 7, -1, -1 } };
+        const float ph = 104;
+        for (int rw = 0; rw < 3; ++rw)
+        {
+            int cnt = 0, slots = 0;
+            for (int k = 0; k < 4 && rows[rw][k] >= 0; ++k) { ++cnt; slots += std::max(most[rows[rw][k]], 3); }
+            const float y = 178 + rw * (ph + 12), per = (972.0f - 12.0f * (cnt - 1)) / (float)slots;
+            float x = 14;
+            for (int k = 0; k < cnt; ++k)
+            {
+                const int c = rows[rw][k];
+                const float w = per * std::max(most[c], 3);
+                secR[c] = Rect(x, y, w, ph);
+                x += w + 12;
+            }
+        }
+        // each voice's knobs spread along its sections (a modulation target takes two slots)
+        for (int v = 0; v < kNumVoices; ++v)
+        {
+            int n[kNumSections] = {}, slot[kNumSections] = {};
+            for (int i = 0; i < kNumFw; ++i) if (kFw[i].voice == v) n[kFw[i].section] += kFw[i].kind == kTarget ? 2 : 1;
             for (int i = 0; i < kNumFw; ++i)
             {
                 const FwParam& f = kFw[i];
                 if (f.voice != v) continue;
                 const int w = f.kind == kTarget ? 2 : 1;
-                int& sl = slot[f.section];
-                if (sl % 4 + w > 4) sl += 4 - sl % 4;
                 const Rect& p = secR[f.section];
-                const float cw = (p.w - 12) / 4.0f;
-                dials[i]->r = Rect(p.x + 6 + (sl % 4) * cw, p.y + 26 + (sl / 4) * 76, cw * w, Dial::heightFor(Dial::Small));
-                sl += w;
+                const float cw = std::min((p.w - 12) / (float)n[f.section], 76.0f);
+                const float x0 = p.x + 6 + ((p.w - 12) - cw * n[f.section]) * 0.5f;
+                dials[i]->r = Rect(x0 + slot[f.section] * cw, p.y + 26, cw * w, Dial::heightFor(Dial::Small));
+                slot[f.section] += w;
             }
         }
     }
