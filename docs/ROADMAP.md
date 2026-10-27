@@ -25,6 +25,12 @@ Instruments (MIDI in, stereo out):
 - **Singing synth**: a vocal synthesizer that sings MIDI notes on vowels and phonemes (typed lyrics or a vowel
   morph), with as many voice styles as we can make: soft, breathy, bright pop, choir, robotic, child-like, deep,
   whisper, plus formant shift, vibrato and portamento.
+- **Spring synth** (next after the singing synth): SPRING's tanks (two-, three-spring, short, long, and the two digital
+  ones as tuned combs) played chromatically: each spring's loop tuned to the note (its allpass delay compensated),
+  excited by SPRING's kick (velocity = strength); a REFERENCE end that rings at the tank's own length (the reverb
+  itself); HARMONIC pulls the dispersion and the springs' detune toward a clean string-like pluck. Polyphonic.
+- **Spring resonator** (an effect, same engine): audio in excites the tuned springs, notes or a fixed pitch set the
+  tuning (MIDI, or a key / chord with a ROOT knob), with the same HARMONIC and REFERENCE controls and a dry / wet mix.
 
 ## Instance List — planned, nice to have
 
