@@ -70,6 +70,7 @@ namespace accents {
     inline Accent fold()   { return { "fold",   hexColor(0xFFA3E6), hexColor(0x8A1470), hexColor(0x2FC4B0) }; }   // blush
     inline Accent vector() { return { "vector", hexColor(0x6BFFE1), hexColor(0x00604F), hexColor(0xFF6BB0) }; }   // aqua
     inline Accent strike() { return { "strike", hexColor(0xFFD98C), hexColor(0x6E4A00), hexColor(0x4D7BFF) }; }   // sand
+    inline Accent freeze() { return { "freeze", hexColor(0xC9E8FF), hexColor(0x1E4A73), hexColor(0xFF9A5C) }; }   // frost
 }
 
 struct Theme {

@@ -57,8 +57,9 @@ Instruments (MIDI in, stereo out):
 - **VECTOR** vector / wave-sequencing synth — done (2026-10-26): four sources on a joystick square with a vector
   envelope path; waves from a bank of 32, wave sequences, and scanned strings (asked for that evening: scanned
   synthesis, put here as a source type).
-- Ideas the user liked, in order:
-  **granular spectral-freeze** synth, **formant / vocal-tract** pad.
+- **FREEZE** granular spectral-freeze synth — done (2026-10-26): spectra of a sound (built in or loaded) played as
+  frozen or moving clouds of spectral grains, random or phase-vocoder phases.
+- Ideas the user liked, in order: **formant / vocal-tract** pad.
 - Asked for on 2026-10-26 (after those):
   - **A multi-engine drum synth** — done (2026-10-26) as **STRIKE**, the engines pump's drum machines lacked: modal,
     waveguide, analog bridged-T circuit, three-operator FM, west-coast fold and gate, additive cymbals, chaos.
