@@ -30,7 +30,7 @@ inline const std::vector<ParamSpec>& params()
         const FwParam& f = kFw[i];
         v.push_back({ f.sym, f.name, f.dial, (float)f.min, (float)f.max, (float)f.def, PUnit::None, PScale::Linear, f.kind == kOnOff ? B : I, f.choices, 1 });
     }
-    v.push_back({ "volume", "Volume", "Volume", -48, 12, -6, PUnit::dB, PScale::Linear, kPAutomatable, nullptr, 1 });
+    v.push_back({ "volume", "Volume", "Volume", -48, 12, 0, PUnit::dB, PScale::Linear, kPAutomatable, nullptr, 1 });
     return v;
 }
 

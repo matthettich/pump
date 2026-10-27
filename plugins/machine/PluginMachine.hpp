@@ -17,7 +17,10 @@ public:
         if (std::getenv("PUMP_TEST_NOTES")) testLoop = true;   // headless screenshots: a beat plays from the start
     }
 
+    // gain staging (the volume pass, 2026-10-26): VOLUME 0 dB is a typical voice at about -20 dBFS RMS
+    static constexpr float kTrimDb = -5.0f;
     Engine engine;
+    pump::SafetyLimiter outLimit;
     pump::synth::NoteQueue pads;   // the window's pads: (sound, velocity)
     pump::MeterValue outPeak[2];
 
@@ -30,8 +33,8 @@ protected:
     {
         std::vector<int> fw((size_t)kFwNumParams, -1);
         for (int i = 0; i < kNumFw; ++i) fw[(size_t)kFw[i].fw] = (int)std::lround(pv((uint32_t)i));
-        engine.setVolume(pv(kVolume));
-        engine.prepare(getSampleRate(), (int)getBufferSize(), fw.data());
+        engine.setVolume(pv(kVolume) + kTrimDb);
+        engine.prepare(getSampleRate(), (int)getBufferSize(), fw.data()); outLimit.prepare(getSampleRate());
         for (uint32_t i = 0; i < (uint32_t)kNumParams; ++i) takeChanged(i);
     }
     void sampleRateChanged(double) override { activate(); }
@@ -44,7 +47,7 @@ protected:
                 if (takeChanged(i))
                 {
                     if (i < (uint32_t)kNumFw) engine.setParam(kFw[i].fw, (int)std::lround(pv(i)));
-                    else if (i == (uint32_t)kVolume) engine.setVolume(pv(i));
+                    else if (i == (uint32_t)kVolume) engine.setVolume(pv(i) + kTrimDb);
                 }
         engine.setTempo(transport().bpm);
         int nh = 0;
@@ -65,6 +68,7 @@ protected:
             float* l = outputs[0] + done;
             float* r = outputs[1] + done;
             engine.process(l, r, (int)n, midi, nm, first ? hits : nullptr, first ? nh : 0);
+            outLimit.process(l, r, (int)n);
             first = false;
             float pl = 0.0f, pr = 0.0f;
             for (uint32_t i = 0; i < n; ++i) { pl = std::max(pl, std::fabs(l[i])); pr = std::max(pr, std::fabs(r[i])); }

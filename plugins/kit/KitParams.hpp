@@ -67,7 +67,7 @@ inline const std::vector<ParamSpec>& params()
     v.push_back({ "kit_drive", "Kit Drive", "Drive", 0, 100, 0, PUnit::Percent, PScale::Linear, A, nullptr, 1 });
     v.push_back({ "velocity", "Velocity Sensitivity", "Velocity", 0, 100, 60, PUnit::Percent, PScale::Linear, A, nullptr, 1 });
     v.push_back({ "humanize", "Humanize", "Humanize", 0, 100, 0, PUnit::Percent, PScale::Linear, A, nullptr, 1 });
-    v.push_back({ "volume", "Volume", "Volume", -48, 6, -6, PUnit::dB, PScale::Linear, A, nullptr, 1 });
+    v.push_back({ "volume", "Volume", "Volume", -48, 12, 0, PUnit::dB, PScale::Linear, A, nullptr, 1 });
     return v;
 }
 
@@ -93,7 +93,7 @@ inline const std::vector<Preset>& presets()
     F("KITS", "Industrial", { { "kick_drive", 85 }, { "kick_char", 70 }, { "kick_click", 80 }, { "snare_model", 5 }, { "snare_decay", 300 }, { "snare_tone", 30 }, { "snare_drive", 60 },
         { "clap_model", 7 }, { "clap_pitch", 40 }, { "clap_pdecay", 60 }, { "clap_char", 70 }, { "tom_model", 6 }, { "tom_char", 90 }, { "tom_pitch", 30 }, { "kit_drive", 50 } });
     F("KITS", "Minimal clicks", { { "kick_decay", 160 }, { "kick_pitch", 40 }, { "kick_pdecay", 8 }, { "kick_click", 90 }, { "snare_model", 6 }, { "snare_decay", 90 }, { "snare_char", 70 },
-        { "clap_decay", 120 }, { "chat_decay", 20 }, { "ohat_decay", 120 }, { "perc_decay", 60 }, { "perc_char", 95 }, { "tom_decay", 120 }, { "tom_tune", 12 }, { "volume", 0 } });
+        { "clap_decay", 120 }, { "chat_decay", 20 }, { "ohat_decay", 120 }, { "perc_decay", 60 }, { "perc_char", 95 }, { "tom_decay", 120 }, { "tom_tune", 12 }, { "volume", 6 } });
     F("KITS", "Breakbeat", { { "kick_decay", 300 }, { "kick_tone", 60 }, { "kick_noise", 15 }, { "snare_noise", 75 }, { "snare_click", 70 }, { "snare_decay", 260 }, { "snare_tune", 4 },
         { "chat_decay", 70 }, { "ohat_decay", 500 }, { "cym_decay", 2200 }, { "humanize", 35 }, { "velocity", 85 }, { "kit_drive", 20 } });
     F("KITS", "FM percussion", { { "kick_model", 6 }, { "kick_char", 10 }, { "kick_pitch", 30 }, { "snare_model", 6 }, { "snare_char", 70 }, { "snare_noise", 30 },
@@ -103,7 +103,7 @@ inline const std::vector<Preset>& presets()
     F("KITS", "Trap", { { "kick_decay", 2500 }, { "kick_pitch", 14 }, { "kick_pdecay", 120 }, { "kick_click", 25 }, { "kick_tune", -5 }, { "kick_drive", 20 },
         { "snare_tune", 5 }, { "snare_decay", 160 }, { "snare_noise", 55 }, { "clap_char", 40 }, { "chat_decay", 30 }, { "chat_tone", 70 }, { "ohat_decay", 250 } });
     F("KITS", "Zaps and blips", { { "kick_model", 7 }, { "kick_pitch", 40 }, { "kick_pdecay", 80 }, { "kick_char", 80 }, { "snare_model", 7 }, { "snare_pitch", 30 }, { "snare_char", 60 },
-        { "clap_model", 6 }, { "clap_char", 75 }, { "tom_model", 7 }, { "tom_pitch", 44 }, { "tom_char", 85 }, { "perc_pitch", 48 }, { "perc_pdecay", 6 }, { "cym_model", 7 }, { "cym_tone", 80 }, { "volume", 2 } });
+        { "clap_model", 6 }, { "clap_char", 75 }, { "tom_model", 7 }, { "tom_pitch", 44 }, { "tom_char", 85 }, { "perc_pitch", 48 }, { "perc_pdecay", 6 }, { "cym_model", 7 }, { "cym_tone", 80 }, { "volume", 8 } });
     return v;
 }
 

@@ -74,7 +74,7 @@ inline const std::vector<ParamSpec>& params()
     v.push_back({ "glide", "Glide", "Glide", 0, 2000, 0, PUnit::ms, PScale::Power, A, nullptr, 2 });
     v.push_back({ "bend", "Pitch Bend Range", "Bend", 0, 24, 2, PUnit::None, PScale::Linear, kPInteger, nullptr, 1 });
     v.push_back({ "transpose", "Transpose", "Trans", -24, 24, 0, PUnit::None, PScale::Linear, I, nullptr, 1 });
-    v.push_back({ "volume", "Volume", "Volume", -48, 6, -6, PUnit::dB, PScale::Linear, A, nullptr, 1 });
+    v.push_back({ "volume", "Volume", "Volume", -48, 12, 0, PUnit::dB, PScale::Linear, A, nullptr, 1 });
     v.push_back({ "pitch_env", "Pitch Envelope", "P-Env", -48, 48, 0, PUnit::None, PScale::Linear, A, nullptr, 1 });
     v.push_back({ "pitch_decay", "Pitch Envelope Decay", "P-Dec", 1, 5000, 80, PUnit::ms, PScale::Log, A, nullptr, 1 });
     names.reserve(kOps * kOpFields * 2);
@@ -138,7 +138,7 @@ inline const std::vector<Preset>& presets()
     v.push_back({ "Default", {} });
     { PV p { { "engine", kConsole }, { "algorithm", 0 }, { "feedback", 5 } };   // slap bass: a stack, op 1 rings with feedback
       o(p, 1, 0, 80, 1, 300, 0, 80); o(p, 2, 1, 76, 1, 180, 10, 80); o(p, 3, 1, 74, 1, 500, 20, 80); o(p, 4, 1, 99, 1, 1200, 40, 60, 40);
-      p.push_back({ "transpose", -12 }); p.push_back({ "voice_mode", 1 }); p.push_back({ "volume", -2 }); F("CONSOLE", "Slap bass", p); }
+      p.push_back({ "transpose", -12 }); p.push_back({ "voice_mode", 1 }); p.push_back({ "volume", 4 }); F("CONSOLE", "Slap bass", p); }
     { PV p { { "engine", kConsole }, { "algorithm", 4 }, { "feedback", 3 } };   // two pairs, bright attack
       o(p, 1, 1, 82, 1, 900, 30, 300, 70); o(p, 2, 1, 99, 1, 2500, 60, 300, 40); o(p, 3, 14, 60, 1, 250, 0, 200, 80); o(p, 4, 1, 92, 1, 2000, 40, 400, 40);
       F("CONSOLE", "Console e-piano", p); }
@@ -147,7 +147,7 @@ inline const std::vector<Preset>& presets()
       p.push_back({ "lfo_pm", 15 }); p.push_back({ "lfo_rate", 5.5f }); F("CONSOLE", "Console brass", p); }
     { PV p { { "engine", kConsole }, { "algorithm", 6 }, { "feedback", 6 } };
       o(p, 1, 2, 84, 1, 300, 70, 100); o(p, 2, 1, 99, 1, 300, 90, 100); o(p, 3, 1, 90, 1, 300, 90, 100, 30, 1); o(p, 4, 2, 80, 1, 300, 90, 100);
-      p.push_back({ "voice_mode", 2 }); p.push_back({ "glide", 40 }); p.push_back({ "volume", -2 }); F("CONSOLE", "Fighting game lead", p); }
+      p.push_back({ "voice_mode", 2 }); p.push_back({ "glide", 40 }); p.push_back({ "volume", 4 }); F("CONSOLE", "Fighting game lead", p); }
     { PV p { { "engine", kConsole }, { "algorithm", 0 }, { "feedback", 7 } };
       o(p, 1, 1, 90, 1, 60, 0, 40); o(p, 2, 3, 85, 1, 90, 0, 40); o(p, 3, 1, 80, 1, 120, 0, 40); o(p, 4, 1, 99, 1, 180, 0, 60);
       p.push_back({ "transpose", -12 }); F("CONSOLE", "Console drum hit", p); }
@@ -162,13 +162,13 @@ inline const std::vector<Preset>& presets()
       F("ARCADE", "Arcade noise snare", p); }
     { PV p { { "engine", kPc2 }, { "algorithm", 0 }, { "feedback", 3 } };
       o(p, 1, 1, 76, 1, 600, 40, 200, 40, -1, 1); o(p, 2, 1, 99, 1, 1500, 60, 300, 40);
-      p.push_back({ "volume", -2 }); F("PC CARD", "Sound card piano", p); }
+      p.push_back({ "volume", 4 }); F("PC CARD", "Sound card piano", p); }
     { PV p { { "engine", kPc2 }, { "algorithm", 1 }, { "feedback", 4 } };
       o(p, 1, 2, 90, 5, 300, 100, 60, 0); o(p, 2, 1, 95, 5, 300, 100, 60, 0, -1, 0);
       p.push_back({ "lfo_am", 20 }); p.push_back({ "op1_am", 1 }); F("PC CARD", "Sound card organ", p); }
     { PV p { { "engine", kPc2 }, { "algorithm", 0 }, { "feedback", 0 } };
       o(p, 1, 1, 84, 1, 300, 60, 100, 30, -1, 6); o(p, 2, 1, 99, 1, 300, 90, 100, 30, -1, 0);
-      p.push_back({ "voice_mode", 2 }); p.push_back({ "volume", -2 }); F("PC CARD", "Square lead", p); }
+      p.push_back({ "voice_mode", 2 }); p.push_back({ "volume", 4 }); F("PC CARD", "Square lead", p); }
     { PV p { { "engine", kPc2 }, { "algorithm", 0 }, { "feedback", 6 } };
       o(p, 1, 0, 80, 1, 400, 20, 100, 30, -1, 2); o(p, 2, 1, 99, 1, 800, 50, 120, 30, -1, 0);
       p.push_back({ "transpose", -12 }); F("PC CARD", "Sound card bass", p); }
@@ -182,7 +182,7 @@ inline const std::vector<Preset>& presets()
     { PV p { { "engine", kSix }, { "algorithm", 14 }, { "feedback", 0 } };   // one modulator into five carriers
       o(p, 1, 1, 90, 1, 4000, 0, 2000); o(p, 2, 3, 82, 1, 3000, 0, 2000, -1, 50); o(p, 3, 5, 76, 1, 2000, 0, 2000, -1, 41);
       o(p, 4, 7, 70, 1, 1600, 0, 1500); o(p, 5, 9, 64, 1, 1200, 0, 1200); o(p, 6, 3, 80, 1, 2500, 0, 1500, -1, 50);
-      p.push_back({ "volume", 3 }); F("STUDIO", "Glass bells", p); }
+      p.push_back({ "volume", 9 }); F("STUDIO", "Glass bells", p); }
     { PV p { { "engine", kSix }, { "algorithm", 11 }, { "feedback", 5 } };   // two stacks of three
       o(p, 1, 1, 99, 1, 500, 0, 200, 60); o(p, 2, 3, 80, 1, 250, 0, 150, 80); o(p, 3, 4, 60, 1, 120, 0, 100, 80);
       o(p, 4, 1, 90, 1, 400, 0, 200, 60); o(p, 5, 10, 60, 1, 100, 0, 80, 80); o(p, 6, 1, 50, 1, 80, 0, 60);
@@ -204,9 +204,9 @@ inline const std::vector<Preset>& presets()
     { PV p { { "engine", kSix }, { "algorithm", 7 }, { "feedback", 4 }, { "pitch_env", 24 }, { "pitch_decay", 40 } };
       o(p, 1, 1, 99, 1, 400, 0, 200, 50); o(p, 2, 1, 80, 1, 90, 0, 60, 80); o(p, 3, 2, 76, 1, 150, 0, 80, 80, 37); o(p, 4, 3, 70, 1, 60, 0, 60, 80, 20);
       p.push_back({ "op2_fixed", 1 }); p.push_back({ "op3_fixed", 1 }); p.push_back({ "op4_fixed", 1 }); p.push_back({ "transpose", -12 });
-      p.push_back({ "volume", -2 }); F("STUDIO", "Fixed-frequency tom", p); }
+      p.push_back({ "volume", 4 }); F("STUDIO", "Fixed-frequency tom", p); }
     { PV p { { "engine", kPd }, { "algorithm", 0 }, { "pd_wave1", kPdSaw }, { "pd_dcw1", 85 }, { "pd_attack", 1 }, { "pd_decay", 350 }, { "pd_sustain", 10 }, { "pd_key", 20 } };
-      o(p, 1, 1, 99, 1, 2000, 90, 80); p.push_back({ "transpose", -12 }); p.push_back({ "voice_mode", 1 }); p.push_back({ "volume", -2 }); F("PHASE DIST", "Phase saw bass", p); }
+      o(p, 1, 1, 99, 1, 2000, 90, 80); p.push_back({ "transpose", -12 }); p.push_back({ "voice_mode", 1 }); p.push_back({ "volume", 4 }); F("PHASE DIST", "Phase saw bass", p); }
     { PV p { { "engine", kPd }, { "algorithm", 0 }, { "pd_wave1", kPdResSaw }, { "pd_dcw1", 90 }, { "pd_attack", 600 }, { "pd_decay", 2500 }, { "pd_sustain", 20 } };
       o(p, 1, 1, 99, 5, 3000, 80, 600); F("PHASE DIST", "Resonant sweep", p); }
     { PV p { { "engine", kPd }, { "algorithm", 3 }, { "pd_wave1", kPdSaw }, { "pd_wave2", kPdSaw }, { "pd_dcw1", 55 }, { "pd_dcw2", 45 }, { "pd_detune", 9 }, { "pd_attack", 400 }, { "pd_sustain", 60 } };
@@ -214,7 +214,7 @@ inline const std::vector<Preset>& presets()
     { PV p { { "engine", kPd }, { "algorithm", 0 }, { "pd_wave1", kPdPulse }, { "pd_wave1b", 2 }, { "pd_dcw1", 75 }, { "pd_sustain", 50 } };
       o(p, 1, 1, 99, 1, 1000, 85, 200); p.push_back({ "voice_mode", 2 }); p.push_back({ "glide", 60 }); F("PHASE DIST", "Pulse lead", p); }
     { PV p { { "engine", kPd }, { "algorithm", 3 }, { "pd_wave1", kPdDouble }, { "pd_wave2", kPdResTrap }, { "pd_dcw1", 40 }, { "pd_dcw2", 80 }, { "pd_octave", 1 }, { "pd_mod", 1 }, { "pd_decay", 1200 } };
-      o(p, 1, 1, 90, 1, 1800, 30, 500); o(p, 2, 1, 80, 1, 1200, 20, 500); p.push_back({ "volume", 3 }); F("PHASE DIST", "Ring bell", p); }
+      o(p, 1, 1, 90, 1, 1800, 30, 500); o(p, 2, 1, 80, 1, 1200, 20, 500); p.push_back({ "volume", 9 }); F("PHASE DIST", "Ring bell", p); }
     { PV p { { "engine", kPd }, { "algorithm", 2 }, { "pd_wave1", kPdSquare }, { "pd_dcw1", 60 }, { "pd_detune", 4 }, { "pd_attack", 20 }, { "pd_sustain", 70 }, { "chip", 0 } };
       o(p, 1, 1, 90, 10, 1000, 95, 150); F("PHASE DIST", "Clean organ", p); }
     return v;

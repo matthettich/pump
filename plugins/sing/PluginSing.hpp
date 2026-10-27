@@ -13,13 +13,16 @@ public:
     PluginSing() : PumpPlugin(params().data(), kNumParams, &presets(), 1)
     {
         sync();
-        engine.prepare(getSampleRate(), (int)getBufferSize());
+        engine.prepare(getSampleRate(), (int)getBufferSize()); outLimit.prepare(getSampleRate());
         if (const char* t = std::getenv("PUMP_TEST_LYRICS")) lyrics = t;
         engine.setLyrics(lyrics);
         if (const char* n = std::getenv("PUMP_TEST_NOTES")) testNotes = n;   // headless screenshots: notes to hold (after 0.5 s)
     }
 
+    // gain staging (the volume pass, 2026-10-26): VOLUME 0 dB is a typical voice at about -20 dBFS RMS
+    static constexpr float kTrimDb = -2.5f;
     Engine engine;
+    pump::SafetyLimiter outLimit;
     pump::synth::NoteQueue keys;
     pump::MeterValue outPeak[2];
     std::atomic<bool> restartRequest { false };
@@ -46,7 +49,7 @@ protected:
         return PumpPlugin::getState(key);
     }
 
-    void activate() override { sync(); engine.prepare(getSampleRate(), (int)getBufferSize()); }
+    void activate() override { sync(); engine.prepare(getSampleRate(), (int)getBufferSize()); outLimit.prepare(getSampleRate()); }
     void sampleRateChanged(double) override { activate(); }
 
     void sync()
@@ -58,7 +61,7 @@ protected:
         s.vib = pv(kVib) * 0.01; s.vibRate = pv(kVibRate); s.vibDelay = pv(kVibDelay); s.glide = pv(kGlide); s.wheel = pv(kWheel) * 0.01;
         s.hiss = pv(kHiss) * 0.01; s.diction = pv(kDiction) * 0.01; s.attack = pv(kAttack); s.release = pv(kRelease);
         s.spread = pv(kSpread) * 0.01; s.width = pv(kWidth) * 0.01; s.velocity = pv(kVelocity) * 0.01; s.drive = pv(kDrive) * 0.01;
-        s.volumeDb = pv(kVolume);
+        s.volumeDb = pv(kVolume) + kTrimDb;
         engine.setSettings(s);
     }
 
@@ -95,6 +98,7 @@ protected:
             float* l = outputs[0] + done;
             float* r = outputs[1] + done;
             engine.process(l, r, (int)n, midi, nm);
+            outLimit.process(l, r, (int)n);
             float pl = 0.0f, pr = 0.0f;
             for (uint32_t i = 0; i < n; ++i) { pl = std::max(pl, std::fabs(l[i])); pr = std::max(pr, std::fabs(r[i])); }
             outPeak[0].setMax(pl); outPeak[1].setMax(pr);

@@ -13,12 +13,15 @@ public:
     PluginPoly() : PumpPlugin(params().data(), kNumParams, &presets())
     {
         sync();
-        engine.prepare(getSampleRate(), (int)getBufferSize());
+        engine.prepare(getSampleRate(), (int)getBufferSize()); outLimit.prepare(getSampleRate());
         if (const char* n = std::getenv("PUMP_TEST_NOTES"))   // headless screenshots: notes to hold from the start
             for (const char* p = n; *p; ) { const int v = std::atoi(p); if (v > 0 && v < 128) keys.push((uint8_t)v, 100); while (*p && *p != ',') ++p; if (*p) ++p; }
     }
 
+    // gain staging (the volume pass, 2026-10-26): VOLUME 0 dB is a typical voice at about -20 dBFS RMS
+    static constexpr float kTrimDb = -2.5f;
     Engine engine;
+    pump::SafetyLimiter outLimit;
     pump::synth::NoteQueue keys;
     pump::MeterValue outPeak[2];
 
@@ -26,7 +29,7 @@ protected:
     const char* getLabel() const override { return "pump_poly"; }
     const char* getDescription() const override { return PUMP_PLUGIN_ABOUT; }
 
-    void activate() override { sync(); engine.prepare(getSampleRate(), (int)getBufferSize()); }
+    void activate() override { sync(); engine.prepare(getSampleRate(), (int)getBufferSize()); outLimit.prepare(getSampleRate()); }
     void sampleRateChanged(double) override { activate(); }
 
     void sync()
@@ -44,7 +47,7 @@ protected:
         s.lfoShape = (int)pv(kLfoShape); s.lfoRate = pv(kLfoRate); s.lfoDelay = pv(kLfoDelay); s.lfoPitch = pv(kLfoPitch) * 0.01;
         s.lfoPw = pv(kLfoPw) * 0.01; s.lfoFilter = pv(kLfoFilter) * 0.01; s.wheelMod = pv(kWheelMod) * 0.01;
         s.voiceMode = (int)pv(kVoiceMode); s.voices = (int)pv(kVoices); s.unisonDetune = pv(kUnisonDetune) * 0.01; s.glide = pv(kGlide);
-        s.slop = pv(kSlop) * 0.01; s.bendRange = pv(kBendRange); s.chorus = (int)pv(kChorus); s.volumeDb = pv(kVolume);
+        s.slop = pv(kSlop) * 0.01; s.bendRange = pv(kBendRange); s.chorus = (int)pv(kChorus); s.volumeDb = pv(kVolume) + kTrimDb;
         engine.setSettings(s);
     }
 
@@ -71,6 +74,7 @@ protected:
             float* l = outputs[0] + done;
             float* r = outputs[1] + done;
             engine.process(l, r, (int)n, midi, nm);
+            outLimit.process(l, r, (int)n);
             float pl = 0.0f, pr = 0.0f;
             for (uint32_t i = 0; i < n; ++i) { pl = std::max(pl, std::fabs(l[i])); pr = std::max(pr, std::fabs(r[i])); }
             outPeak[0].setMax(pl); outPeak[1].setMax(pr);

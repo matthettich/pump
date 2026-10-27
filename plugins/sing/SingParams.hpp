@@ -46,7 +46,7 @@ inline const std::vector<ParamSpec>& params()
     v.push_back({ "width", "Stereo Width", "Width", 0, 100, 60, PUnit::Percent, PScale::Linear, A, nullptr, 1 });
     v.push_back({ "velocity", "Velocity to Level", "Velocity", 0, 100, 40, PUnit::Percent, PScale::Linear, A, nullptr, 1 });
     v.push_back({ "drive", "Drive", "Drive", 0, 100, 0, PUnit::Percent, PScale::Linear, A, nullptr, 1 });
-    v.push_back({ "volume", "Volume", "Volume", -48, 12, -3, PUnit::dB, PScale::Linear, A, nullptr, 1 });
+    v.push_back({ "volume", "Volume", "Volume", -48, 12, 0, PUnit::dB, PScale::Linear, A, nullptr, 1 });
     return v;
 }
 

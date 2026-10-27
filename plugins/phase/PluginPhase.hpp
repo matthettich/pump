@@ -13,12 +13,15 @@ public:
     PluginPhase() : PumpPlugin(params().data(), kNumParams, &presets())
     {
         sync();
-        engine.prepare(getSampleRate(), (int)getBufferSize());
+        engine.prepare(getSampleRate(), (int)getBufferSize()); outLimit.prepare(getSampleRate());
         if (const char* n = std::getenv("PUMP_TEST_NOTES"))   // headless screenshots: notes to hold, after the preset lands
             testNotes = n;
     }
 
+    // gain staging (the volume pass, 2026-10-26): VOLUME 0 dB is a typical voice at about -20 dBFS RMS
+    static constexpr float kTrimDb = -2.5f;
     Engine engine;
+    pump::SafetyLimiter outLimit;
     pump::synth::NoteQueue keys;
     pump::MeterValue outPeak;
 
@@ -26,7 +29,7 @@ protected:
     const char* getLabel() const override { return "pump_phase"; }
     const char* getDescription() const override { return PUMP_PLUGIN_ABOUT; }
 
-    void activate() override { sync(); engine.prepare(getSampleRate(), (int)getBufferSize()); }
+    void activate() override { sync(); engine.prepare(getSampleRate(), (int)getBufferSize()); outLimit.prepare(getSampleRate()); }
     void sampleRateChanged(double) override { activate(); }
 
     void sync()
@@ -35,7 +38,7 @@ protected:
         s.engine = (int)pv(kEngine); s.algo = (int)pv(kAlgo); s.feedback = (int)pv(kFeedback); s.chip = pv(kChip) >= 0.5f;
         s.tone = pv(kTone) * 0.01; s.lfoRate = pv(kLfoRate); s.lfoAm = pv(kLfoAm) * 0.01; s.lfoPm = pv(kLfoPm) * 0.01;
         s.wheelVib = pv(kWheelVib) * 0.01; s.voices = (int)pv(kVoices); s.voiceMode = (int)pv(kVoiceMode);
-        s.glide = pv(kGlide); s.bend = pv(kBend); s.transpose = (int)pv(kTranspose); s.volumeDb = pv(kVolume);
+        s.glide = pv(kGlide); s.bend = pv(kBend); s.transpose = (int)pv(kTranspose); s.volumeDb = pv(kVolume) + kTrimDb;
         s.pitchEnv = pv(kPitchEnv); s.pitchDecay = pv(kPitchDecay) * 0.001;
         for (int k = 0; k < kOps; ++k)
         {
@@ -80,6 +83,7 @@ protected:
             float* l = outputs[0] + done;
             float* r = outputs[1] + done;
             engine.process(l, r, (int)n, midi, nm);
+            outLimit.process(l, r, (int)n);
             float pk = 0.0f;
             for (uint32_t i = 0; i < n; ++i) pk = std::max(pk, std::fabs(l[i]));
             outPeak.setMax(pk);

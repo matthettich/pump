@@ -13,12 +13,15 @@ public:
     PluginWob() : PumpPlugin(params().data(), kNumParams, &presets())
     {
         sync();
-        engine.prepare(getSampleRate(), (int)getBufferSize());
+        engine.prepare(getSampleRate(), (int)getBufferSize()); outLimit.prepare(getSampleRate());
         if (const char* n = std::getenv("PUMP_TEST_NOTES"))   // headless screenshots: notes to hold from the start
             for (const char* p = n; *p; ) { const int v = std::atoi(p); if (v > 0 && v < 128) keys.push((uint8_t)v, 100); while (*p && *p != ',') ++p; if (*p) ++p; }
     }
 
+    // gain staging (the volume pass, 2026-10-26): VOLUME 0 dB is a typical voice at about -20 dBFS RMS
+    static constexpr float kTrimDb = -8.5f;
     Engine engine;
+    pump::SafetyLimiter outLimit;
     pump::synth::NoteQueue keys;
     pump::MeterValue outPeak[2];
 
@@ -26,7 +29,7 @@ protected:
     const char* getLabel() const override { return "pump_wob"; }
     const char* getDescription() const override { return PUMP_PLUGIN_ABOUT; }
 
-    void activate() override { sync(); engine.prepare(getSampleRate(), (int)getBufferSize()); }
+    void activate() override { sync(); engine.prepare(getSampleRate(), (int)getBufferSize()); outLimit.prepare(getSampleRate()); }
     void sampleRateChanged(double) override { activate(); }
 
     void sync()
@@ -43,7 +46,7 @@ protected:
         s.wobDelay = pv(kWobDelay); s.wobFade = pv(kWobFade); s.wobDepth = pv(kWobDepth) * 0.01; s.wheel = pv(kWheel) * 0.01;
         s.wobCut = pv(kWobCut); s.wobVowel = pv(kWobVowel) * 0.01; s.wobComb = pv(kWobComb) * 0.01; s.wobAmp = pv(kWobAmp) * 0.01; s.wobPitch = pv(kWobPitch);
         s.attack = pv(kAttack) * 0.001; s.decay = pv(kDecay) * 0.001; s.sustain = pv(kSustain) * 0.01; s.release = pv(kRelease) * 0.001;
-        s.glide = pv(kGlide); s.legato = pv(kLegato) >= 0.5f; s.drive = pv(kDrive) * 0.01; s.volumeDb = pv(kVolume);
+        s.glide = pv(kGlide); s.legato = pv(kLegato) >= 0.5f; s.drive = pv(kDrive) * 0.01; s.volumeDb = pv(kVolume) + kTrimDb;
         engine.setSettings(s);
     }
 
@@ -72,6 +75,7 @@ protected:
             float* l = outputs[0] + done;
             float* r = outputs[1] + done;
             engine.process(l, r, (int)n, midi, nm);
+            outLimit.process(l, r, (int)n);
             float pl = 0.0f, pr = 0.0f;
             for (uint32_t i = 0; i < n; ++i) { pl = std::max(pl, std::fabs(l[i])); pr = std::max(pr, std::fabs(r[i])); }
             outPeak[0].setMax(pl); outPeak[1].setMax(pr);

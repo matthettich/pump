@@ -92,7 +92,7 @@ inline const std::vector<ParamSpec>& params()
     v.push_back({ "slop", "Slop", "Slop", 0, 100, 25, PUnit::Percent, PScale::Linear, A, nullptr, 1 });
     v.push_back({ "bend_range", "Pitch Bend Range", "Bend", 0, 24, 2, PUnit::None, PScale::Linear, kPInteger, nullptr, 1 });
     v.push_back({ "chorus", "Chorus", "Chorus", 0, kNumChorus - 1, kChorusOff, PUnit::None, PScale::Linear, I, kChorusNames, 1 });
-    v.push_back({ "volume", "Volume", "Volume", -48, 6, -8, PUnit::dB, PScale::Linear, A, nullptr, 1 });
+    v.push_back({ "volume", "Volume", "Volume", -48, 12, 0, PUnit::dB, PScale::Linear, A, nullptr, 1 });
     return v;
 }
 

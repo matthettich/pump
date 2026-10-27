@@ -47,7 +47,7 @@ inline const std::vector<ParamSpec>& params()
     static std::vector<std::string> names;
     if (!v.empty()) return v;
     const unsigned A = kPAutomatable, I = kPAutomatable | kPInteger, B = kPAutomatable | kPBoolean;
-    v.push_back({ "volume", "Volume", "Volume", -48, 6, -6, PUnit::dB, PScale::Linear, A, nullptr, 1 });
+    v.push_back({ "volume", "Volume", "Volume", -48, 12, 0, PUnit::dB, PScale::Linear, A, nullptr, 1 });
     v.push_back({ "drive", "Drive", "Drive", 0, 100, 15, PUnit::Percent, PScale::Linear, A, nullptr, 1 });
     v.push_back({ "fm", "FM (all)", "FM", 0, 100, 50, PUnit::Percent, PScale::Linear, A, nullptr, 1 });
     v.push_back({ "decay", "Decay (all)", "Decay", 25, 400, 100, PUnit::Percent, PScale::Log, A, nullptr, 1 });

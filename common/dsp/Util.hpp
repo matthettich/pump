@@ -234,6 +234,28 @@ private:
 };
 
 // A float published from the audio thread to the UI (max-hold until the UI reads it).
+// An instrument's last stage: inaudible until a peak would pass -1 dBFS, then it pulls the level down at once (no
+// overshoot) and lets it back up over ~60 ms. Both channels move together. For transients (a spring's kick, a big
+// chord) only; the gain staging keeps ordinary playing well under it.
+class SafetyLimiter {
+public:
+    void prepare(double sr) { rel = 1.0 - std::exp(-1.0 / (0.060 * sr)); g = 1.0; }
+    void process(float* L, float* R, int n)
+    {
+        for (int i = 0; i < n; ++i)
+        {
+            const double a = std::max(std::fabs((double)L[i]), R ? std::fabs((double)R[i]) : 0.0);
+            const double want = a > kThr ? kThr / a : 1.0;
+            g = want < g ? want : g + (want - g) * rel;
+            L[i] = (float)(L[i] * g); if (R) R[i] = (float)(R[i] * g);
+        }
+    }
+    double reduction() const { return g; }
+private:
+    static constexpr double kThr = 0.891;   // -1 dBFS
+    double rel = 0.0003, g = 1.0;
+};
+
 class MeterValue {
 public:
     void setMax(float v)

@@ -295,7 +295,7 @@ private:
         if (ph[1] >= 1.0) ph[1] -= std::floor(ph[1]);
         if (ph[2] >= 1.0) ph[2] -= std::floor(ph[2]);
         if (s.sync && wrapped1) ph[1] = ph[0] * inc[1] / std::max(1e-9, i1);   // restart 2 where 1 restarted
-        double mix = s.level[0] * y1 + s.level[1] * y2 + s.level[2] * y3 + s.noise * rng.bi();
+        double mix = s.level[0] * y1 + s.level[1] * y2 + s.level[2] * y3 + s.noise * rng.bi() + 1e-4 * rng.bi();   // a whisper of noise (-80 dB): it starts a self-oscillating filter, as the analog one's own noise does
         mix *= 0.5;
         // overdrive into the filter
         if (driveG > 1.0) mix = std::tanh(mix * driveG) / std::sqrt(driveG);

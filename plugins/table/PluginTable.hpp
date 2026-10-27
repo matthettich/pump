@@ -15,13 +15,16 @@ public:
     PluginTable() : PumpPlugin(params().data(), kNumParams, &presets(), 2)
     {
         sync();
-        engine.prepare(getSampleRate(), (int)getBufferSize());
+        engine.prepare(getSampleRate(), (int)getBufferSize()); outLimit.prepare(getSampleRate());
         // headless screenshots (tools/shot.sh): notes to hold from the start, e.g. PUMP_TEST_NOTES=48,55,60,64
         if (const char* n = std::getenv("PUMP_TEST_NOTES"))
             for (const char* p = n; *p; ) { const int v = std::atoi(p); if (v > 0 && v < 128) keys.push((uint8_t)v, 100); while (*p && *p != ',') ++p; if (*p) ++p; }
     }
 
+    // gain staging (the volume pass, 2026-10-26): VOLUME 0 dB is a typical voice at about -20 dBFS RMS
+    static constexpr float kTrimDb = +4.5f;
     Engine engine;
+    pump::SafetyLimiter outLimit;
     pump::synth::NoteQueue keys;              // the window's keyboard
     pump::MeterValue outPeak[2];
     // the user table loaded on oscillator o (nullptr = none); its name / error for the window
@@ -62,7 +65,7 @@ protected:
         return PumpPlugin::getState(key);
     }
 
-    void activate() override { sync(); engine.prepare(getSampleRate(), (int)getBufferSize()); }
+    void activate() override { sync(); engine.prepare(getSampleRate(), (int)getBufferSize()); outLimit.prepare(getSampleRate()); }
     void sampleRateChanged(double) override { activate(); }
 
     void sync()
@@ -88,7 +91,7 @@ protected:
             s.mod[k].src = (int)pv(kSrc1 + 3 * k); s.mod[k].dst = (int)pv(kDst1 + 3 * k); s.mod[k].amt = pv(kAmt1 + 3 * k) * 0.01;
         }
         s.voiceMode = (int)pv(kVoiceMode); s.polyphony = (int)pv(kPolyphony); s.glide = pv(kGlide);
-        s.bendRange = pv(kBendRange); s.volumeDb = pv(kVolume);
+        s.bendRange = pv(kBendRange); s.volumeDb = pv(kVolume) + kTrimDb;
         engine.setSettings(s);
     }
 
@@ -116,6 +119,7 @@ protected:
             float* l = outputs[0] + done;
             float* r = outputs[1] + done;
             engine.process(l, r, (int)n, midi, nm);
+            outLimit.process(l, r, (int)n);
             float pl = 0.0f, pr = 0.0f;
             for (uint32_t i = 0; i < n; ++i) { pl = std::max(pl, std::fabs(l[i])); pr = std::max(pr, std::fabs(r[i])); }
             outPeak[0].setMax(pl); outPeak[1].setMax(pr);

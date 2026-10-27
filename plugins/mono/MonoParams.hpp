@@ -85,7 +85,7 @@ inline const std::vector<ParamSpec>& params()
     v.push_back({ "legato", "Legato", "Legato", 0, 1, 1, PUnit::None, PScale::Linear, B, nullptr, 1 });
     v.push_back({ "drift", "Drift", "Drift", 0, 100, 20, PUnit::Percent, PScale::Linear, A, nullptr, 1 });
     v.push_back({ "bend_range", "Pitch Bend Range", "Bend", 0, 24, 2, PUnit::None, PScale::Linear, kPInteger, nullptr, 1 });
-    v.push_back({ "volume", "Volume", "Volume", -48, 6, -6, PUnit::dB, PScale::Linear, A, nullptr, 1 });
+    v.push_back({ "volume", "Volume", "Volume", -48, 12, 0, PUnit::dB, PScale::Linear, A, nullptr, 1 });
     return v;
 }
 
@@ -111,7 +111,7 @@ inline const std::vector<Preset>& presets()
     F("PLUCKS", "Pulse pluck", { { "osc1_wave", 3 }, { "osc2_wave", 3 }, { "pw", 15 }, { "osc1_oct", 2 }, { "osc2_oct", 2 }, { "cutoff", 900 }, { "filter_env", 60 }, { "f_d", 160 }, { "f_s", 0 }, { "a_d", 400 }, { "a_s", 0 }, { "a_r", 300 } });
     F("PLUCKS", "PWM wobble", { { "osc1_wave", 3 }, { "osc2_wave", 3 }, { "lfo_pw", 70 }, { "lfo_rate", 2 }, { "osc1_oct", 1 }, { "osc2_oct", 1 }, { "cutoff", 1500 } });
     F("FX", "Siren", { { "lfo_pitch", 80 }, { "lfo_rate", 0.4f }, { "osc1_oct", 2 }, { "osc2_level", 0 }, { "cutoff", 3000 } });
-    F("FX", "Self-oscillating filter", { { "osc1_level", 0 }, { "osc2_level", 0 }, { "res", 100 }, { "key_track", 100 }, { "cutoff", 260 }, { "filter_env", 0 } });
+    F("FX", "Self-oscillating filter", { { "volume", -9 }, { "osc1_level", 0 }, { "osc2_level", 0 }, { "res", 100 }, { "key_track", 100 }, { "cutoff", 260 }, { "filter_env", 0 } });
     F("FX", "Noise sweep", { { "osc1_level", 0 }, { "osc2_level", 0 }, { "noise", 90 }, { "filter_type", 1 }, { "res", 70 }, { "lfo_filter", 60 }, { "lfo_rate", 0.2f } });
     return v;
 }
