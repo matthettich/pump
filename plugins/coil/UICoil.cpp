@@ -33,6 +33,7 @@ public:
         octD = dial(kOctave, "OCTAVE", true);
         bendD = dial(kBend, "BEND");
         volD = dial(kVolume, "VOLUME", true);
+        voicesD = dial(kVoices, "VOICES", false, "How many notes can ring at once (each is a whole spring tank: more voices, more CPU)");
 
         springsView.tank = true;
         keyboard.lowNote = 36;
@@ -78,7 +79,7 @@ protected:
         };
         Dial* ed[3] = { decayD, relD, velD }; rowOf(envPanel, 14, 360, ed, 3);
         Dial* td[2] = { tankD, widthD };      rowOf(tankPanel, 386, 240, td, 2);
-        Dial* pd[3] = { octD, bendD, volD };  rowOf(playPanel, 638, 348, pd, 3);
+        Dial* pd[4] = { voicesD, octD, bendD, volD };  rowOf(playPanel, 638, 348, pd, 4);
         keyboard.r = Rect(14, y2 + ph2 + 12, 966, 56);
     }
 
@@ -188,7 +189,7 @@ protected:
     }
     std::string footerInfo() override
     {
-        char b[64]; std::snprintf(b, sizeof b, "%s   %d VOICES", kModelNames[pump::clampv((int)value(kModel), 0, 5)], plug ? plug->engine.voicesNow() : 0);
+        char b[64]; std::snprintf(b, sizeof b, "%s   %d / %d VOICES", kModelNames[pump::clampv((int)value(kModel), 0, 5)], plug ? plug->engine.voicesNow() : 0, (int)value(kVoices));
         std::string s = b; for (char& c : s) c = (char)std::toupper((unsigned char)c);
         return s;
     }
@@ -198,7 +199,7 @@ private:
     PluginCoil* plug = nullptr;
     Rect springsR, kickR, scopeR, meterL, meterR, springPanel, voicePanel, envPanel, tankPanel, playPanel;
     Segmented* modelSeg;
-    Dial *tensionD, *dripD, *wobbleD, *gritD, *toneD, *harmD, *spreadD, *exciteD, *decayD, *relD, *velD, *tankD, *widthD, *octD, *bendD, *volD;
+    Dial *tensionD, *dripD, *wobbleD, *gritD, *toneD, *harmD, *spreadD, *exciteD, *decayD, *relD, *velD, *tankD, *widthD, *octD, *bendD, *volD, *voicesD;
     KeyboardUI keyboard;
     pump::coil::SpringsView springsView;
     bool kbDown = false, kickHeld = false;

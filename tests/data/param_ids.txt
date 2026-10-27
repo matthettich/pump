@@ -2137,3 +2137,4 @@ TRACT 21 voice_mode
 TRACT 22 glide
 TRACT 23 octave
 TRACT 24 volume
+COIL 17 voices

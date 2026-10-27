@@ -20,6 +20,7 @@ static const char* const kModelNames[] = { "Two-spring", "Three-spring", "Short 
 enum Param : int {
     kModel = 0, kTension, kDrip, kDecay, kRelease, kHarmonic, kSpread, kWobble, kTone, kExcite, kTank, kGrit,
     kWidth, kOctave, kBend, kVelocity, kVolume,
+    kVoices,
     kNumParams
 };
 
@@ -45,6 +46,8 @@ inline const std::vector<ParamSpec>& params()
     v.push_back({ "bend", "Pitch Bend Range", "Bend", 0, 12, 2, PUnit::None, PScale::Linear, kPInteger, nullptr, 1 });
     v.push_back({ "velocity", "Velocity to Kick", "Velocity", 0, 100, 70, PUnit::Percent, PScale::Linear, A, nullptr, 1 });
     v.push_back({ "volume", "Volume", "Volume", -48, 12, 0, PUnit::dB, PScale::Linear, A, nullptr, 1 });
+    // appended 2026-10-27: polyphony (not automatable: changing it lets the ringing notes go)
+    v.push_back({ "voices", "Voices", "Voices", 1, 16, 8, PUnit::None, PScale::Linear, kPInteger, nullptr, 1 });
     return v;
     }();
     return v;

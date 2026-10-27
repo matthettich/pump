@@ -40,6 +40,7 @@ protected:
         s.harmonic = pv(kHarmonic) * 0.01; s.spread = pv(kSpread) * 0.01; s.wobble = pv(kWobble) * 0.01; s.tone = pv(kTone) * 0.01;
         s.excite = pv(kExcite) * 0.01; s.tank = pv(kTank) * 0.01; s.grit = pv(kGrit); s.width = pv(kWidth) * 0.01;
         s.octave = (int)pv(kOctave); s.bend = pv(kBend); s.velocity = pv(kVelocity) * 0.01; s.volumeDb = pv(kVolume) + kTrimDb;
+        s.voices = (int)pv(kVoices);
         engine.setSettings(s);
     }
 

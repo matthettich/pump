@@ -47,9 +47,10 @@ struct Settings {
     bool resonator = false;
     int tuning = kTuneChord, root = 9, chord = kChordFifth;
     double dwell = 50.0, mix = 0.5;
+    int voices = 8;   // COIL's VOICES (TWANG keeps 8)
 };
 
-constexpr int kMaxVoices = 8, kMaxSections = spring::kSections;
+constexpr int kMaxVoices = 16, kMaxSections = spring::kSections;
 constexpr double kMinHz = 20.0;
 
 // phase lag (radians) at w of one stretched section, D(z) = z^-K T(z), A = (a + D) / (1 + a D)
@@ -445,7 +446,7 @@ public:
         volS.setRamp(ramp); volS.reset(dbToGain(set.volumeDb));
         tankS.setRamp(ramp); tankS.reset(set.tank);
         mixS.setRamp(ramp); mixS.reset(set.mix);
-        vm.setup(kMaxVoices, synth::kPoly); vm.reset();
+        vm.setup(clampv(set.voices, 1, kMaxVoices), synth::kPoly); vm.reset();
         tickPos = 0;
         prepared = true;
         configure(true);
@@ -453,8 +454,15 @@ public:
     void setSettings(const Settings& s)
     {
         const bool chordChange = s.tuning != set.tuning || s.root != set.root || s.chord != set.chord || s.octave != set.octave;
+        const bool voiceChange = s.voices != set.voices;
         set = s;
         configure(false);
+        // VOICES changed: the notes ringing are let go (they ring out with their release) and the new count takes over
+        if (voiceChange && prepared)
+        {
+            vm.setup(clampv(set.voices, 1, kMaxVoices), synth::kPoly); vm.reset();
+            for (auto& v : voices) if (v.isActive() && v.noteNumber() < 1000) v.release(set);
+        }
         if (set.resonator && chordChange) chordVoices();
     }
     // the KICK key: every ringing spring (and the tank) gets a kick
@@ -467,7 +475,7 @@ public:
     float lanePeriodNow(int l) const { return laneFeed[(size_t)clampv(l, 0, 3)].load(std::memory_order_relaxed); }
     bool noteLit(int n) const { return n >= 0 && n < 128 && ((litFeed[(n >> 6) & 1].load(std::memory_order_relaxed) >> (n & 63)) & 1); }
     // each voice's sound, at visRate(): the wave the SPRINGS screen sends along its spring
-    std::array<ScopeRing, kMaxVoices> visV { ScopeRing(1024), ScopeRing(1024), ScopeRing(1024), ScopeRing(1024), ScopeRing(1024), ScopeRing(1024), ScopeRing(1024), ScopeRing(1024) };
+    std::array<ScopeRing, kMaxVoices> visV { ScopeRing(1024), ScopeRing(1024), ScopeRing(1024), ScopeRing(1024), ScopeRing(1024), ScopeRing(1024), ScopeRing(1024), ScopeRing(1024), ScopeRing(1024), ScopeRing(1024), ScopeRing(1024), ScopeRing(1024), ScopeRing(1024), ScopeRing(1024), ScopeRing(1024), ScopeRing(1024) };
     double visRate() const { return sr / decim; }
     float voiceLevel(int i) const { return levelFeed[(size_t)clampv(i, 0, kMaxVoices - 1)].load(std::memory_order_relaxed); }
     int voiceNote(int i) const { return noteFeed[(size_t)clampv(i, 0, kMaxVoices - 1)].load(std::memory_order_relaxed); }

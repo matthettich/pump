@@ -13,6 +13,8 @@ namespace pump { namespace coil {
 class SpringsView {
 public:
     static constexpr int kWaveN = 512;
+    static constexpr int kRows = 8;   // the row view (BOING's eight pads)
+    SpringsView() { for (int i = 0; i < kMaxVoices; ++i) note[i] = lastNote[i] = -1; }
 
     // UI tick: the newest wave and level of every voice
     void update(const Engine* e, float dt)
@@ -60,10 +62,10 @@ public:
         ui.save();
         ui.scissor(r.x + 2, r.y + 2, r.w - 4, r.h - 4);
         ui.translate(sx, sy);
-        const float rowH = p.h / kMaxVoices;
+        const float rowH = p.h / kRows;
         static const char* const nn[12] = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
         int shown = 0;
-        for (int i = 0; i < kMaxVoices; ++i)
+        for (int i = 0; i < kRows; ++i)
         {
             const float yc = p.y + rowH * (i + 0.5f);
             const bool on = note[i] >= 0;
@@ -98,9 +100,11 @@ private:
     // a colour per spring, around the wheel: [0] the light neon (sleeve), [1] its deep shade (strands in light mode)
     static Color springColour(int i, bool deep)
     {
-        static const unsigned neon[kMaxVoices] = { 0xFF7466, 0xFFD04A, 0xC8FF4D, 0x5CFFB4, 0x4DF3FF, 0x73B4FF, 0xB9A0FF, 0xFF6FB5 };
-        static const unsigned ink[kMaxVoices]  = { 0x8C2318, 0x6B4700, 0x3B5C00, 0x006E44, 0x00636D, 0x1443AC, 0x4528B5, 0x8C1257 };
-        return hexColor(deep ? ink[i % kMaxVoices] : neon[i % kMaxVoices]);
+        static const unsigned neon[16] = { 0xFF7466, 0xFFD04A, 0xC8FF4D, 0x5CFFB4, 0x4DF3FF, 0x73B4FF, 0xB9A0FF, 0xFF6FB5,
+                                           0xFFB24F, 0xDCEB5A, 0x8CFF5A, 0x3DF5D0, 0x5CCBFF, 0x949FFF, 0xDD77FF, 0xFF92C2 };
+        static const unsigned ink[16]  = { 0x8C2318, 0x6B4700, 0x3B5C00, 0x006E44, 0x00636D, 0x1443AC, 0x4528B5, 0x8C1257,
+                                           0x934000, 0x4E5700, 0x235C00, 0x006652, 0x00527A, 0x262C99, 0x650C8A, 0x8A1450 };
+        return hexColor(deep ? ink[i % 16] : neon[i % 16]);
     }
     Color strandColour(const Theme& th, int i) const
     {
@@ -258,8 +262,8 @@ private:
 
     float wave[kMaxVoices][kWaveN] = {};
     float energy[kMaxVoices] = {};
-    int note[kMaxVoices] = { -1, -1, -1, -1, -1, -1, -1, -1 };
-    int lastNote[kMaxVoices] = { -1, -1, -1, -1, -1, -1, -1, -1 };
+    int note[kMaxVoices] = {};
+    int lastNote[kMaxVoices] = {};
     double visRate = 12000.0;
 };
 
