@@ -23,6 +23,7 @@
 #include "../plugins/crush/CrushParams.hpp"
 #include "../plugins/swirl/SwirlParams.hpp"
 #include "../plugins/stutter/StutterParams.hpp"
+#include "../plugins/chop/ChopParams.hpp"
 #include "../plugins/amp/AmpParams.hpp"
 #include "../plugins/table/TableParams.hpp"
 #include "../plugins/mono/MonoParams.hpp"
@@ -132,6 +133,7 @@ int main()
         { "CRUSH", crush::params(), crush::presets() },
         { "SWIRL", swirl::params(), swirl::presets() },
         { "STUTTER", stutter::params(), stutter::presets() },
+        { "CHOP", chop::params(), chop::presets() },
         { "AMP", amp::params(), amp::presets() },
         { "TWANG", twang::params(), twang::presets() },
         { "TABLE", table::params(), table::presets() },

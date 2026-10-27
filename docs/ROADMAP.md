@@ -66,9 +66,8 @@ Instruments (MIDI in, stereo out):
     waveguide, analog bridged-T circuit, three-operator FM, west-coast fold and gate, additive cymbals, chaos.
   - **STUTTER pattern editor** — done (2026-10-26): PATTERN mode, a step grid of moves with lengths, per-step slice and
     transposition, twelve factory patterns plus a user one saved with the session.
-  - **A live-stream chopper** (grid-chopping a live input): the input is always streaming into a buffer; 8 slice / retrigger
-    pads cut and replay the live stream, loop a section of it and manipulate it; per retrigger options such as
-    pitch change and specific effects; each of the 8 retriggers MIDI-mappable to a note or a key, as a momentary switch.
+  - **A live-stream chopper** — done (2026-10-27) as **CHOP**: the last bar of the input in 8 / 16 slices on 8 momentary
+    pads, two-pad loops, per-pad pitch, reverse, effect and level, MIDI-note and computer-key mapping with learn.
   - **SING voicebanks** (last of all): a second SING engine that plays sampled voicebanks (oto.ini format), the formant
     engine staying as its classic voice.
 
