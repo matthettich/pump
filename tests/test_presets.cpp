@@ -43,6 +43,7 @@
 #include "../plugins/vector/VectorParams.hpp"
 #include "../plugins/strike/StrikeParams.hpp"
 #include "../plugins/freeze/FreezeParams.hpp"
+#include "../plugins/tract/TractParams.hpp"
 #include <cstdio>
 #include <cstring>
 #include <map>
@@ -151,6 +152,7 @@ int main()
         { "VECTOR", vector::params(), vector::presets() },
         { "STRIKE", strike::params(), strike::presets() },
         { "FREEZE", freeze::params(), freeze::presets() },
+        { "TRACT", tract::params(), tract::presets() },
     };
     std::map<std::string, int> sections;
     std::vector<std::vector<std::string>> chains;

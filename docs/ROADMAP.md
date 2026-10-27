@@ -59,7 +59,8 @@ Instruments (MIDI in, stereo out):
   synthesis, put here as a source type).
 - **FREEZE** granular spectral-freeze synth — done (2026-10-26): spectra of a sound (built in or loaded) played as
   frozen or moving clouds of spectral grains, random or phase-vocoder phases.
-- Ideas the user liked, in order: **formant / vocal-tract** pad.
+- **TRACT** vocal-tract pad — done (2026-10-26): a glottis into a 44-section Kelly-Lochbaum tract, vowels fitted to
+  their formants, up to four singers a note.
 - Asked for on 2026-10-26 (after those):
   - **A multi-engine drum synth** — done (2026-10-26) as **STRIKE**, the engines pump's drum machines lacked: modal,
     waveguide, analog bridged-T circuit, three-operator FM, west-coast fold and gate, additive cymbals, chaos.
