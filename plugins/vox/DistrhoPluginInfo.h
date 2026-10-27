@@ -1,7 +1,7 @@
 #ifndef DISTRHO_PLUGIN_INFO_H_INCLUDED
 #define DISTRHO_PLUGIN_INFO_H_INCLUDED
 
-#define DISTRHO_PLUGIN_BRAND           "wake"
+#define DISTRHO_PLUGIN_BRAND           "wake effects"
 #define DISTRHO_PLUGIN_NAME            "pump VOX Vocoder"   // hosts identify plugins by the ids below, not the name
 #define PUMP_PLUGIN_KIND               "Vocoder"   // shown next to the tag in the window
 #define PUMP_PLUGIN_ABOUT              "Vocoder: classic band vocoder, spectral, talkbox and convolution modes, with a built-in carrier synth that plays MIDI or follows your voice."
@@ -30,8 +30,8 @@
 #define DISTRHO_UI_DEFAULT_WIDTH       1040
 #define DISTRHO_UI_DEFAULT_HEIGHT      700
 
-#define DISTRHO_PLUGIN_VST3_CATEGORIES "Fx|Modulation"
-#define DISTRHO_PLUGIN_CLAP_FEATURES   "audio-effect", "stereo"
+#define DISTRHO_PLUGIN_VST3_CATEGORIES "Fx|Modulation|Pitch Shift"
+#define DISTRHO_PLUGIN_CLAP_FEATURES   "audio-effect", "vocoder", "pitch-shifter", "stereo"
 #define DISTRHO_PLUGIN_AU_TYPE         aumf   /* a music effect: audio in and MIDI in */
 
 #endif

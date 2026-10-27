@@ -9,7 +9,8 @@
        C:\Program Files\Common Files\CLAP\
 
 3. In Ableton Live: Options > Preferences > Plug-Ins, turn on "Use VST3 Plug-In System Folders",
-   then press Rescan. The plugins appear under Plug-Ins > wake.
+   then press Rescan. The plugins appear under Plug-Ins in three folders: wake mastering, wake effects
+   and wake instruments.
 
 Mastering: pump EQ, pump COMP, pump LIMIT, pump CALM, pump TONE, pump BAND, pump WIDE, pump HEAT, pump METER.
 Effects:   pump TUBE, pump SNAP, pump GATE, pump ECHO, pump SPRING, pump VERB, pump GRAIN, pump VOX, pump TUNE, pump CRUSH, pump SWIRL, pump STUTTER, pump AMP, pump TWANG.

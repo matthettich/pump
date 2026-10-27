@@ -1,7 +1,7 @@
 #ifndef DISTRHO_PLUGIN_INFO_H_INCLUDED
 #define DISTRHO_PLUGIN_INFO_H_INCLUDED
 
-#define DISTRHO_PLUGIN_BRAND           "wake"
+#define DISTRHO_PLUGIN_BRAND           "wake instruments"
 #define DISTRHO_PLUGIN_NAME            "pump POLY Vintage Poly Synth"   // hosts identify plugins by the ids below, not the name
 #define PUMP_PLUGIN_KIND               "Vintage Poly Synth"   // shown next to the tag in the window
 #define PUMP_PLUGIN_ABOUT              "Vintage-style analog polysynth: two oscillators with sync and poly-mod, four filter voicings and a high-pass, LFO with delay, unison, slop and an ensemble chorus."

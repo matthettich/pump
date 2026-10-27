@@ -1,7 +1,7 @@
 #ifndef DISTRHO_PLUGIN_INFO_H_INCLUDED
 #define DISTRHO_PLUGIN_INFO_H_INCLUDED
 
-#define DISTRHO_PLUGIN_BRAND           "wake"
+#define DISTRHO_PLUGIN_BRAND           "wake effects"
 #define DISTRHO_PLUGIN_NAME            "pump VERB Reverb"   // hosts identify plugins by the ids below, not the name
 #define PUMP_PLUGIN_KIND               "Reverb"   // shown next to the tag in the window
 #define PUMP_PLUGIN_ABOUT              "Algorithmic reverb: smooth modern halls, rooms, chambers and plates, grainy late-70s and lush 80s digital, a 90s rack, gated, reverse and shimmer."

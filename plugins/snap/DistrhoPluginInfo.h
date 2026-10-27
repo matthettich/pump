@@ -1,7 +1,7 @@
 #ifndef DISTRHO_PLUGIN_INFO_H_INCLUDED
 #define DISTRHO_PLUGIN_INFO_H_INCLUDED
 
-#define DISTRHO_PLUGIN_BRAND           "wake"
+#define DISTRHO_PLUGIN_BRAND           "wake effects"
 #define DISTRHO_PLUGIN_NAME            "pump SNAP Transient Shaper"   // hosts identify plugins by the ids below, not the name
 #define PUMP_PLUGIN_KIND               "Transient Shaper"   // shown next to the tag in the window
 #define PUMP_PLUGIN_ABOUT              "Level-independent transient shaper: boost or cut attack and sustain, with a focused detector, band split, lookahead and a soft clipper."

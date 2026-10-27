@@ -1,7 +1,7 @@
 #ifndef DISTRHO_PLUGIN_INFO_H_INCLUDED
 #define DISTRHO_PLUGIN_INFO_H_INCLUDED
 
-#define DISTRHO_PLUGIN_BRAND           "wake"
+#define DISTRHO_PLUGIN_BRAND           "wake effects"
 #define DISTRHO_PLUGIN_NAME            "pump SPRING Spring Reverb"   // hosts identify plugins by the ids below, not the name
 #define PUMP_PLUGIN_KIND               "Spring Reverb"   // shown next to the tag in the window
 #define PUMP_PLUGIN_ABOUT              "Spring reverb: dispersive two- and three-spring tanks that drip and crash, and a cheap early-digital spring that crunches."

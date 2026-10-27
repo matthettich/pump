@@ -1,7 +1,7 @@
 #ifndef DISTRHO_PLUGIN_INFO_H_INCLUDED
 #define DISTRHO_PLUGIN_INFO_H_INCLUDED
 
-#define DISTRHO_PLUGIN_BRAND           "wake"
+#define DISTRHO_PLUGIN_BRAND           "wake effects"
 #define DISTRHO_PLUGIN_NAME            "pump GATE Sequenced Gate"   // hosts identify plugins by the ids below, not the name
 #define PUMP_PLUGIN_KIND               "Sequenced Gate"   // shown next to the tag in the window
 #define PUMP_PLUGIN_ABOUT              "Tempo-synced step gate: up to 32 steps with swing, envelope, smoothing, a resonant filter mode and stereo offset."

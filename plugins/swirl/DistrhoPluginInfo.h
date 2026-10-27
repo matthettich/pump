@@ -1,7 +1,7 @@
 #ifndef DISTRHO_PLUGIN_INFO_H_INCLUDED
 #define DISTRHO_PLUGIN_INFO_H_INCLUDED
 
-#define DISTRHO_PLUGIN_BRAND           "wake"
+#define DISTRHO_PLUGIN_BRAND           "wake effects"
 #define DISTRHO_PLUGIN_NAME            "pump SWIRL Modulation"   // hosts identify plugins by the ids below, not the name
 #define PUMP_PLUGIN_KIND               "Modulation"   // shown next to the tag in the window
 #define PUMP_PLUGIN_ABOUT              "Chorus, flanger and phaser: stereo ensemble, bucket-brigade and rack choruses, tape and through-zero flanging, all-pass and lamp phasers; tempo sync."

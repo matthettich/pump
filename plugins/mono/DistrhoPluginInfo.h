@@ -1,7 +1,7 @@
 #ifndef DISTRHO_PLUGIN_INFO_H_INCLUDED
 #define DISTRHO_PLUGIN_INFO_H_INCLUDED
 
-#define DISTRHO_PLUGIN_BRAND           "wake"
+#define DISTRHO_PLUGIN_BRAND           "wake instruments"
 #define DISTRHO_PLUGIN_NAME            "pump MONO Analog Mono Synth"   // hosts identify plugins by the ids below, not the name
 #define PUMP_PLUGIN_KIND               "Analog Mono Synth"   // shown next to the tag in the window
 #define PUMP_PLUGIN_ABOUT              "Analog-style mono synth: three oscillators with sync and FM, overdrive, ladder, state-variable, diode and Sallen-Key filter models, note priority, glide and drift."

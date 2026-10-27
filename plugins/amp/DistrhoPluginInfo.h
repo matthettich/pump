@@ -1,7 +1,7 @@
 #ifndef DISTRHO_PLUGIN_INFO_H_INCLUDED
 #define DISTRHO_PLUGIN_INFO_H_INCLUDED
 
-#define DISTRHO_PLUGIN_BRAND           "wake"
+#define DISTRHO_PLUGIN_BRAND           "wake effects"
 #define DISTRHO_PLUGIN_NAME            "pump AMP Amp Modeler"   // hosts identify plugins by the ids below, not the name
 #define PUMP_PLUGIN_KIND               "Amp Modeler"   // shown next to the tag in the window
 #define PUMP_PLUGIN_ABOUT              "Neural amp models (.nam) and cabinet impulse responses (.wav): input, gate, normalize, mono or stereo, tone, cab cuts."

@@ -1,7 +1,7 @@
 #ifndef DISTRHO_PLUGIN_INFO_H_INCLUDED
 #define DISTRHO_PLUGIN_INFO_H_INCLUDED
 
-#define DISTRHO_PLUGIN_BRAND           "wake"
+#define DISTRHO_PLUGIN_BRAND           "wake instruments"
 #define DISTRHO_PLUGIN_NAME            "pump SING Singing Synth"   // hosts identify plugins by the ids below, not the name
 #define PUMP_PLUGIN_KIND               "Singing Synth"   // shown next to the tag in the window
 #define PUMP_PLUGIN_ABOUT              "Singing synthesizer: type lyrics and every note sings the next syllable, in a formant voice from breathy to robotic, solo, poly or as a choir."

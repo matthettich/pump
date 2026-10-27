@@ -1,7 +1,7 @@
 #ifndef DISTRHO_PLUGIN_INFO_H_INCLUDED
 #define DISTRHO_PLUGIN_INFO_H_INCLUDED
 
-#define DISTRHO_PLUGIN_BRAND           "wake"
+#define DISTRHO_PLUGIN_BRAND           "wake effects"
 #define DISTRHO_PLUGIN_NAME            "pump GRAIN Granular"   // hosts identify plugins by the ids below, not the name
 #define PUMP_PLUGIN_KIND               "Granular"   // shown next to the tag in the window
 #define PUMP_PLUGIN_ABOUT              "Real-time granular effect: clouds, glitches and pitched shimmer from the last seconds of input, with freeze, feedback, filter, space and XY morphing."

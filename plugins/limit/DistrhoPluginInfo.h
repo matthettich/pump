@@ -1,7 +1,7 @@
 #ifndef DISTRHO_PLUGIN_INFO_H_INCLUDED
 #define DISTRHO_PLUGIN_INFO_H_INCLUDED
 
-#define DISTRHO_PLUGIN_BRAND           "wake"
+#define DISTRHO_PLUGIN_BRAND           "wake mastering"
 #define DISTRHO_PLUGIN_NAME            "pump LIMIT Limiter"   // hosts identify plugins by the ids below, not the name
 #define PUMP_PLUGIN_KIND               "Limiter"   // shown next to the tag in the window
 #define PUMP_PLUGIN_ABOUT              "True-peak limiter: seven styles, up to 8x oversampling, loudness targets."

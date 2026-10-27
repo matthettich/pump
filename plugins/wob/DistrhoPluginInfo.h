@@ -1,7 +1,7 @@
 #ifndef DISTRHO_PLUGIN_INFO_H_INCLUDED
 #define DISTRHO_PLUGIN_INFO_H_INCLUDED
 
-#define DISTRHO_PLUGIN_BRAND           "wake"
+#define DISTRHO_PLUGIN_BRAND           "wake instruments"
 #define DISTRHO_PLUGIN_NAME            "pump WOB Additive Bass"   // hosts identify plugins by the ids below, not the name
 #define PUMP_PLUGIN_KIND               "Additive Bass"   // shown next to the tag in the window
 #define PUMP_PLUGIN_ABOUT              "Additive mono bass: up to 64 partials shaped by a spectral filter, vowel formants and a comb, a detuned reese set and a sub, with a tempo-synced wobble."

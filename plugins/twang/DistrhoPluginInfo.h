@@ -1,7 +1,7 @@
 #ifndef DISTRHO_PLUGIN_INFO_H_INCLUDED
 #define DISTRHO_PLUGIN_INFO_H_INCLUDED
 
-#define DISTRHO_PLUGIN_BRAND           "wake"
+#define DISTRHO_PLUGIN_BRAND           "wake effects"
 #define DISTRHO_PLUGIN_NAME            "pump TWANG Spring Resonator"   // hosts identify plugins by the ids below, not the name
 #define PUMP_PLUGIN_KIND               "Spring Resonator"   // shown next to the tag in the window
 #define PUMP_PLUGIN_ABOUT              "Tuned spring resonator: SPRING's springs tuned to a chord or to MIDI notes, rung by the audio you feed them, from clanging metal to clean strings."
@@ -26,8 +26,8 @@
 #define DISTRHO_UI_DEFAULT_WIDTH       1000
 #define DISTRHO_UI_DEFAULT_HEIGHT      740
 
-#define DISTRHO_PLUGIN_VST3_CATEGORIES "Fx|Filter"
-#define DISTRHO_PLUGIN_CLAP_FEATURES   "audio-effect", "filter", "stereo"
+#define DISTRHO_PLUGIN_VST3_CATEGORIES "Fx|Filter|Reverb"
+#define DISTRHO_PLUGIN_CLAP_FEATURES   "audio-effect", "filter", "reverb", "stereo"
 #define DISTRHO_PLUGIN_AU_TYPE         aumf
 
 #endif

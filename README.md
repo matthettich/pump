@@ -76,6 +76,8 @@ window; `pump-macos.pkg` installs it in Applications, and `system-eq-macos.zip` 
 
 Every plugin shares the same mouse and key conventions. Press **?** in a plugin for its full list.
 
+In your host they sit in three folders (the vendor): **wake mastering**, **wake effects** and **wake instruments**; hosts that sort by category (Bitwig, Reaper, Studio One) also see EQ, Dynamics, Reverb, Synth, Drum and so on.
+
 - drag a control (Shift = fine), mouse wheel steps it, Ctrl-click (Cmd-click on a Mac) resets it; on a Mac,
   Ctrl-click is a right-click, as everywhere else in macOS
 - double-click or right-click to type a value: `1k`, `A4`, `C#3+13`, `2x` (= +6 dB), `50%` (halfway); Tab = next field

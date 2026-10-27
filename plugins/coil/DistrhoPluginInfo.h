@@ -1,7 +1,7 @@
 #ifndef DISTRHO_PLUGIN_INFO_H_INCLUDED
 #define DISTRHO_PLUGIN_INFO_H_INCLUDED
 
-#define DISTRHO_PLUGIN_BRAND           "wake"
+#define DISTRHO_PLUGIN_BRAND           "wake instruments"
 #define DISTRHO_PLUGIN_NAME            "pump COIL Spring Synth"   // hosts identify plugins by the ids below, not the name
 #define PUMP_PLUGIN_KIND               "Spring Synth"   // shown next to the tag in the window
 #define PUMP_PLUGIN_ABOUT              "Spring synth: the springs of SPRING's tanks tuned to the notes you play and kicked, from clanging and drippy to a clean pluck, with the real tank around them."

@@ -47,7 +47,7 @@ public:
     uint32_t numParams() const { return fNumParams; }
 
 protected:
-    const char* getMaker() const override { return "wake"; }
+    const char* getMaker() const override { return DISTRHO_PLUGIN_BRAND; }   // the host's folder: wake mastering / effects / instruments
     const char* getHomePage() const override { return "https://github.com/matthettich/pump"; }
     // Licence string the host shows. pump's own code is (c) wake, all rights reserved (see /LICENSE). A plugin that
     // is under different terms MUST override this: pump MACHINE does ("GPL-3.0-only", see plugins/machine/NOTICE.md),

@@ -1,7 +1,7 @@
 #ifndef DISTRHO_PLUGIN_INFO_H_INCLUDED
 #define DISTRHO_PLUGIN_INFO_H_INCLUDED
 
-#define DISTRHO_PLUGIN_BRAND           "wake"
+#define DISTRHO_PLUGIN_BRAND           "wake effects"
 #define DISTRHO_PLUGIN_NAME            "pump STUTTER Beat Repeat"   // hosts identify plugins by the ids below, not the name
 #define PUMP_PLUGIN_KIND               "Beat Repeat"   // shown next to the tag in the window
 #define PUMP_PLUGIN_ABOUT              "Tempo-locked repeats, rolls, reverses, tape stops, half speed, slice shuffles, gates and glitches: by chance on the beat, from pads or from MIDI notes."

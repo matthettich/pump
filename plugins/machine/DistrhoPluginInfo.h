@@ -1,7 +1,7 @@
 #ifndef DISTRHO_PLUGIN_INFO_H_INCLUDED
 #define DISTRHO_PLUGIN_INFO_H_INCLUDED
 
-#define DISTRHO_PLUGIN_BRAND           "wake"
+#define DISTRHO_PLUGIN_BRAND           "wake instruments"
 #define DISTRHO_PLUGIN_NAME            "pump MACHINE Drum Machine"   // hosts identify plugins by the ids below, not the name
 #define PUMP_PLUGIN_KIND               "Drum Machine"   // shown next to the tag in the window
 #define PUMP_PLUGIN_ABOUT              "The six voices of an open-source hardware drum machine firmware, run as on the machine (a modified version, not official firmware): three drums, snare, cymbal and hi-hat on its own pages. GPL-3.0."

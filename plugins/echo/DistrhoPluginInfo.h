@@ -1,7 +1,7 @@
 #ifndef DISTRHO_PLUGIN_INFO_H_INCLUDED
 #define DISTRHO_PLUGIN_INFO_H_INCLUDED
 
-#define DISTRHO_PLUGIN_BRAND           "wake"
+#define DISTRHO_PLUGIN_BRAND           "wake effects"
 #define DISTRHO_PLUGIN_NAME            "pump ECHO Delay"   // hosts identify plugins by the ids below, not the name
 #define PUMP_PLUGIN_KIND               "Delay"   // shown next to the tag in the window
 #define PUMP_PLUGIN_ABOUT              "Character delay: digital, tape, bucket-brigade, pitch and reverse echoes, tempo sync, ping-pong, ducking and freeze."

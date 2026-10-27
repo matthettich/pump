@@ -1,7 +1,7 @@
 #ifndef DISTRHO_PLUGIN_INFO_H_INCLUDED
 #define DISTRHO_PLUGIN_INFO_H_INCLUDED
 
-#define DISTRHO_PLUGIN_BRAND           "wake"
+#define DISTRHO_PLUGIN_BRAND           "wake mastering"
 #define DISTRHO_PLUGIN_NAME            "pump EQ Equalizer"   // hosts identify plugins by the ids below, not the name
 #define PUMP_PLUGIN_KIND               "Equalizer"   // shown next to the tag in the window
 #define PUMP_PLUGIN_ABOUT              "24-band mastering EQ: analog-matched curves, dynamic bands, mid/side, linear phase."
@@ -25,7 +25,7 @@
 #define DISTRHO_UI_DEFAULT_WIDTH       1040
 #define DISTRHO_UI_DEFAULT_HEIGHT      660
 
-#define DISTRHO_PLUGIN_VST3_CATEGORIES "Fx|EQ"
+#define DISTRHO_PLUGIN_VST3_CATEGORIES "Fx|EQ|Mastering"
 #define DISTRHO_PLUGIN_CLAP_FEATURES   "audio-effect", "equalizer", "stereo", "mastering"
 #define DISTRHO_PLUGIN_AU_TYPE         aufx
 
