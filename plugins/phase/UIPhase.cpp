@@ -13,7 +13,7 @@ using namespace pump::phase;
 
 class UIPhase : public PumpUI {
 public:
-    UIPhase() : PumpUI(params().data(), kNumParams, &presets(), pump::accents::phase(), "PHASE", 1000, 740, -1)
+    UIPhase() : PumpUI(params().data(), kNumParams, &presets(), pump::accents::phase(), "PHASE", 1000, 680, -1)
     {
         engineSeg = addSegmented(kEngine, { "CONSOLE", "ARCADE", "PC 2-OP", "PC 4-OP", "STUDIO", "PHASE DIST" });
         engineSeg->tip = "Console and arcade 4-op chips, the PC card chip (2- and 4-op), a 2-6 operator studio engine, phase distortion";
@@ -23,7 +23,7 @@ public:
             for (int f = 0; f < kOpFields; ++f)
             {
                 if (f == kOpAm || f == kOpFixed) { opTog[k][f == kOpAm ? 0 : 1] = addToggle(op(k, f), f == kOpAm ? "LFO AM" : "FIXED"); continue; }
-                Dial* d = addDial(op(k, f), lab[f], Dial::Small, f == kOpDetune);
+                Dial* d = addDial(op(k, f), lab[f], Dial::Medium, f == kOpDetune);
                 opDial[k][f] = d;
             }
             opDial[k][kOpLevel]->tip = "Level: a carrier's loudness, a modulator's depth (0.75 dB a step, like the chips)";
@@ -31,7 +31,7 @@ public:
             opTog[k][0]->tip = "The LFO's tremolo (AM) on this operator";
             opTog[k][1]->tip = "A fixed frequency instead of following the note: drums, clangs, formants";
         }
-        auto dial = [&](int p, const char* l, bool bi = false, const char* tip = nullptr) { Dial* d = addDial(p, l, Dial::Small, bi); if (tip) d->tip = tip; return d; };
+        auto dial = [&](int p, const char* l, bool bi = false, const char* tip = nullptr, Dial::Size sz = Dial::Medium) { Dial* d = addDial(p, l, sz, bi); if (tip) d->tip = tip; return d; };
         voicesD = dial(kVoices, "VOICES"); glideD = dial(kGlide, "GLIDE"); bendD = dial(kBend, "BEND"); transD = dial(kTranspose, "TRANSPOSE", true); volD = dial(kVolume, "VOLUME", true);
         fbD = dial(kFeedback, "FEEDBACK", false, "The top operator fed back into itself (0-7, the chips' steps): a sine toward a saw, then noise");
         toneD = dial(kTone, "TONE", false, "The board's low-pass after the chip (100 = open)");
@@ -44,12 +44,12 @@ public:
         pmD = dial(kLfoPm, "PM", false, "Vibrato depth"); wheelD = dial(kWheelVib, "WHEEL", false, "Vibrato from the mod wheel");
         static const int pdP[14] = { kPdWave1, kPdWave1b, kPdWave2, kPdWave2b, kPdDcw1, kPdDcw2, kPdKey, kPdMod, kPdA, kPdD, kPdS, kPdR, kPdDetune, kPdOctave };
         static const char* const pdL[14] = { "WAVE 1", "WAVE 1B", "WAVE 2", "WAVE 2B", "BEND 1", "BEND 2", "KEY", "MOD", "ATTACK", "DECAY", "SUSTAIN", "RELEASE", "DETUNE", "OCTAVE" };
-        for (int i = 0; i < 14; ++i) pdD[i] = dial(pdP[i], pdL[i], pdP[i] == kPdDetune || pdP[i] == kPdOctave);
+        for (int i = 0; i < 14; ++i) pdD[i] = dial(pdP[i], pdL[i], pdP[i] == kPdDetune || pdP[i] == kPdOctave, nullptr, Dial::Small);
         pdD[1]->tip = pdD[3]->tip = "A second wave: the line alternates the two, cycle by cycle";
         pdD[4]->tip = pdD[5]->tip = "DCW: how far the phase is bent (0 = a plain cosine)";
         pdD[6]->tip = "Higher notes bend less (as the originals did)";
         pdD[7]->tip = "Line 2: ring-modulated by line 1, or its pitch shaken by noise";
-        pdPm = dial(kLfoPm, "VIBRATO"); pdRate = dial(kLfoRate, "RATE");
+        pdPm = dial(kLfoPm, "VIBRATO", false, nullptr, Dial::Small); pdRate = dial(kLfoRate, "RATE", false, nullptr, Dial::Small);
         keyboard.lowNote = 36;
         keyboard.send = [this](int note, int vel) { if (plug) plug->keys.push((uint8_t)note, (uint8_t)vel); };
         if (auto* p = static_cast<PluginPhase*>(pluginPtr())) plug = p;
@@ -124,10 +124,10 @@ protected:
             opDial[k][kOpRatio]->visible = opDial[k][kOpFine]->visible = opDial[k][kOpDetune]->visible = !pd;
             opTog[k][1]->visible = !pd;
             // phase distortion has no wave / ratio / fine / detune per line: the rest move left
-            const float hs = Dial::heightFor(Dial::Small);
+            const float hm = Dial::heightFor(Dial::Medium);
             for (int f = 0; f < kOpFields; ++f)
-                if (opDial[k][f]) { const int slot = pd ? std::max(0, f - kOpLevel) : f; opDial[k][f]->r = Rect(22 + slot * 86, 300, 86, hs); }
-            opTog[k][0]->r = pd ? Rect(22 + 6 * 86 + 10, 318, 88, 24) : Rect(888, 304, 88, 24);
+                if (opDial[k][f]) { const int slot = pd ? std::max(0, f - kOpLevel) : f; opDial[k][f]->r = Rect(opX0 + slot * opCw, opPanel.y + 28, opCw, hm); }
+            opTog[k][0]->r = pd ? Rect(opX0 + 6 * opCw + 10, opPanel.y + 56, 100, 24) : Rect(opPanel.r() - 112, opPanel.y + 34, 100, 24);
         }
         for (auto* d : { rateD, amD, pmD, wheelD }) d->visible = !pd;
         for (auto* d : pdD) d->visible = pd;
@@ -139,35 +139,46 @@ protected:
 
     void layout() override
     {
-        const float top = 58, hs = Dial::heightFor(Dial::Small);
+        const float top = 58, hs = Dial::heightFor(Dial::Small), hm = Dial::heightFor(Dial::Medium);
         engineSeg->r = Rect(14, top, 972, 24);
-        algoR = Rect(14, top + 34, 390, 160);
-        opsR = Rect(416, top + 34, 348, 160);
-        scopeR = Rect(776, top + 34, 182, 160);
-        meterL = Rect(964, top + 34, 8, 148); meterR = Rect(975, top + 34, 8, 148);
-        opPanel = Rect(14, 264, 972, 138);
+        const float sy = top + 34, sh = 150;
+        algoR = Rect(14, sy, 390, sh);
+        opsR = Rect(416, sy, 348, sh);
+        scopeR = Rect(776, sy, 182, sh);
+        meterL = Rect(964, sy, 8, sh - 12); meterR = Rect(975, sy, 8, sh - 12);
+        // the selected operator: ten dials in a row, LFO AM and FIXED stacked at the right
+        opPanel = Rect(14, sy + sh + 12, 972, 116);
+        opX0 = opPanel.x + 10; opCw = (opPanel.w - 20 - 124) / 10.0f;
         for (int k = 0; k < kOps; ++k)
         {
-            for (int f = 0; f < kOpFields; ++f) if (opDial[k][f]) opDial[k][f]->r = Rect(22 + f * 86, 300, 86, hs);
-            opTog[k][0]->r = Rect(888, 304, 88, 24);
-            opTog[k][1]->r = Rect(888, 336, 88, 24);
+            for (int f = 0; f < kOpFields; ++f) if (opDial[k][f]) opDial[k][f]->r = Rect(opX0 + f * opCw, opPanel.y + 28, opCw, hm);
+            opTog[k][0]->r = Rect(opPanel.r() - 112, opPanel.y + 34, 100, 24);
+            opTog[k][1]->r = Rect(opPanel.r() - 112, opPanel.y + 66, 100, 24);
         }
-        voicePanel = Rect(14, 412, 390, 228);
+        // VOICE: five dials; below, poly/mono/legato over CHIP beside feedback, tone and the pitch envelope
+        const float y2 = opPanel.b() + 12, ph = 196;
+        voicePanel = Rect(14, y2, 440, ph);
         Dial* r1[5] = { voicesD, glideD, bendD, transD, volD };
-        for (int i = 0; i < 5; ++i) r1[i]->r = Rect(20 + i * 76, 440, 76, hs);
-        modeSeg->r = Rect(26, 518, 270, 22);
-        chipB->r = Rect(306, 518, 88, 22);
+        const float c1 = (voicePanel.w - 20) / 5.0f;
+        for (int i = 0; i < 5; ++i) r1[i]->r = Rect(voicePanel.x + 10 + i * c1, y2 + 28, c1, hm);
+        modeSeg->r = Rect(voicePanel.x + 12, y2 + 122, 156, 24);
+        chipB->r = Rect(voicePanel.x + 12, y2 + 154, 156, 22);
         Dial* r2[4] = { fbD, toneD, penvD, pdecD };
-        for (int i = 0; i < 4; ++i) r2[i]->r = Rect(20 + i * 95, 556, 95, hs);
-        rightPanel = Rect(416, 412, 570, 228);
+        const float x2 = voicePanel.x + 176, c2 = (voicePanel.r() - 10 - x2) / 4.0f;
+        for (int i = 0; i < 4; ++i) r2[i]->r = Rect(x2 + i * c2, y2 + 108, c2, hm);
+        // LFO and the operator's envelope, or phase distortion's sixteen dials in two rows
+        rightPanel = Rect(466, y2, 520, ph);
         Dial* lf[4] = { rateD, amD, pmD, wheelD };
-        for (int i = 0; i < 4; ++i) lf[i]->r = Rect(424 + i * 80, 440, 80, hs);
-        envR = Rect(426, 524, 550, 106);
-        for (int i = 0; i < 8; ++i) pdD[i]->r = Rect(422 + i * 70, 440, 70, hs);
-        for (int i = 8; i < 14; ++i) pdD[i]->r = Rect(422 + (i - 8) * 70, 548, 70, hs);
-        pdRate->r = Rect(422 + 6 * 70, 548, 70, hs);
-        pdPm->r = Rect(422 + 7 * 70, 548, 70, hs);
-        keyboard.r = Rect(14, 650, 972, 56);
+        const float cl = (rightPanel.w - 20) / 4.0f;
+        for (int i = 0; i < 4; ++i) lf[i]->r = Rect(rightPanel.x + 10 + i * cl, y2 + 28, cl, hm);
+        envR = Rect(rightPanel.x + 10, y2 + 114, rightPanel.w - 20, ph - 124);
+        const float cp = (rightPanel.w - 20) / 8.0f;
+        for (int i = 0; i < 8; ++i) pdD[i]->r = Rect(rightPanel.x + 10 + i * cp, y2 + 28, cp, hs);
+        for (int i = 8; i < 14; ++i) pdD[i]->r = Rect(rightPanel.x + 10 + (i - 8) * cp, y2 + 120, cp, hs);
+        pdRate->r = Rect(rightPanel.x + 10 + 6 * cp, y2 + 120, cp, hs);
+        pdPm->r = Rect(rightPanel.x + 10 + 7 * cp, y2 + 120, cp, hs);
+        keyboard.r = Rect(14, y2 + ph + 12, 972, 56);
+        refresh();
     }
 
     void tick(float dt) override
@@ -203,7 +214,7 @@ protected:
         panel(opPanel, b);
         panel(voicePanel, "VOICE");
         panel(rightPanel, pd ? "PHASE DISTORTION" : "LFO");
-        if (pd) caption(rightPanel.x + 12, 534, "BEND ENVELOPE  ·  LINE 2  ·  LFO");
+        if (pd) caption(rightPanel.x + 12, rightPanel.y + 108, "BEND ENVELOPE  ·  LINE 2  ·  LFO");
         else drawEnvelope();
         keyboard.draw(*this);
     }
@@ -434,6 +445,7 @@ private:
     static constexpr int kScopeN = 4096;
     PluginPhase* plug = nullptr;
     int sel = 0;
+    float opX0 = 24, opCw = 84;
     Rect algoR, opsR, scopeR, meterL, meterR, opPanel, voicePanel, rightPanel, envR, opCol[kOps], opBox[kOps];
     Segmented *engineSeg, *modeSeg;
     Dial* opDial[kOps][kOpFields] = {};
