@@ -297,7 +297,7 @@ private:
             const double pan = s.width * (2.0 * t / (kTones - 1) - 1.0) * (t % 2 ? 1.0 : -1.0) * 0.8;
             o.panL = std::cos(0.25 * kPi * (pan + 1.0)); o.panR = std::sin(0.25 * kPi * (pan + 1.0));
         }
-        kickK = std::exp(-1.0 / (0.012 * sr));
+        kickK = tauCoef(0.012, sr);
         attInc = 1.0 / (0.001 * sr);
         fxK = std::exp(std::log(1e-3) / std::max(1.0, s.fxDecay * sr));
         // the FX filter: left of centre a low-pass closing from 20 kHz to 150 Hz, right a high-pass opening to 6 kHz

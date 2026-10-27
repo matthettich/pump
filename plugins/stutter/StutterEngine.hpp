@@ -45,7 +45,7 @@ public:
         outS.setRamp(std::max(1, (int)(0.02 * sr))); outS.reset(dbToGain(set.outDb));
         ev = Event(); env = 0.0;
         offL = offR = lastL = lastR = 0.0; declick = false;
-        offK = std::exp(-1.0 / (0.0007 * sr));
+        offK = tauCoef(0.0007, sr);
         pos = 0.0; lastStep = -1; lastPatStep = -1; heldMove = -1;
         rng.seed(0x5EEDu);
         for (auto& f : filt) f.reset();

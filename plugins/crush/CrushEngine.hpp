@@ -403,9 +403,9 @@ private:
             hissLp[ch].set(7000.0, sr); hissHp[ch].set(450.0, sr);
             clickHp[ch].set(500.0, sr); popLp[ch].set(900.0, sr); surfLp[ch].set(2500.0, sr);
         }
-        dropAtt = 1.0 - std::exp(-1.0 / (0.004 * sr));
-        dropRel = 1.0 - std::exp(-1.0 / (0.025 * sr));
-        popDecay = std::exp(-1.0 / (0.002 * sr));
+        dropAtt = 1.0 - tauCoef(0.004, sr);
+        dropRel = 1.0 - tauCoef(0.025, sr);
+        popDecay = tauCoef(0.002, sr);
     }
 
     double sr = 48000.0;

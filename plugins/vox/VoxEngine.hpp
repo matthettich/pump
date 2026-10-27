@@ -479,9 +479,9 @@ public:
         haas.setMax((int)(0.012 * sr) + 8);
         lips.set(12000.0, sr);
         rateNorm = std::sqrt(48000.0 / sr);
-        smC = 1.0 - std::exp(-1.0 / (0.010 * sr));
-        wsRise = 1.0 - std::exp(-1.0 / (0.030 * sr));
-        carRel = std::exp(-1.0 / (0.020 * sr));
+        smC = 1.0 - tauCoef(0.010, sr);
+        wsRise = 1.0 - tauCoef(0.030, sr);
+        carRel = tauCoef(0.020, sr);
         lipsR = lips;
         reset();
     }
@@ -745,8 +745,8 @@ public:
     void prepare(double sampleRate)
     {
         sr = sampleRate;
-        atk = 1.0 - std::exp(-1.0 / (0.004 * sr));
-        relC = std::exp(-1.0 / (0.080 * sr));
+        atk = 1.0 - tauCoef(0.004, sr);
+        relC = tauCoef(0.080, sr);
         vib.setRate(5.5, sr);
         reset();
     }

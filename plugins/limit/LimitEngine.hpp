@@ -318,7 +318,18 @@ private:
     }
 
     // ------------------------------------------------------------------------------------------------- audio
+    // One chunk of audio, stage by stage. The stages hand per-sample values to each other through the member
+    // buffers (ceilBuf, trBuf, wBuf, ltBuf, lrBuf, clipBuf, the display buffers).
     void chunk(float* L, float* R, int n)
+    {
+        inputStage(L, R, n);
+        frontEnd(L, R, n);
+        brickwall(L, R, n);
+        safetyAndMeters(L, R, n);
+        unityAndDither(L, R, n);
+    }
+    // sanitising and input metering
+    void inputStage(float* L, float* R, int n)
     {
         // a NaN/Inf from upstream would otherwise stick in every filter and envelope until re-activation
         for (int i = 0; i < n; ++i) { L[i] = sanitize(L[i]); R[i] = sanitize(R[i]); }
@@ -330,8 +341,10 @@ private:
             inPeak[0].setMax(a); inPeak[1].setMax(b);
             samplePeakIn = std::max(samplePeakIn, std::max(a, b));
         }
-
-        // ---- front end: DC filter, drive, transient detector, leveling
+    }
+    // DC filter, drive, transient detector, leveling (base rate)
+    void frontEnd(float* L, float* R, int n)
+    {
         for (int i = 0; i < n; ++i)
         {
             float x = L[i], y = R[i];
@@ -394,8 +407,10 @@ private:
             levDispBuf[1][i] = 1.0f - dispLev[1].process(1.0f - lg[1]);
             L[i] = x; R[i] = y;
         }
-
-        // ---- brickwall (oversampled)
+    }
+    // the brickwall, oversampled
+    void brickwall(float* L, float* R, int n)
+    {
         float* b0 = L;
         float* b1 = R;
         if (os) { float* const* p = os->upsample(L, R, n); b0 = p[0]; b1 = p[1]; }
@@ -489,8 +504,10 @@ private:
             }
         }
         if (os) os->downsample(L, R, n);
-
-        // ---- safety stage, ceiling clip, meters, unity, dither
+    }
+    // safety stage, ceiling clip, output meters and history, loudness
+    void safetyAndMeters(float* L, float* R, int n)
+    {
         float opl = 0.0f, opr = 0.0f;
         for (int i = 0; i < n; ++i)
         {
@@ -554,7 +571,10 @@ private:
             outLoud.publish(meterOut, gainToDbF(samplePeakOut));
             inLoud.publish(meterIn, gainToDbF(samplePeakIn));
         }
-        // unity listen and dither (after metering: the readouts show the limited master)
+    }
+    // unity listen and dither (after metering: the readouts show the limited master)
+    void unityAndDither(float* L, float* R, int n)
+    {
         for (int i = 0; i < n; ++i)
         {
             const float u = (float)unitySm.next();
@@ -571,7 +591,6 @@ private:
             }
         }
     }
-
     // settings
     double sr = 48000.0;
     float gainDb = 0.0f, ceilDb = -1.0f, attackPct = 50.0f, releaseMs = 100.0f, lookMs = 5.0f, linkTrans = 0.75f, linkRel = 1.0f;

@@ -358,9 +358,9 @@ public:
         groupDelay[0] = 0.0; groupDelay[1] = gdSec; groupDelay[2] = gdSec + 2.0 * gdSec;
         hop = std::max(16, (int)std::lround(sr / 750.0));
         for (int ch = 0; ch < 2; ++ch) { fbDc[ch].set(15.0, sr); fbLp[ch].set(std::min(16000.0, 0.4 * sr), sr); }
-        duckAtt = 1.0 - std::exp(-1.0 / (0.002 * sr));
-        duckRel = 1.0 - std::exp(-1.0 / (0.400 * sr));
-        duckGlide = 1.0 - std::exp(-1.0 / (0.010 * sr));
+        duckAtt = 1.0 - tauCoef(0.002, sr);
+        duckRel = 1.0 - tauCoef(0.400, sr);
+        duckGlide = 1.0 - tauCoef(0.010, sr);
         space.prepare(sr);
         const int ramp = std::max(1, (int)(0.020 * sr));
         mixS.setRamp(ramp); outS.setRamp(ramp); fbS.setRamp(ramp); spaceS.setRamp(ramp); cutS.setRamp(std::max(1, (int)(0.030 * sr)));

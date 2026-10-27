@@ -440,8 +440,8 @@ public:
         drvHp.set(120.0, 0.70710678, sr);
         for (int c = 0; c < 2; ++c) { outHp[c].set(70.0, 0.70710678, sr); dripPk[c].reset(); outHp[c].reset(); }
         envF = envS = 0.0;
-        envFk = 1.0 - std::exp(-1.0 / (0.001 * sr)); envFr = 1.0 - std::exp(-1.0 / (0.015 * sr));
-        envSk = 1.0 - std::exp(-1.0 / (0.030 * sr)); envSr = 1.0 - std::exp(-1.0 / (0.150 * sr));
+        envFk = 1.0 - tauCoef(0.001, sr); envFr = 1.0 - tauCoef(0.015, sr);
+        envSk = 1.0 - tauCoef(0.030, sr); envSr = 1.0 - tauCoef(0.150, sr);
         const int ramp = std::max(1, (int)(0.02 * sr));
         volS.setRamp(ramp); volS.reset(dbToGain(set.volumeDb));
         tankS.setRamp(ramp); tankS.reset(set.tank);

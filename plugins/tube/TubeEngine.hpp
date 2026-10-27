@@ -265,9 +265,9 @@ public:
         lcOn.setRamp(ramp); lcOn.reset(lowCutActive(set.lowCut) ? 1.0 : 0.0);
         hcOn.setRamp(ramp); hcOn.reset(highCutActive(set.highCut) ? 1.0 : 0.0);
         trans.setRamp(std::max(1, (int)(0.006 * sr))); trans.reset(1.0);
-        agcK = 1.0 - std::exp(-1.0 / (0.3 * sr));
-        agcSmooth = 1.0 - std::exp(-1.0 / (0.15 * sr));
-        inK = 1.0 - std::exp(-1.0 / (0.3 * sr));
+        agcK = 1.0 - tauCoef(0.3, sr);
+        agcSmooth = 1.0 - tauCoef(0.15, sr);
+        inK = 1.0 - tauCoef(0.3, sr);
         curMode = fromMode = set.mode; modeT = 1.0;
         wantStages = curStages = set.stages; wantLg = curLg = set.oversampling; wantFocus = curFocus = set.focus;
         msDry = msWet = 0.0; agc = 1.0; msIn = 0.0;

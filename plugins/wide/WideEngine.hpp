@@ -116,7 +116,7 @@ public:
         double gl, gr; balanceGains(gl, gr); balL.reset(gl); balR.reset(gr); outS.reset(dbToGain(outDb));
         trans.setRamp(std::max(1, (int)(0.008 * sr))); trans.reset(1.0);
         split.setMode(wantMode); modePending = false;
-        corrK = 1.0 - std::exp(-1.0 / (0.3 * sr));
+        corrK = 1.0 - tauCoef(0.3, sr);
         axy = axx = ayy = 0.0;
     }
 

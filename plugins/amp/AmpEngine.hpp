@@ -115,8 +115,8 @@ public:
         hcOn.setRamp(ramp); hcOn.reset(highCutActive(set.cabHigh) ? 1.0 : 0.0);
         trans.setRamp(std::max(1, (int)(0.008 * sr))); trans.reset(1.0);
         gateGain = 1.0; gateEnv = 0.0; gateOpen = true;
-        gateAtt = 1.0 - std::exp(-1.0 / (0.0005 * sr)); gateRel = 1.0 - std::exp(-1.0 / (0.050 * sr));
-        envRel = 1.0 - std::exp(-1.0 / (0.020 * sr));
+        gateAtt = 1.0 - tauCoef(0.0005, sr); gateRel = 1.0 - tauCoef(0.050, sr);
+        envRel = 1.0 - tauCoef(0.020, sr);
         for (auto& c : tone) for (auto& b : c) b.reset();
         for (int ch = 0; ch < 2; ++ch) { lc[ch].reset(); hc[ch].reset(); }
         lastTone[0] = 1e9;

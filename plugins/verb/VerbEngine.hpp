@@ -282,9 +282,9 @@ public:
         hcOn.setRamp(ramp); hcOn.reset(highCutActive(set.highCut) ? 1.0 : 0.0);
         inGain.setRamp(std::max(1, (int)(0.04 * sr))); inGain.reset(freezeOn() ? 0.0 : 1.0);
         trans.setRamp(std::max(1, (int)(0.012 * sr))); trans.reset(1.0);
-        duckAtt = 1.0 - std::exp(-1.0 / (0.002 * sr));
-        duckRel = 1.0 - std::exp(-1.0 / (0.25 * sr));
-        duckGlide = 1.0 - std::exp(-1.0 / (0.002 * sr));
+        duckAtt = 1.0 - tauCoef(0.002, sr);
+        duckRel = 1.0 - tauCoef(0.25, sr);
+        duckGlide = 1.0 - tauCoef(0.002, sr);
         kc50 = 1.0 - std::exp(-kChunk / (0.05 * sr));
         kc30 = 1.0 - std::exp(-kChunk / (0.03 * sr));
         kc200 = 1.0 - std::exp(-kChunk / (0.2 * sr));

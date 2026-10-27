@@ -327,16 +327,42 @@ private:
         tiltDirty = false;
     }
 
+    // One STFT frame: measure the bands, follow them, build the target, work out the gains, turn them into a curve
+    // per bin with the auto level, apply it, publish for the UI.
     void frame(float* const* spec, int channels, int fftSize)
     {
         if (fftSize != N) return;
         if (tiltDirty) buildTilt();
         const BinTable& tb = tab[active];
-        const int* binBand = tb.band.data();
-        const float* binFrac = tb.frac.data();
-        const float* binKw = tb.kw.data();
         float* L = spec[0];
         float* R = channels > 1 ? spec[1] : spec[0];
+        FrameState f;
+        double lvl[kBands];
+        measureLevels(L, R, tb, lvl);
+        followLevels(lvl, f);
+        targetCurve(f);
+        bandGains(f);
+        binCurve(tb, f);
+        autoLevel(tb, f);
+        applyGains(L, R, f);
+        publishUi(f);
+    }
+
+    // what one frame's stages hand on to each other
+    struct FrameState {
+        double hopSec = 0.0, warm = 1.0, tauG = 1.0;   // time scales
+        double tgt[kBands] = {};                        // the target curve
+        double ref = 0.0, tame = 0.0, rec = 0.0;        // the deviation's reference and the Tame / Recover amounts
+        float direct = 1.0f;                            // the share of Brighten / Body applied directly
+        double totalDb[kBands] = {};                    // the curve per band, as shown
+        bool shaping = false;                           // there is a curve to apply
+    };
+
+    // band levels of this frame (pink-flat analyzer dB)
+    void measureLevels(const float* L, const float* R, const BinTable& tb, double* lvl)
+    {
+        const int* binBand = tb.band.data();
+        const float* binFrac = tb.frac.data();
         // analyzer scale: a full-scale sine ~ 0 dB in its bin; per-bin mean power -> "analyzer dB" with the pink tilt
         // level scale = the UI analyzer's (pump::SpectrumView: Na-point Blackman-Harris, Na = analyzerSize(sr), band
         // averages +3 dB), so the target curve lines up with the drawn spectrum: noise of variance s^2 reads
@@ -359,22 +385,25 @@ private:
         }
         // band level per octave (mean bin power + 3 dB/oct: pink noise reads flat); empty bands (the low end of a
         // small FFT) borrow from their neighbours
-        double lvl[kBands];
         for (int b = 0; b < kBands; ++b)
             lvl[b] = bw[b] > 0.3 ? 10.0 * std::log10(bp[b] / bw[b] * norm + 1e-30) + 3.0103 * std::log2(bandF[b] / 1000.0) : -1000.0;
         for (int b = 1; b < kBands; ++b) if (lvl[b] < -900.0) lvl[b] = lvl[b - 1];
         for (int b = kBands - 2; b >= 0; --b) if (lvl[b] < -900.0) lvl[b] = lvl[b + 1];
         // (std::max(NaN, -160) is NaN: test for finiteness, not just the floor)
         for (int b = 0; b < kBands; ++b) lvl[b] = std::isfinite(lvl[b]) ? clampv(lvl[b], -160.0, 200.0) : -160.0;
+    }
 
+    // short- and long-term band levels
+    void followLevels(const double* lvl, FrameState& f)
+    {
         // time scales
-        const double hopSec = (double)H / sr;
+        const double hopSec = f.hopSec = (double)H / sr;
         const double sp = clampv(cur.speed, 0.0f, 100.0f) * 0.01;
-        const double tauG = 1.6 * std::pow(0.04, sp);            // gain smoothing: 1.6 s (relaxed) .. 64 ms (fast)
+        const double tauG = f.tauG = 1.6 * std::pow(0.04, sp);            // gain smoothing: 1.6 s (relaxed) .. 64 ms (fast)
         const double tauS = std::max(0.03, 0.4 * tauG);           // short-term band level
         const double tauL = clampv(5.0 * tauG, 1.5, 8.0);         // long-term spectrum (the target follows it)
         ++frames;
-        const double warm = 1.0 / (double)frames;                 // fast start: running mean for the first frames
+        const double warm = f.warm = 1.0 / (double)frames;                // fast start: running mean for the first frames
         const double aS = std::max(1.0 - std::exp(-hopSec / tauS), warm), aL = std::max(1.0 - std::exp(-hopSec / tauL), warm);
         // smooth in the power domain (so loud moments count as loud), then dB
         for (int b = 0; b < kBands; ++b)
@@ -387,8 +416,13 @@ private:
             st[b] = 10.0 * std::log10(stP[b] + 1e-30);
             lt[b] = 10.0 * std::log10(ltP[b] + 1e-30);
         }
+    }
+
+    // the target: the long-term spectrum smoothed, pulled toward a natural slope, shaped by Brighten / Body
+    void targetCurve(FrameState& f)
+    {
+        double* tgt = f.tgt;
         // the target: robust ~2-octave smoothing of the long-term spectrum, pulled 30% toward a natural slope
-        double tgt[kBands];
         robustSmooth(lt, tgt, 1.6);
         {
             // least-squares line through the target, 100 Hz .. 10 kHz (dB per octave)
@@ -406,6 +440,13 @@ private:
         }
         // Brighten / Body shape the target: the adaptive part then moves the music toward it
         for (int b = 0; b < kBands; ++b) tgt[b] += bandTilt[b];
+    }
+
+    // the gain per band: the deviation from the target, gated, smoothed across frequency and in time
+    void bandGains(FrameState& f)
+    {
+        const double* tgt = f.tgt;
+        const double hopSec = f.hopSec, tauG = f.tauG;
         // gate: only bands with real content are worked on (loudest region of the frame, absolute floor)
         double stMax = -300.0;
         for (int b = 0; b < kBands; ++b) stMax = std::max(stMax, st[b]);
@@ -418,12 +459,12 @@ private:
         const double bias = clampv(cur.bias, -100.0f, 100.0f) * 0.01;
         const double meanDev = sw > 0 ? sd / sw : 0.0;
         // Bias: + = more taming (reference lower and Tame stronger), - = more recovering
-        const double ref = meanDev - 2.0 * bias;
+        const double ref = f.ref = meanDev - 2.0 * bias;
         // amount of the deviation taken away. The target sits a little into a broad bump or dip (it is the music's own
         // smoothed spectrum), so 100% takes away a bit more than the measured deviation.
         auto amount = [](double x) { return std::min(1.25, 1.25 * std::pow(clampv(x, 0.0, 1.0), 0.8)); };
-        const double tame = amount(clampv(cur.tame, 0.0f, 100.0f) * 0.01 * (1.0 + 0.6 * bias));
-        const double rec = amount(clampv(cur.recover, 0.0f, 100.0f) * 0.01 * (1.0 - 0.6 * bias));
+        const double tame = f.tame = amount(clampv(cur.tame, 0.0f, 100.0f) * 0.01 * (1.0 + 0.6 * bias));
+        const double rec = f.rec = amount(clampv(cur.recover, 0.0f, 100.0f) * 0.01 * (1.0 - 0.6 * bias));
         double g[kBands];
         for (int b = 0; b < kBands; ++b)
         {
@@ -451,11 +492,19 @@ private:
         // ... and the share of the tilt the adaptive part can't deliver (little Recover / Tame) is applied directly,
         // so Brighten and Body always do what they say
         // (the adaptive part delivers about 70% of a target change at high settings: keep a third directly)
-        const float direct = (float)clampv(1.0 - 0.33 * (std::min(1.0, tame) + std::min(1.0, rec)), 0.34, 1.0);
-        double totalDb[kBands];
+        const float direct = f.direct = (float)clampv(1.0 - 0.33 * (std::min(1.0, tame) + std::min(1.0, rec)), 0.34, 1.0);
+        double* totalDb = f.totalDb;
         for (int b = 0; b < kBands; ++b) totalDb[b] = gS[b] + direct * bandTilt[b];
-        // the gain curve per bin (dB, without the auto level makeup)
-        bool shaping = cur.brighten != 0.0f || cur.body != 0.0f;
+    }
+
+    // the gain curve per bin (dB, without the auto level makeup)
+    void binCurve(const BinTable& tb, FrameState& f)
+    {
+        const int* binBand = tb.band.data();
+        const float* binFrac = tb.frac.data();
+        const float direct = f.direct;
+        bool& shaping = f.shaping;
+        shaping = cur.brighten != 0.0f || cur.body != 0.0f;
         for (int b = 0; b < kBands && !shaping; ++b) if (gS[b] != 0.0) shaping = true;
         if (shaping)
         {
@@ -483,7 +532,14 @@ private:
             const float* ts = tb.tiltShelf.data();
             for (int k = 0; k < K; ++k) binDb[(size_t)k] += cb * to[k] + cy * ts[k];
         }
-        // auto level: the K-weighted (BS.1770) energy of the long-term spectrum before and after the curve, per bin
+    }
+
+    // auto level: the K-weighted (BS.1770) energy of the long-term spectrum before and after the curve
+    void autoLevel(const BinTable& tb, const FrameState& f)
+    {
+        const float* binKw = tb.kw.data();
+        const double hopSec = f.hopSec, warm = f.warm;
+        const bool shaping = f.shaping;
         {
             const double aR = std::max(1.0 - std::exp(-hopSec / 3.0), warm);   // ~ the span of integrated loudness
             for (int k = 0; k < K; ++k) binLt[(size_t)k] += (binPow[(size_t)k] - binLt[(size_t)k]) * (float)aR;
@@ -507,7 +563,11 @@ private:
             if (!std::isfinite(makeupDb) || (!shaping && std::fabs(makeupDb) < 1e-4)) makeupDb = 0.0;
         }
         else makeupDb = 0.0;
-        // apply
+    }
+
+    void applyGains(float* L, float* R, const FrameState& f)
+    {
+        const bool shaping = f.shaping;
         if (shaping || makeupDb != 0.0)
         {
             const float mk = (float)makeupDb;
@@ -520,7 +580,13 @@ private:
                 L[2 * k] *= gk; L[2 * k + 1] *= gk; R[2 * k] *= gk; R[2 * k + 1] *= gk;
             }
         }
-        // UI
+    }
+
+    void publishUi(const FrameState& f)
+    {
+        const double* tgt = f.tgt;
+        const double* totalDb = f.totalDb;
+        const double ref = f.ref;
         for (int b = 0; b < kBands; ++b)
         {
             uiG[b].store((float)(totalDb[b] + makeupDb), std::memory_order_relaxed);
@@ -530,6 +596,7 @@ private:
         }
         uiMk.store((float)makeupDb, std::memory_order_relaxed);
     }
+
 
     // ---- data ----------------------------------------------------------------------------------------------------
     double sr = 48000.0;

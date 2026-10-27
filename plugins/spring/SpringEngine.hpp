@@ -258,8 +258,8 @@ public:
         for (int l = 0; l < kLanes; ++l) { loopHp[l].set(20.0, sr); hfDamp[l].set(std::min(16000.0, 0.45 * sr), sr); }
         drvHp.set(120.0, 0.70710678, sr);
         for (int c = 0; c < 2; ++c) outHp[c].set(70.0, 0.70710678, sr);
-        envFk = 1.0 - std::exp(-1.0 / (0.001 * sr)); envFr = 1.0 - std::exp(-1.0 / (0.015 * sr));
-        envSk = 1.0 - std::exp(-1.0 / (0.030 * sr)); envSr = 1.0 - std::exp(-1.0 / (0.150 * sr));
+        envFk = 1.0 - tauCoef(0.001, sr); envFr = 1.0 - tauCoef(0.015, sr);
+        envSk = 1.0 - tauCoef(0.030, sr); envSr = 1.0 - tauCoef(0.150, sr);
         reset();
     }
     void reset()

@@ -124,8 +124,8 @@ public:
         mixS.setRamp(ramp); mixS.reset(mixPct * 0.01);
         outS.setRamp(ramp); outS.reset(dbToGain(outDb));
         trans.setRamp(std::max(1, (int)(0.008 * sr))); trans.reset(1.0);
-        agcK = 1.0 - std::exp(-1.0 / (0.3 * sr));
-        agcSmooth = 1.0 - std::exp(-1.0 / (0.15 * sr));
+        agcK = 1.0 - tauCoef(0.3, sr);
+        agcSmooth = 1.0 - tauCoef(0.15, sr);
         dcR = std::exp(-kTwoPi * 4.0 / sr);
         applyStructural();
     }

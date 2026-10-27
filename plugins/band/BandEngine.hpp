@@ -86,8 +86,8 @@ public:
         for (auto& b : st) { b.weight.setRamp(ramp); b.bypassFade.setRamp(ramp); }
         mixS.setRamp((int)(0.02 * sr)); outS.setRamp((int)(0.02 * sr));
         trans.setRamp(std::max(1, (int)(0.008 * sr)));
-        smoothK = 1.0 - std::exp(-1.0 / (0.015 * sr));
-        glideK = 1.0 - std::exp(-1.0 / (0.002 * sr));
+        smoothK = 1.0 - tauCoef(0.015, sr);
+        glideK = 1.0 - tauCoef(0.002, sr);
         // apply everything immediately
         applyStructural();
         trans.reset(1.0);

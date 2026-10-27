@@ -128,7 +128,7 @@ inline double absorberMag(double f, double f1, double f2, double gM, double rL, 
 // envelope (instant attack, ~50 ms release), so quiet passages get finer steps: the noise floats with the level.
 struct Converter {
     float env = 0.0f, rel = 0.9996f;
-    void setup(double sr) { rel = (float)std::exp(-1.0 / (0.05 * sr)); env = 0.0f; }
+    void setup(double sr) { rel = (float)tauCoef(0.05, sr); env = 0.0f; }
     void reset() { env = 0.0f; }
     // q = 2^(bits-1)
     inline float process(float x, float q, int maxRange)

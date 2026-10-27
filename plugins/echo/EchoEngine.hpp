@@ -158,8 +158,8 @@ public:
         xfStep = 1.0 / (kHeadXfSeconds * sr);
         modeStep = 1.0 / (kModeXfSeconds * sr);
         routeStep = 1.0 / (0.040 * sr);
-        envRel = 1.0 - std::exp(-1.0 / (0.030 * sr));
-        levelRel = 1.0 - std::exp(-1.0 / (0.040 * sr));
+        envRel = 1.0 - tauCoef(0.030, sr);
+        levelRel = 1.0 - tauCoef(0.040, sr);
         const int ramp = std::max(1, (int)(0.020 * sr));
         for (LinearSmoother* s : { &fbS, &mixS, &outS, &widthS, &driveS, &depthS })
             s->setRamp(ramp);
