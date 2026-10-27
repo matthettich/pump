@@ -13,7 +13,7 @@ using namespace pump::amp;
 
 class UIAmp : public PumpUI {
 public:
-    UIAmp() : PumpUI(params().data(), kNumParams, &presets(), pump::accents::amp(), "AMP", 1000, 620, kBypass)
+    UIAmp() : PumpUI(params().data(), kNumParams, &presets(), pump::accents::amp(), "AMP", 1000, 520, kBypass)
     {
         inDial = addDial(kInput, "INPUT", Dial::Large, true);
         inDial->tip = "Input gain into the model (models respond to level like the real amp did)";
@@ -122,11 +122,11 @@ protected:
 
     void layout() override
     {
-        ampR = Rect(14, 58, 300, 322);
-        specR = Rect(330, 58, 392, 322);
-        cabR = Rect(738, 58, 210, 322);
-        meterL = Rect(962, 58, 9, 304);
-        meterR = Rect(973, 58, 9, 304);
+        ampR = Rect(14, 58, 300, 280);
+        specR = Rect(330, 58, 392, 280);
+        cabR = Rect(738, 58, 210, 280);
+        meterL = Rect(962, 58, 9, 262);
+        meterR = Rect(973, 58, 9, 262);
         // file buttons along the bottom of the two file screens
         auto row = [](const Rect& r, Button* load, Button* prev, Button* next, Button* clear) {
             const float y = r.b() - 34, x0 = r.x + 10;
@@ -139,24 +139,24 @@ protected:
         row(ampR, modelLoad, modelPrev, modelNext, modelClear);
         row(cabR, irLoad, irPrev, irNext, irClear);
 
-        const float y0 = 396;
-        inPanel = Rect(14, y0, 440, 192);
-        inDial->r = Rect(26, y0 + 72, 96, Dial::heightFor(Dial::Large));
-        gateDial->r = Rect(142, y0 + 80, 72, Dial::heightFor(Dial::Medium));
-        outDial->r = Rect(236, y0 + 80, 72, Dial::heightFor(Dial::Medium));
-        normBtn->r = Rect(330, y0 + 40, 112, 24);
-        chSeg->r = Rect(330, y0 + 98, 112, 24);
+        const float y0 = 350;
+        inPanel = Rect(14, y0, 440, 136);
+        inDial->r = Rect(26, y0 + 28, 96, Dial::heightFor(Dial::Large));
+        gateDial->r = Rect(142, y0 + 52, 72, Dial::heightFor(Dial::Medium));
+        outDial->r = Rect(236, y0 + 52, 72, Dial::heightFor(Dial::Medium));
+        normBtn->r = Rect(330, y0 + 30, 112, 24);
+        chSeg->r = Rect(330, y0 + 92, 112, 24);
 
-        tonePanel = Rect(468, y0, 308, 192);
-        bassDial->r = Rect(476, y0 + 80, 72, Dial::heightFor(Dial::Medium));
-        midDial->r = Rect(552, y0 + 80, 72, Dial::heightFor(Dial::Medium));
-        trebDial->r = Rect(628, y0 + 80, 72, Dial::heightFor(Dial::Medium));
-        presDial->r = Rect(704, y0 + 80, 72, Dial::heightFor(Dial::Medium));
+        tonePanel = Rect(468, y0, 308, 136);
+        bassDial->r = Rect(476, y0 + 34, 72, Dial::heightFor(Dial::Medium));
+        midDial->r = Rect(552, y0 + 34, 72, Dial::heightFor(Dial::Medium));
+        trebDial->r = Rect(628, y0 + 34, 72, Dial::heightFor(Dial::Medium));
+        presDial->r = Rect(704, y0 + 34, 72, Dial::heightFor(Dial::Medium));
 
-        cabPanel = Rect(790, y0, 196, 192);
-        cabBtn->r = Rect(802, y0 + 40, 172, 24);
-        lowDial->r = Rect(806, y0 + 92, 64, Dial::heightFor(Dial::Small));
-        highDial->r = Rect(906, y0 + 92, 64, Dial::heightFor(Dial::Small));
+        cabPanel = Rect(790, y0, 196, 136);
+        cabBtn->r = Rect(802, y0 + 30, 172, 24);
+        lowDial->r = Rect(806, y0 + 62, 64, Dial::heightFor(Dial::Small));
+        highDial->r = Rect(906, y0 + 62, 64, Dial::heightFor(Dial::Small));
     }
 
     void tick(float dt) override
@@ -193,7 +193,7 @@ protected:
         caption(tonePanel.x + 12, tonePanel.y + 16, "TONE");
         caption(cabPanel.x + 12, cabPanel.y + 16, "CAB");
         // input level and the gate, under the gate dial
-        const Rect m(142, inPanel.y + 40, 166, 8);
+        const Rect m(142, inPanel.y + 34, 166, 8);
         caption(m.x, m.y - 9, "IN");
         fillRect(m, theme.panel2);
         const float t = pump::clampv((inLvl + 60.0f) / 60.0f, 0.0f, 1.0f);
@@ -230,7 +230,7 @@ protected:
     {
         const Rect& r = ampR;
         drawFileHead(r, "AMP MODEL", model.name, model.error, model.loaded && plug && plug->engine.hasModel(), "NO MODEL: LOAD A .NAM FILE");
-        float y = r.y + 104;
+        float y = r.y + 100;
         auto row = [&](const char* k, const std::string& v) {
             caption(r.x + 10, y, k);
             textAt(r.r() - 10, y, v, kMono, 11.0f, theme.ink, ALIGN_RIGHT | ALIGN_MIDDLE);
@@ -315,7 +315,7 @@ protected:
     {
         const Rect& r = cabR;
         drawFileHead(r, "CABINET IR", ir.name, ir.error, ir.loaded, "NO IR: LOAD A .WAV");
-        float y = r.y + 104;
+        float y = r.y + 100;
         char b[64];
         auto row = [&](const char* k, const std::string& v) {
             caption(r.x + 10, y, k);
