@@ -111,6 +111,8 @@ it to Applications; the first time, right-click > Open, since it isn't notarized
   *Show Room Correction…* to load the profile, per output).
 - **EXPORT FOR WINDOWS** makes filters (every common sample rate) and a config file for the free system-wide
   equalizer for Windows that reads `config.txt`: unzip into its config folder and add `Include: pump-room.txt`.
+- **EXPORT FOR PI** makes the same filters with a CamillaDSP config and an install script, for a Raspberry Pi with a
+  USB audio interface between your sources and your speakers: one cheap box per room (`README.txt` in the zip).
 
 ## Using them
 

@@ -80,6 +80,33 @@ const dir = mkdtempSync(join(tmpdir(), 'pump-room-'));
     i += 30 + nl + size;
   }
   check(names.length === 7 && names.includes('pump-room.txt') && names.includes('pump-room-48000.wav'), `Windows export: ${names.join(', ')}`);
+  const [pz] = await Promise.all([page.waitForEvent('download'), page.click('#cPi')]);
+  const pf = join(dir, 'pi.zip');
+  await pz.saveAs(pf);
+  const pb = (await import('node:fs')).readFileSync(pf);
+  const pn = [];
+  let yml = '';
+  for (let i = 0; i + 30 < pb.length;) {
+    if (pb.readUInt32LE(i) !== 0x04034b50) break;
+    const size = pb.readUInt32LE(i + 18), nl = pb.readUInt16LE(i + 26);
+    const nm = pb.toString('utf8', i + 30, i + 30 + nl);
+    pn.push(nm);
+    if (nm === 'pump-room.yml') yml = pb.toString('utf8', i + 30 + nl, i + 30 + nl + size);
+    i += 30 + nl + size;
+  }
+  check(pn.length === 13 && pn.includes('coeffs/pump-room-R-48000.wav') && pn.includes('install.sh'), `Pi export: ${pn.length} files`);
+  check(/filename: \/etc\/pump-room\/coeffs\/pump-room-L-\$samplerate\$\.wav/.test(yml) && /channels: \[1\]/.test(yml), 'CamillaDSP config names the filters per rate');
+  // the shipped install script parses as shell
+  const sh = join(dir, 'install.sh');
+  for (let i = 0; i + 30 < pb.length;) {
+    const size = pb.readUInt32LE(i + 18), nl = pb.readUInt16LE(i + 26);
+    if (pb.toString('utf8', i + 30, i + 30 + nl) === 'install.sh') (await import('node:fs')).writeFileSync(sh, pb.subarray(i + 30 + nl, i + 30 + nl + size));
+    i += 30 + nl + size;
+  }
+  const { execFileSync } = await import('node:child_process');
+  let shOk = true;
+  try { execFileSync('sh', ['-n', sh]); } catch (e) { shOk = false; }
+  check(shOk, 'install.sh is valid shell');
 }
 
 const [dl] = await Promise.all([page.waitForEvent('download'), page.click('#save')]);

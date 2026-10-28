@@ -30,6 +30,14 @@ The plan, what's built, and how the measurement works. Stage 1 (measurement) is 
      next to the EQ's files; a new output starts from the last one).
    - **Windows:** EXPORT FOR WINDOWS in the app (see stage 2) for the free system-wide equalizer; a native app maybe
      later.
+   - **A Raspberry Pi in line** (2026-10-28, the owner's idea: a cheap box per room between the sources and the
+     speakers): EXPORT FOR PI zips mono minimum-phase filters per speaker at 44.1-192 kHz (preamp and delays inside),
+     a CamillaDSP config (`filename: /etc/pump-room/coeffs/pump-room-L-$samplerate$.wav`, pipeline `channels: [0]` /
+     `[1]`; devices default to a USB line in/out interface named "CODEC", 16 bit, 48 kHz, chunksize 1024), an
+     `install.sh` (filters and config to /etc/pump-room, CamillaDSP from its GitHub releases if missing, a systemd
+     service; a re-install keeps the devices section) and a read-me. Checked: the zip, the YAML parses, the script
+     parses and its device-keeping merge works. **Not run on a Pi yet**, and the CamillaDSP config was written from
+     its documentation (v4.1), not tried in it.
 4. **Handheld measurement** — the long-term goal (the owner's): fast, easy tuning holding the mic in the hand. Before
    each sweep, short pings from each speaker give the mic's distance to each (time of flight, from the arrival times
    stage 1 already measures to a few hundredths of a sample); with the speakers' spacing that places the mic. A map

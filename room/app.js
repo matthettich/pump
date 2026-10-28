@@ -840,7 +840,7 @@ function drawCorrection(w, h) {
 
 function showCorrInfo(d) {
   const el = $('cInfo');
-  $('cSave').disabled = $('cWin').disabled = !d;
+  $('cSave').disabled = $('cWin').disabled = $('cPi').disabled = !d;
   if (!d) { el.innerHTML = ''; return; }
   const parts = [`PREAMP <b>${d.preamp.toFixed(1)} dB</b>`];
   d.sides.forEach((sd, s) => {
@@ -876,6 +876,7 @@ function initCorrection() {
   for (const [id, k] of [['cNulls', 'nulls'], ['cLow', 'low'], ['cAlign', 'align']]) $(id).onclick = () => { S.corr[k] = !S.corr[k]; showCorrControls(); draw(); };
   $('cSave').onclick = saveProfile;
   $('cWin').onclick = exportWindows;
+  $('cPi').onclick = exportPi;
   showCorrControls();
 }
 
@@ -923,6 +924,130 @@ function exportWindows() {
   files.push({ name: 'README.txt', data: new TextEncoder().encode(readme) });
   download(`${fileName(name)}-windows.zip`, zip(files), 'application/zip');
   status('Exported for Windows: unzip, then follow README.txt.');
+}
+
+// A Raspberry Pi (or any Linux box) running CamillaDSP between the sources and the speakers: one mono filter per
+// speaker and rate (minimum phase; preamp and time alignment inside), a CamillaDSP config that picks the file for
+// its rate ($samplerate$ in the file name), an install script and a read-me, zipped.
+function exportPi() {
+  const d = designCorrection();
+  if (!d) return;
+  const name = profileName(), files = [], rates = [44100, 48000, 88200, 96000, 192000];
+  for (const fs of rates)
+    for (const s of [0, 1]) {
+      const side = d.sides[s] ? s : (s ? 0 : 1);
+      const n = W.x.room_corr_fir(side, fs, 0);
+      files.push({ name: `coeffs/pump-room-${s ? 'R' : 'L'}-${fs}.wav`, data: wav([W.f32(W.x.room_fir_ptr(), n).slice()], fs) });
+    }
+  const yml = [
+    `# pump ROOM correction for CamillaDSP: ${name} (${new Date().toISOString().slice(0, 10)})`,
+    `# Minimum phase. The preamp (${d.preamp.toFixed(2)} dB) and the time alignment are inside the filters.`,
+    '# devices: set these to your audio interface (README.txt). As written: a USB interface that shows up as',
+    '# "CODEC" (the common 16-bit USB line in/out boxes), its line input in and its line output out, at 48 kHz.',
+    'devices:',
+    '  samplerate: 48000',
+    '  chunksize: 1024',
+    '  capture:',
+    '    type: Alsa',
+    '    channels: 2',
+    '    device: "hw:CODEC,0"',
+    '    format: S16_LE',
+    '  playback:',
+    '    type: Alsa',
+    '    channels: 2',
+    '    device: "hw:CODEC,0"',
+    '    format: S16_LE',
+    '',
+    'filters:',
+    ...['L', 'R'].flatMap((c) => [
+      `  room_${c === 'L' ? 'left' : 'right'}:`,
+      '    type: Conv',
+      '    parameters:',
+      '      type: Wav',
+      `      filename: /etc/pump-room/coeffs/pump-room-${c}-$samplerate$.wav`,
+    ]),
+    '',
+    'pipeline:',
+    '  - type: Filter',
+    '    channels: [0]',
+    '    names: [room_left]',
+    '  - type: Filter',
+    '    channels: [1]',
+    '    names: [room_right]',
+    ''].join('\n');
+  files.push({ name: 'pump-room.yml', data: new TextEncoder().encode(yml) });
+  const install = [
+    '#!/bin/sh',
+    '# pump ROOM: puts this correction on a Raspberry Pi (Raspberry Pi OS Lite, 64-bit) with CamillaDSP.',
+    '# Run from this folder:  sudo sh install.sh',
+    '# Installs the filters and config in /etc/pump-room, CamillaDSP in /usr/local/bin (if it isn\'t there yet,',
+    '# from its GitHub releases) and a service that runs it at boot. Running it again replaces the correction.',
+    'set -e',
+    '[ "$(id -u)" = 0 ] || { echo "run it with sudo"; exit 1; }',
+    'mkdir -p /etc/pump-room/coeffs',
+    'cp coeffs/*.wav /etc/pump-room/coeffs/',
+    '# keep device settings already made in an earlier install',
+    'if [ -f /etc/pump-room/pump-room.yml ] && grep -q "^devices:" /etc/pump-room/pump-room.yml; then',
+    '  awk \'/^devices:/{on=1} /^filters:/{on=0} on\' /etc/pump-room/pump-room.yml > /tmp/pump-room-devices.yml',
+    '  awk \'/^filters:/{on=1} on\' pump-room.yml > /tmp/pump-room-rest.yml',
+    '  { grep "^#" pump-room.yml; cat /tmp/pump-room-devices.yml; cat /tmp/pump-room-rest.yml; } > /etc/pump-room/pump-room.yml',
+    'else',
+    '  cp pump-room.yml /etc/pump-room/pump-room.yml',
+    'fi',
+    'if ! command -v camilladsp >/dev/null 2>&1; then',
+    '  case "$(uname -m)" in',
+    '    aarch64) a=aarch64 ;;',
+    '    armv7l|armv6l) a=armv7 ;;',
+    '    x86_64) a=amd64 ;;',
+    '    *) echo "unknown machine $(uname -m): install CamillaDSP by hand"; exit 1 ;;',
+    '  esac',
+    '  t=$(mktemp -d)',
+    '  curl -fsSL -o "$t/c.tar.gz" "https://github.com/HEnquist/camilladsp/releases/latest/download/camilladsp-linux-$a.tar.gz"',
+    '  tar -xzf "$t/c.tar.gz" -C "$t"',
+    '  install -m 755 "$t/camilladsp" /usr/local/bin/camilladsp',
+    '  rm -rf "$t"',
+    'fi',
+    'cat > /etc/systemd/system/pump-room.service <<EOF',
+    '[Unit]',
+    'Description=pump ROOM room correction (CamillaDSP)',
+    'After=sound.target',
+    '',
+    '[Service]',
+    'ExecStart=/usr/local/bin/camilladsp /etc/pump-room/pump-room.yml',
+    'Restart=always',
+    'RestartSec=3',
+    '',
+    '[Install]',
+    'WantedBy=multi-user.target',
+    'EOF',
+    'systemctl daemon-reload',
+    'systemctl enable pump-room.service',
+    'systemctl restart pump-room.service',
+    'echo "pump ROOM is running. Your audio devices:"',
+    'arecord -l || true',
+    'echo "If the devices in /etc/pump-room/pump-room.yml are not yours, edit them and: sudo systemctl restart pump-room"',
+    ''].join('\n');
+  files.push({ name: 'install.sh', data: new TextEncoder().encode(install) });
+  const readme = [`pump ROOM correction "${name}" for a Raspberry Pi`, '',
+    'The Pi sits between your sources and your speakers (or amp): sources -> audio interface line in -> Pi',
+    '(CamillaDSP applies the correction) -> audio interface line out -> speakers.', '',
+    'Set up (once per box):',
+    '1. Put Raspberry Pi OS Lite (64-bit) on a microSD card with Raspberry Pi Imager; in its settings turn on SSH',
+    '   and Wi-Fi so you can reach the Pi from your computer.',
+    '2. Plug the audio interface into the Pi\'s USB, boot, and copy this folder over (for example: scp -r).',
+    '3. On the Pi, in this folder:  sudo sh install.sh',
+    '4. If your interface isn\'t one that shows up as "CODEC", edit the devices part of /etc/pump-room/pump-room.yml:',
+    '   the card name from "arecord -l" (device: "hw:NAME,0") and the format it takes (S16_LE, S24_3_LE, S32_LE).',
+    '   Then: sudo systemctl restart pump-room', '',
+    'New correction for the same room: copy the new export over and run install.sh again (your device settings stay).',
+    'Status and errors: systemctl status pump-room   /   journalctl -u pump-room', '',
+    `The filters include the preamp (${d.preamp.toFixed(2)} dB, headroom for the boosts) and the time alignment.`,
+    'They exist for 44.1, 48, 88.2, 96 and 192 kHz; the config runs at 48 kHz (change samplerate to use another).',
+    'Latency: about the chunk size (1024 samples, 21 ms at 48 kHz) plus the interface\'s own. Lower chunksize for',
+    'less (the Pi has to keep up: if you hear dropouts, raise it again).', ''].join('\n');
+  files.push({ name: 'README.txt', data: new TextEncoder().encode(readme) });
+  download(`${fileName(name)}-pi.zip`, zip(files), 'application/zip');
+  status('Exported for a Pi: unzip, then follow README.txt.');
 }
 
 function wav(channels, fs) {
@@ -1025,7 +1150,7 @@ function init() {
   new ResizeObserver(() => draw()).observe(canvas);
   if (document.fonts) document.fonts.ready.then(draw);
   if (S.sim) status('Test mode: a simulated room stands in for the speakers and mic. START AUDIO, then MEASURE.');
-  window.pumpRoom = { S, W, measure, startAudio, applyCal, saveSession, openSession, draw, designCorrection, saveProfile, exportWindows };   // for tests
+  window.pumpRoom = { S, W, measure, startAudio, applyCal, saveSession, openSession, draw, designCorrection, saveProfile, exportWindows, exportPi };   // for tests
 }
 
 init();
