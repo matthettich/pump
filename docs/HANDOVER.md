@@ -2,7 +2,7 @@
 
 The pick-up doc: where things stand, what is verified and what is not, and what is open. Conventions and the layout
 are in [DEVELOPING.md](DEVELOPING.md) and the plan is in [ROADMAP.md](ROADMAP.md); this file does not repeat them.
-Last updated 2026-10-25 (code review and hardening session).
+Last updated 2026-10-27 (GUI pass, COIL modulation, LIFE sound, AU crash fix).
 
 ## State
 
@@ -24,6 +24,54 @@ Last updated 2026-10-25 (code review and hardening session).
   It ignores comments that merely mention MACHINE. Negative-tested against six injected violations.
 - DPF prints `Unknown license string 'All rights reserved (c) wake'` while generating the AU plist. Harmless: DPF only
   knows SPDX names, "Proprietary" hit the same warning, and the string is not written into the plist.
+
+## NEXT: LIFE's sound against its reference (in progress, 2026-10-27)
+
+LIFE is modelled on a groovebox the owner knows well (the reference; it is named in the owner's own notes, not here:
+this repo names no third-party products). The goal is to sound closer to it. The owner will send a **recording of the
+reference** (ideally: its default set for about 10 s, the same with its FX mix at zero, and a few voices alone).
+
+Done so far:
+- **The noise** (the clear difference): every voice was FM'd by its neighbour's *already modulated* sound and the
+  eight formed a ring, i.e. feedback FM, chaotic at the kit's FM amounts. Measured on the default set by spectral
+  flatness: 0.133, and 0 with FM off (ring, drive, FX and the kick sweep add none). Now each voice is modulated (and
+  ring-modulated) by its neighbour's own clean oscillator: 0.0012, loudness unchanged. The old sound is the
+  **FM LOOP** switch (appended parameter `fm_loop`, off). Commit "LIFE: clean FM by default".
+- **What the reference has that LIFE lacked** (from a published description of it): a send into the FX per voice
+  (now the FX bar row, `t1_fx`..`t8_fx`, 100 % by default), and feedback that builds into a saturated wash at the top
+  (now: FEEDBACK as before up to 80 %, loop gain rising past unity to 1.3 at 100 %, held by the soft clip). The same
+  description: parabolic-wave tones with pitch, kick (a short pitch envelope), FM, ring, decay and amplitude; global
+  FM, drive and decay; an LFO with depth, rate and phase; FX = pitch shifter, grain and delay as one unit, a bipolar
+  filter, feedback, and an amplitude/decay envelope into the FX. LIFE has all of these except the LFO phase control
+  and an FX-envelope amplitude (the per-voice sends stand in for it).
+
+When the recording arrives, compare against LIFE's default set rendered offline and match, in this order:
+1. each voice's **pitch envelope** (KICK: depth, and its 12 ms time constant in `LifeEngine::control`, `kickK`),
+2. the **decay curve** (LIFE: exponential to -60 dB over DECAY) and the attack (1 ms linear),
+3. **brightness**: the parabolic shape, FM index scaling (`fmAmt = fm * fmAll * 1.5`), DRIVE (`tanh`, gain 1 + 7 x),
+4. the **FX**: delay -> two-grain pitch shifter (sin^2 windows, linear interpolation) -> filter -> soft clip, fed back,
+5. levels and panning (`width` spreads the voices alternately left and right).
+
+Analysis harness: render the engine directly (see `tests/test_life.cpp`'s setup, or build Settings from the
+parameter defaults as `PluginLife::sync` does) and measure spectral flatness, energy above 6 kHz, envelopes per voice.
+Send the owner before/after WAVs (old for a few seconds, a gap, then new) to judge by ear.
+
+## What changed in the 2026-10-27 session
+
+| Change | Where | Verified by |
+|---|---|---|
+| **AU crash on removing/swapping a plugin** (Renoise: SIGSEGV in a run-loop timer after "Uninitialize"; seen with FOLD, SING, WOB, ORBIT): DPF's AU view kept its idle timer until deallocation | `patches/dpf/0009-au-stop-idle-timer-when-view-leaves-window.patch` | the owner's Renoise log (`~/Library/Logs/Renoise.log`, "CrashLog" lines); compiles on macOS in CI; **not yet confirmed in Renoise by the owner** |
+| Windows remember their size (corner grip) per plugin, and open about 600 points tall until a size is chosen | `common/ui/PumpUI.hpp` (`readZoom`, `rememberZoom`, `defaultZoom`); the settings file keeps the theme on line 1 so older builds still read it | headless: saved size reopens; bad values and the old one-line file fall back |
+| GUI tightening: 15 plugins shorter (COIL, TWANG, BOING, STRIKE, MACHINE, SING, PHASE, ORBIT, TRACT, FREEZE, PRISM, CHOP, KIT, STUTTER, AMP); STUTTER and VECTOR got pages; TUNE tighter | each `UI<Name>.cpp`, `DistrhoPluginInfo.h` | screenshots light and dark (`tools/shot.sh`) |
+| COIL / TWANG / BOING springs drawn as SPRING's tank: one spring per sounding voice, a colour each, turns and look per tank model (digital: chips, stepped coils) | `plugins/coil/CoilView.hpp` | screenshots per model |
+| COIL VOICES (1-16, default 8) and **modulation**: 2 LFOs, velocity, note, wheel, aftertouch, random per note; 32 connection slots (appended params); drag a source's grip onto a dial; MOD page lists connections | `common/dsp/Mod.hpp`, `plugins/coil/CoilDsp.hpp`, `UICoil.cpp` | `tests/test_coil_mod.cpp` (no connection = identical output, removal leaves no trace, sync, CPU), `parity_coil` (plugin = web build), UI driven with `tools/xdo.cpp` |
+| Drum synths' pads on C4 up in whole steps, note shown on each pad; old GM notes still play (STRIKE's old 60-67 range partly overlaps) | BOING, KIT, STRIKE, MACHINE | `== notes` sections in their tests |
+| CHOP: the bar coming in drawn live over the captured region (pink outline, green write head) | `ChopEngine.hpp` (`liveOverview`), `UIChop.cpp` | screenshots |
+| CI: a newer push cancels a running build; tests get 60 min (seven concurrent builds had timed the tests out) | `.github/workflows/build.yml` | |
+
+Ideas the owner liked but not built: the modulation system for TWANG and BOING (and later other plugins: `Mod.hpp` is
+shared; COIL's `CoilDsp` + `UICoil` modulation code is the template). More source types are planned (drawn
+multistage envelopes, macros with an XY pad, per-note envelopes).
 
 ## What changed in the 2026-10-25 session
 
