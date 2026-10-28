@@ -41,6 +41,9 @@ public:
     }
     const char* const* labels = nullptr;   // a name per row (else the note it plays)
     bool tank = false;                     // COIL: drawn as SPRING's tank (transducers, fanned hooks), a colour per spring
+    // the tank model the springs are drawn as (tank view): its length sets the turns, the digital ones are converters
+    // with stepped, pixel-snapped coils (coarser as GRIT lowers their clock), as in SPRING
+    void setModel(int m, float gritPct) { model = clampv(m, 0, spring::kNumModels - 1); grit = gritPct; }
 
     void draw(DISTRHO::PumpUI& ui, const Rect& r, float kickAgeS, const char* title, const char* right)
     {
@@ -136,8 +139,14 @@ private:
         ui.strokeRect(pan, th.dim, 1.0f);
         const float tw = 46.0f, tH = std::min(pan.h - 30.0f, 150.0f);
         const Rect inT(pan.x + 14, pan.cy() - tH * 0.5f, tw, tH), outT(pan.r() - 14 - tw, pan.cy() - tH * 0.5f, tw, tH);
-        drawTransducer(ui, inT, clampv(eMax, 0.0f, 1.0f), "IN");
-        drawTransducer(ui, outT, clampv(eMax, 0.0f, 1.0f), "OUT");
+        const bool digital = spring::isDigital(model);
+        drawTransducer(ui, inT, clampv(eMax, 0.0f, 1.0f), digital ? "ADC" : "IN", digital);
+        drawTransducer(ui, outT, clampv(eMax, 0.0f, 1.0f), digital ? "DAC" : "OUT", digital);
+        // turns per tank: SPRING's spring lengths against the two-spring tank's (digital: fewer, chunkier turns)
+        static const float kTurns[spring::kNumModels] = { 1.0f, 0.85f, 0.55f, 1.35f, 0.7f, 0.7f };
+        const float turns = kTurns[model];
+        const double clock = digital ? spring::clockHz(model, grit) : 0.0;
+        const float grid = digital ? (float)(2.0 + 5.0 * (1.0 - std::min(1.0, (clock - 6000.0) / 26000.0))) : 0.0f;
         const float x0 = inT.r() + 22.0f, x1 = outT.x - 22.0f;
         // only the voices sounding get a spring, highest note on top (a voice keeps its colour while it rings)
         int order[kMaxVoices], n = 0;
@@ -154,12 +163,12 @@ private:
             const int nv = pitch(i);
             const double f0 = 440.0 * std::exp2((nv - 69) / 12.0);
             const double travel = 0.5 / std::max(20.0, f0);
-            const int coils = clampv((int)std::lround(46.0 - 0.42 * (nv - 24)), 16, 43);   // SPRING's spacing of turns
+            const int coils = clampv((int)std::lround((46.0 - 0.42 * (nv - 24)) * turns), 9, 60);   // SPRING's spacing of turns
             const float tS = (float)std::min((double)kWaveN / 2 - 4, travel * visRate);
             const Color hook = on ? th.ink2 : withAlpha(th.ink2, 0.5f);
             ui.line(inT.r(), inT.cy() + (yc - inT.cy()) * 0.35f, x0, yc, hook, 1.2f);
             ui.line(outT.x, outT.cy() + (yc - outT.cy()) * 0.35f, x1, yc, hook, 1.2f);
-            drawCoil(ui, i, x0, x1, yc, R, coils, tS, on);
+            drawCoil(ui, i, x0, x1, yc, R, coils, tS, on, grid);
         }
         ui.restore();
         // the read-out under the pan: the notes sounding, each in its spring's colour
@@ -182,7 +191,7 @@ private:
         ui.textAt(r.r() - 10, r.b() - 13, t, P::kMono, 10.0f, th.ink2, NanoVG::ALIGN_RIGHT | NanoVG::ALIGN_MIDDLE);
     }
     // SPRING's transducer: a magnet in a coil, lit by the drive
-    static void drawTransducer(DISTRHO::PumpUI& ui, const Rect& b, float e, const char* name)
+    static void drawTransducer(DISTRHO::PumpUI& ui, const Rect& b, float e, const char* name, bool digital)
     {
         using P = DISTRHO::PumpUI;
         const Theme& th = ui.theme;
@@ -191,9 +200,23 @@ private:
         ui.fillRect(b, th.bg);
         ui.fillRect(b, withAlpha(th.neon, 0.15f + 0.85f * e));
         ui.strokeRect(b, th.ink, 1.5f);
-        const Rect mg(b.cx() - 7, b.y + 16, 14, b.h - 46);
-        ui.fillRect(mg, th.ink);
-        for (float yy = mg.y + 6; yy < mg.b() - 3; yy += 7) ui.line(mg.x - 6, yy, mg.r() + 6, yy + 3, th.ink2, 1.2f);
+        if (digital)
+        {
+            // a chip: pins along the sides
+            for (int k = 0; k < 7; ++k)
+            {
+                const float py = b.y + 12.0f + (b.h - 24.0f) * k / 6.0f;
+                ui.line(b.x - 5, py, b.x, py, th.ink, 1.5f);
+                ui.line(b.r(), py, b.r() + 5, py, th.ink, 1.5f);
+            }
+        }
+        else
+        {
+            // a magnet in a coil
+            const Rect mg(b.cx() - 7, b.y + 16, 14, b.h - 46);
+            ui.fillRect(mg, th.ink);
+            for (float yy = mg.y + 6; yy < mg.b() - 3; yy += 7) ui.line(mg.x - 6, yy, mg.r() + 6, yy + 3, th.ink2, 1.2f);
+        }
         const Color lc = th.dark ? (e > 0.45f ? th.neonInk : th.ink) : th.neonInk;
         ui.textAt(b.cx(), b.b() - 13, name, P::kLabel, 10.0f, lc, NanoVG::ALIGN_CENTER | NanoVG::ALIGN_MIDDLE, 1.0f);
     }
@@ -204,7 +227,7 @@ private:
         const float a = std::log10(1.0f + 1000.0f * std::fabs(v)) / 3.0f;
         return std::copysign(std::min(1.0f, a), v);
     }
-    void drawCoil(DISTRHO::PumpUI& ui, int l, float x0, float x1, float yc, float R, int coils, float tS, bool on)
+    void drawCoil(DISTRHO::PumpUI& ui, int l, float x0, float x1, float yc, float R, int coils, float tS, bool on, float grid = 0.0f)
     {
         using P = DISTRHO::PumpUI;
         const Theme& th = ui.theme;
@@ -239,6 +262,7 @@ private:
             const float taper = std::min(1.0f, std::min(u, 1.0f - u) * 30.0f);
             px[i] = x0 + (u + 0.016f * w * taper) * len + R * 0.45f * std::cos(a) * taper;
             py[i] = yc + R * (1.0f + 0.25f * std::fabs(w)) * std::sin(a) * taper + 3.5f * w * taper;
+            if (grid > 0.0f) { px[i] = std::round(px[i] / grid) * grid; py[i] = std::round(py[i] / grid) * grid; }
             front[i] = std::cos(a) >= 0.0f;
         }
         const Color base = tank ? strandColour(th, l) : th.ink;
@@ -255,7 +279,7 @@ private:
             }
             ui.strokeColor(pass ? ink : P::withAlpha2(base, on ? 0.32f : 0.16f));
             ui.strokeWidth(pass ? (tank ? 1.7f : 1.6f) : 1.0f);
-            ui.lineJoin(NanoVG::ROUND);
+            ui.lineJoin(grid > 0.0f ? NanoVG::MITER : NanoVG::ROUND);
             ui.stroke();
         }
     }
@@ -265,6 +289,8 @@ private:
     int note[kMaxVoices] = {};
     int lastNote[kMaxVoices] = {};
     double visRate = 12000.0;
+    int model = 0;
+    float grit = 35.0f;
 };
 
 }} // namespace pump::coil

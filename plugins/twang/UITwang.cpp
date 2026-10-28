@@ -93,6 +93,7 @@ protected:
         if (kickHeld) kickPress = 1.0f; else kickPress = std::max(0.0f, kickPress - dt * 8.0f);
         kickAge += dt;
         if (!plug) return;
+        springsView.setModel((int)value(kModel), value(kGrit));
         springsView.update(&plug->engine, dt);
         for (int c = 0; c < 2; ++c)
         {
