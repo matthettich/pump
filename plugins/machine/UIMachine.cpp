@@ -173,10 +173,13 @@ protected:
         textAt(r.x + 8, r.y + 34, kSoundNames[s], kLabel, 12.0f, ink, ALIGN_LEFT | ALIGN_MIDDLE, 1.0f);
         static const char* const nn[12] = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
         const int note = noteForSound(s);
-        std::snprintf(b, sizeof b, "%s%d  %d", nn[note % 12], note / 12 - 2, note);
+        // the note that plays it (name and number), and the channel that plays it chromatically
+        std::snprintf(b, sizeof b, "%s%d", nn[note % 12], note / 12 - 1);
+        textAt(r.x + 8, r.b() - 10, b, kMono, 10.0f, ink, ALIGN_LEFT | ALIGN_MIDDLE);
+        std::snprintf(b, sizeof b, "%d", note);
         textAt(r.r() - 8, r.b() - 10, b, kMono, 9.0f, g > 0.45f ? theme.neonInk : theme.ink2, ALIGN_RIGHT | ALIGN_MIDDLE);
         std::snprintf(b, sizeof b, "CH %d", s + 2);
-        textAt(r.x + 8, r.b() - 10, b, kMono, 9.0f, g > 0.45f ? theme.neonInk : theme.ink2, ALIGN_LEFT | ALIGN_MIDDLE);
+        textAt(r.r() - 8, r.y + 12, b, kMono, 9.0f, g > 0.45f ? theme.neonInk : theme.ink2, ALIGN_RIGHT | ALIGN_MIDDLE);
     }
     void drawScope()
     {
@@ -248,7 +251,7 @@ protected:
     std::vector<std::pair<std::string, std::string>> helpLines() override
     {
         return { { "Click a pad / keys 1-7", "play it and edit its voice (higher in the pad = harder)" },
-                 { "MIDI", "General MIDI drum notes; channels 2-8 play the sounds chromatically" },
+                 { "MIDI", "C4 up in whole steps (C4 drum 1 ... C5 open hat); General MIDI drum notes too; channels 2-8 play the sounds chromatically" },
                  { "Sound engine", "an open-source drum machine firmware, modified (not official); GPL-3.0, see NOTICE.md" } };
     }
     std::string footerInfo() override

@@ -20,10 +20,12 @@ struct Settings {
     double kitDrive = 0.0, velocity = 0.6, humanize = 0.0, volumeDb = -6.0;
 };
 
-// which pad a General MIDI note plays, and at what pitch offset (semitones); -1 = none
+// which pad a note plays, and at what pitch offset (semitones); -1 = none. The pads' own notes (C4 up in whole steps,
+// 60-74) first; then the General MIDI drum notes (the pads' notes before 2026-10-27, so older patterns still play)
 inline int padForNote(int note, double& offset)
 {
     offset = 0.0;
+    for (int p = 0; p < kPads; ++p) if (kPadInfo[p].note == note) return p;
     switch (note)
     {
     case 35: case 36: return 0;

@@ -164,6 +164,35 @@ int main()
             printf("  cpu: all eight pads hit 32 times a second: %.1f %% of one core\n", 100.0 * secs);
         }
     }
+    printf("== notes\n");
+    {
+        // the pads in order a whole step apart from C4 (60); the General MIDI drum notes still play the same pads, the same
+        bool order = true;
+        for (int p = 0; p < kPads; ++p) order = order && kPadInfo[p].note == 60 + 2 * p;
+        CHECK(order, "pads on C4 D4 E4 F#4 G#4 A#4 C5 D5 (60-74 in whole steps)");
+        static const int gm[kPads] = { 36, 38, 39, 42, 46, 45, 37, 49 };
+        bool allNew = true, allGm = true, same = true;
+        for (int p = 0; p < kPads; ++p)
+        {
+            std::vector<float> out[2];
+            for (int pass = 0; pass < 2; ++pass)
+            {
+                Engine e; e.setSettings(defaults()); e.prepare(48000.0, 256);
+                const uint32_t before = e.lastHit();
+                out[pass] = run(e, 4096, { { 0, 0x90, (uint8_t)(pass ? gm[p] : kPadInfo[p].note), 110 } });
+                const uint32_t after = e.lastHit();
+                double off = 1.0;
+                const bool only = (after >> 8) == (before >> 8) + 1 && (int)(after & 0xFF) == p && padForNote(pass ? gm[p] : kPadInfo[p].note, off) == p && off == 0.0;
+                (pass ? allGm : allNew) &= only;
+            }
+            same = same && out[0] == out[1];
+        }
+        CHECK(allNew, "each new note plays its pad, and only that pad");
+        CHECK(allGm, "each General MIDI drum note (older patterns) still plays the same pad");
+        CHECK(same, "a pad sounds the same from its new note and its old one");
+        double o1, o2; const int t1 = padForNote(41, o1), t2 = padForNote(50, o2);
+        CHECK(t1 == 5 && t2 == 5 && o1 < 0 && o2 > 0, "the toms 41-50 still play the tom pad at their own pitches");
+    }
     if (fails) { printf("%d failure(s)\n", fails); return 1; }
     printf("all passed\n");
     return 0;

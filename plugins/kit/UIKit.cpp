@@ -169,8 +169,10 @@ protected:
         textAt(r.x + 8, r.y + 32, kPadInfo[p].label, kLabel, 12.5f, ink, ALIGN_LEFT | ALIGN_MIDDLE, 1.0f);
         textAt(r.x + 8, r.y + 50, kModelKeys[pump::clampv((int)value(pp(p, kModel)), 0, kNumModels - 1)], kLabel, 9.5f, g > 0.45f ? theme.neonInk : theme.ink2, ALIGN_LEFT | ALIGN_MIDDLE, 0.8f);
         static const char* const nn[12] = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
-        const int note = kPadInfo[p].note;
-        std::snprintf(b, sizeof b, "%s%d  %d", nn[note % 12], note / 12 - 2, note);
+        const int note = kPadInfo[p].note;   // the note that plays it: name and number
+        std::snprintf(b, sizeof b, "%s%d", nn[note % 12], note / 12 - 1);
+        textAt(r.x + 8, r.b() - 10, b, kMono, 10.0f, ink, ALIGN_LEFT | ALIGN_MIDDLE);
+        std::snprintf(b, sizeof b, "%d", note);
         textAt(r.r() - 8, r.b() - 10, b, kMono, 9.0f, g > 0.45f ? theme.neonInk : theme.ink2, ALIGN_RIGHT | ALIGN_MIDDLE);
     }
     void drawScope()
@@ -257,7 +259,7 @@ protected:
     }
     std::vector<std::pair<std::string, std::string>> helpLines() override
     {
-        return { { "Click a pad / keys 1-8", "play it and edit it (higher in the pad = harder)" }, { "MIDI", "General MIDI drum notes; toms 41-50 at their own pitches" } };
+        return { { "Click a pad / keys 1-8", "play it and edit it (higher in the pad = harder)" }, { "MIDI", "C4 up in whole steps (C4 kick ... D5 cymbal); General MIDI drum notes too, toms 41-50 at their own pitches" } };
     }
     std::string footerInfo() override
     {

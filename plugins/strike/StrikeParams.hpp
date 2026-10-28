@@ -36,16 +36,18 @@ enum PadField : int { kEngine = 0, kPitch, kDecay, kTone, kCharA, kCharB, kBend,
 constexpr int pp(int pad, int field) { return pad * kPerPad + field; }
 enum KitParam : int { kChoke = kPads * kPerPad, kVelocity, kDrive, kVolume, kFollow, kNumParams };
 
+// The pads play in order, a whole step apart from C4 (60): C4 D4 E4 F#4 G#4 A#4 C5 D5. The General MIDI drum notes
+// (36 kick, 38 snare...) still play them too: see Engine::midi.
 struct PadInfo { const char* sym; const char* name; const char* key; int note; int engine; float pitch, decay, tone, a, b, bend, bendT, noise, level, pan; };
 static const PadInfo kPadInfo[kPads] = {
-    { "kick",  "Kick",       "KICK",   36, kCircuit,  33, 520, 40, 35,  0, 14, 45,  0,  0,   0 },
-    { "snare", "Snare",      "SNARE",  38, kModal,    55, 260, 60, 10, 40,  3, 30, 60, -2,   0 },
-    { "rim",   "Rim",        "RIM",    37, kCircuit,  86,  60, 80,  0, 70,  0, 10,  0, -6,  20 },
-    { "ltom",  "Low Tom",    "LO TOM", 43, kModal,    43, 420, 45,  5, 45,  5, 80,  0, -3, -25 },
-    { "htom",  "High Tom",   "HI TOM", 48, kString,   55, 360, 55, 30, 40,  3, 40,  0, -4,  25 },
-    { "chat",  "Closed Hat", "C-HAT",  42, kAdditive, 88,  60, 70, 90, 30,  0, 10, 30, -8, -15 },
-    { "ohat",  "Open Hat",   "O-HAT",  46, kAdditive, 88, 500, 70, 90, 40,  0, 10, 30, -9, -15 },
-    { "cym",   "Cymbal",     "CYMBAL", 49, kAdditive, 76, 2200, 55, 95, 70,  0, 10, 20, -11, 30 },
+    { "kick",  "Kick",       "KICK",   60, kCircuit,  33, 520, 40, 35,  0, 14, 45,  0,  0,   0 },
+    { "snare", "Snare",      "SNARE",  62, kModal,    55, 260, 60, 10, 40,  3, 30, 60, -2,   0 },
+    { "rim",   "Rim",        "RIM",    64, kCircuit,  86,  60, 80,  0, 70,  0, 10,  0, -6,  20 },
+    { "ltom",  "Low Tom",    "LO TOM", 66, kModal,    43, 420, 45,  5, 45,  5, 80,  0, -3, -25 },
+    { "htom",  "High Tom",   "HI TOM", 68, kString,   55, 360, 55, 30, 40,  3, 40,  0, -4,  25 },
+    { "chat",  "Closed Hat", "C-HAT",  70, kAdditive, 88,  60, 70, 90, 30,  0, 10, 30, -8, -15 },
+    { "ohat",  "Open Hat",   "O-HAT",  72, kAdditive, 88, 500, 70, 90, 40,  0, 10, 30, -9, -15 },
+    { "cym",   "Cymbal",     "CYMBAL", 74, kAdditive, 76, 2200, 55, 95, 70,  0, 10, 20, -11, 30 },
 };
 
 inline const std::vector<ParamSpec>& params()

@@ -12,9 +12,11 @@
 // powering on), this block is silent rather than the audio thread waiting. With one instance nothing is ever copied. Every instance powers on from the same
 // start-up memory, so the same settings and hits always sound the same.
 //
-// MIDI: the General MIDI drum notes on any channel play the voices at their own pitch (36 35 drum 1; 41 43 45 47
-// drum 2; 37 39 48 50 drum 3; 38 40 snare; 42 44 closed hat; 46 open hat; 49 51 52 55 57 59 cymbal). Channels 2-8
-// play sounds 1-7 chromatically (60 = the sound's own pitch), the way the machine's per-voice MIDI channels do.
+// MIDI: on channel 1 and 9-16 the seven sounds play at their own pitch, in order a whole step apart from C4 (C4 drum 1,
+// D4 drum 2, E4 drum 3, F#4 snare, G#4 cymbal, A#4 closed hat, C5 open hat), and so do the General MIDI drum notes (the
+// sounds' notes before 2026-10-27, so older patterns still play: 36 35 drum 1; 41 43 45 47 drum 2; 37 39 48 50 drum 3;
+// 38 40 snare; 42 44 closed hat; 46 open hat; 49 51 52 55 57 59 cymbal). Channels 2-8 play sounds 1-7 chromatically
+// (60 = the sound's own pitch), the way the machine's per-voice MIDI channels do.
 #pragma once
 
 #include "dsp/Resampler.hpp"
@@ -28,9 +30,10 @@
 
 namespace pump { namespace machine {
 
-// which sound a General MIDI note plays (-1 none)
+// which sound a note plays (-1 none): its own note (C4 up in whole steps, 60-72), or a General MIDI drum note
 inline int soundForNote(int note)
 {
+    if (note >= 60 && note < 60 + 2 * kSounds && (note & 1) == 0) return (note - 60) / 2;
     switch (note)
     {
     case 35: case 36: return 0;
@@ -46,7 +49,7 @@ inline int soundForNote(int note)
 // the firmware renders OUTPUT_DMA_SIZE frames per block (64 in this build; machine_fw.c checks it at compile time)
 constexpr int kMaxFwBlock = 64;
 
-inline int noteForSound(int s) { static const int n[kSounds] = { 36, 45, 37, 38, 49, 42, 46 }; return n[clampv(s, 0, kSounds - 1)]; }
+inline int noteForSound(int s) { return 60 + 2 * clampv(s, 0, kSounds - 1); }   // C4 D4 E4 F#4 G#4 A#4 C5
 
 class Engine {
 public:

@@ -1,7 +1,7 @@
 // pump STRIKE: every engine sounds at its pitch (the string's loop, the circuit's resonator, the modal membrane's first
 // mode, the FM carrier, the west-coast triangle) and dies in about its DECAY; the engines are about as loud as each
 // other; a bend falls to the pitch; snare wires rattle with the body; wood dies faster than metal; the closed hat
-// chokes the open one; a re-hit doesn't click; the pads answer the General MIDI notes; random settings stay finite.
+// chokes the open one; a re-hit doesn't click; the pads answer C4 up in whole steps and the General MIDI notes; random settings stay finite.
 // CPU.
 #include "../plugins/strike/StrikeEngine.hpp"
 #include <chrono>
@@ -151,8 +151,34 @@ int main()
             e->process(L.data(), R.data(), 256, &m, 1);
             all = all && e->padLevel(p) > 0.0f;
         }
-        CHECK(all, "every pad answers its General MIDI note");
+        CHECK(all, "every pad answers its note");
         delete e;
+    }
+    printf("== notes\n");
+    {
+        // the pads in order a whole step apart from C4 (60); the General MIDI drum notes still play the same pads, and the
+        // odd notes left of the old run up from 60 (61, 63, 65, 67) still play theirs
+        bool order = true;
+        for (int p = 0; p < kPads; ++p) order = order && kPadInfo[p].note == 60 + 2 * p;
+        CHECK(order, "pads on C4 D4 E4 F#4 G#4 A#4 C5 D5 (60-74 in whole steps)");
+        auto plays = [](int note) {   // the one pad a note plays, -1 for none, -2 for more than one
+            Settings s; Engine* e = fresh(s);
+            const uint32_t before = e->lastHit();
+            std::vector<float> L(256), R(256);
+            synth::Midi m { 0, 0x90, (uint8_t)note, 110 };
+            e->process(L.data(), R.data(), 256, &m, 1);
+            const uint32_t after = e->lastHit();
+            delete e;
+            const uint32_t n = (after >> 8) - (before >> 8);
+            return n == 0 ? -1 : n == 1 ? (int)(after & 0xFF) : -2;
+        };
+        static const int gm[kPads] = { 36, 38, 37, 43, 48, 42, 46, 49 };
+        bool allNew = true, allGm = true;
+        for (int p = 0; p < kPads; ++p) { allNew = allNew && plays(kPadInfo[p].note) == p; allGm = allGm && plays(gm[p]) == p; }
+        CHECK(allNew, "each new note plays its pad, and only that pad");
+        CHECK(allGm, "each General MIDI drum note (older patterns) still plays the same pad");
+        CHECK(plays(61) == 1 && plays(63) == 3 && plays(65) == 5 && plays(67) == 7, "61, 63, 65, 67 (left of the old run up from 60) still play their pads");
+        CHECK(plays(59) == -1 && plays(75) == -1 && plays(69) == -1, "other notes play nothing");
     }
     printf("== random settings\n");
     {

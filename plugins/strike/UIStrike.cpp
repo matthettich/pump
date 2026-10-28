@@ -172,7 +172,12 @@ protected:
         textAt(r.x + 8, r.y + 12, b, kMono, 10.0f, ink, ALIGN_LEFT | ALIGN_MIDDLE);
         textAt(r.x + 8, r.y + 32, kPadInfo[p].key, kLabel, 12.0f, ink, ALIGN_LEFT | ALIGN_MIDDLE, 1.0f);
         textAt(r.x + 8, r.y + 50, kEngineKeys[pump::clampv((int)value(pp(p, kEngine)), 0, kNumEngines - 1)], kLabel, 8.5f, g > 0.45f ? theme.neonInk : theme.ink2, ALIGN_LEFT | ALIGN_MIDDLE, 0.6f);
-        std::snprintf(b, sizeof b, "%d", kPadInfo[p].note);
+        // the note that plays it: name and number
+        static const char* const nn[12] = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
+        const int note = kPadInfo[p].note;
+        std::snprintf(b, sizeof b, "%s%d", nn[note % 12], note / 12 - 1);
+        textAt(r.x + 8, r.b() - 10, b, kMono, 10.0f, ink, ALIGN_LEFT | ALIGN_MIDDLE);
+        std::snprintf(b, sizeof b, "%d", note);
         textAt(r.r() - 8, r.b() - 10, b, kMono, 9.0f, g > 0.45f ? theme.neonInk : theme.ink2, ALIGN_RIGHT | ALIGN_MIDDLE);
     }
     void drawScope()
@@ -240,7 +245,7 @@ protected:
     }
     std::vector<std::pair<std::string, std::string>> helpLines() override
     {
-        return { { "Click a pad / keys 1-8", "play it and edit it (higher in the pad = harder)" }, { "MIDI", "General MIDI drum notes; C3 up plays the pads in order" },
+        return { { "Click a pad / keys 1-8", "play it and edit it (higher in the pad = harder)" }, { "MIDI", "C4 up in whole steps (C4 kick ... D5 cymbal); General MIDI drum notes too" },
                  { "TONE / CHAR A / CHAR B", "named for what they do in the pad's engine" } };
     }
     std::string footerInfo() override

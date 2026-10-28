@@ -1,4 +1,4 @@
-// pump MACHINE: every sound plays from its MIDI note at 44.1 and 48 kHz; a hit sounds the same at both rates; two
+// pump MACHINE: the sounds sit on C4 up in whole steps and the GM drum notes still play them; every sound plays from its MIDI note at 44.1 and 48 kHz; a hit sounds the same at both rates; two
 // instances interleaved block by block each match an instance rendered alone, bit for bit (the firmware's state is
 // swapped correctly); a parameter change reaches the voice (coarse tune raises the pitch); channels 2-8 play the
 // sounds chromatically; random parameters and hits stay finite. CPU.
@@ -133,6 +133,44 @@ int main()
         run(e, (int)sr, ev);
         const double secs = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
         printf("  cpu: the whole machine, every sound hit 32 times a second: %.1f %% of one core\n", 100.0 * secs);
+    }
+    printf("== notes\n");
+    {
+        // the sounds in order a whole step apart from C4 (60) on channel 1 and 9-16; the General MIDI drum notes still play
+        // the same sounds (and sound the same); channels 2-8 still play their sound chromatically
+        bool order = true;
+        for (int s = 0; s < kSounds; ++s) order = order && noteForSound(s) == 60 + 2 * s && soundForNote(60 + 2 * s) == s;
+        CHECK(order, "sounds on C4 D4 E4 F#4 G#4 A#4 C5 (60-72 in whole steps)");
+        static const int gm[kSounds] = { 36, 45, 37, 38, 49, 42, 46 };
+        bool gmMap = true;
+        for (int s = 0; s < kSounds; ++s) gmMap = gmMap && soundForNote(gm[s]) == s;
+        for (int n : { 35, 41, 43, 47, 39, 48, 50, 40, 51, 52, 55, 57, 59, 44 }) gmMap = gmMap && soundForNote(n) >= 0;
+        for (int n : { 61, 63, 73, 74, 34 }) gmMap = gmMap && soundForNote(n) == -1;
+        CHECK(gmMap, "the General MIDI drum notes still map to the same sounds; odd notes between and past the new ones play nothing");
+        const double sr = 48000.0;
+        auto plays = [&](uint8_t status, int note, std::vector<float>* out) {   // the one sound a note plays, -1 none, -2 more
+            Engine e; e.prepare(sr, 512, def.data());
+            const uint32_t before = e.lastHit();
+            const auto L = run(e, (int)(0.3 * sr), { { 0, status, (uint8_t)note, 110 } });
+            if (out) *out = L;
+            const uint32_t after = e.lastHit(), n = (after >> 8) - (before >> 8);
+            return n == 0 ? -1 : n == 1 ? (int)(after & 0xFF) : -2;
+        };
+        bool allNew = true, allGm = true, same = true, ch1 = true, chrom = true;
+        for (int s = 0; s < kSounds; ++s)
+        {
+            std::vector<float> a, b;
+            allNew = allNew && plays(0x99, noteForSound(s), &a) == s;
+            allGm = allGm && plays(0x99, gm[s], &b) == s;
+            same = same && a == b;
+            ch1 = ch1 && plays(0x90, noteForSound(s), nullptr) == s && plays(0x90, gm[s], nullptr) == s;
+            chrom = chrom && plays((uint8_t)(0x91 + s), 64, nullptr) == s && plays((uint8_t)(0x91 + s), 36, nullptr) == s;
+        }
+        CHECK(allNew, "each new note plays its sound, and only that sound");
+        CHECK(allGm, "each General MIDI drum note (older patterns) still plays the same sound");
+        CHECK(same, "a sound is the same from its new note and its old one");
+        CHECK(ch1, "on channel 1 too");
+        CHECK(chrom, "channels 2-8 still play their own sound whatever the note");
     }
     if (fails) { printf("%d failure(s)\n", fails); return 1; }
     printf("all passed\n");
