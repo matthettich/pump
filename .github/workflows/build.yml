@@ -218,8 +218,26 @@ jobs:
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02   # v4
         with: { name: pump-linux, path: dist/pump-linux.tar.gz }
 
+  room:
+    # pump ROOM, the room measurement app: one self-contained page (wasm + fonts inside), opened in Chrome or Edge
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09   # v5
+      - name: wasi-sdk 25
+        run: |
+          for attempt in 1 2 3; do
+            curl -fsSL -o wasi.tgz https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-25/wasi-sdk-25.0-x86_64-linux.tar.gz && break
+            echo "download attempt $attempt failed, retrying"; sleep 10
+          done
+          tar xzf wasi.tgz
+      - name: Build
+        run: WASI_SDK=$PWD/wasi-sdk-25.0-x86_64-linux sh room/build.sh dist/pump-room.html
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02   # v4
+        with: { name: pump-room, path: dist/pump-room.html }
+
   release:
-    needs: [tests, windows, macos, linux]
+    needs: [tests, windows, macos, linux, room]
     if: github.event_name == 'push'
     runs-on: ubuntu-24.04
     permissions:
@@ -236,11 +254,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          files=$(find artifacts -type f \( -name '*.zip' -o -name '*.tar.gz' -o -name '*.pkg' \))
+          files=$(find artifacts -type f \( -name '*.zip' -o -name '*.tar.gz' -o -name '*.pkg' -o -name '*.html' \))
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             gh release create "$GITHUB_REF_NAME" $files --title "…pump $GITHUB_REF_NAME" --notes "Mastering plugins and creative effects by wake. See INSTALL.txt in each zip."
           else
             gh release delete latest --yes --cleanup-tag 2>/dev/null || true
             gh release create latest $files --prerelease --title "…pump (latest build)" \
-              --notes "Newest build from main ($GITHUB_SHA). pump MACHINE is GPL-3.0 (pump-MACHINE-NOTICE.md in each package; source: this commit). Mac: pump-macos.pkg (installer; if macOS blocks it, System Settings > Privacy & Security > Open Anyway) or pump-macos.zip. The .pkg also installs System EQ (pump EQ on everything the Mac plays) in Applications; system-eq-macos.zip has the app on its own. Windows: pump-windows.zip. Install steps are in INSTALL.txt inside each zip."
+              --notes "Newest build from main ($GITHUB_SHA). pump MACHINE is GPL-3.0 (pump-MACHINE-NOTICE.md in each package; source: this commit). Mac: pump-macos.pkg (installer; if macOS blocks it, System Settings > Privacy & Security > Open Anyway) or pump-macos.zip. The .pkg also installs System EQ (pump EQ on everything the Mac plays) in Applications; system-eq-macos.zip has the app on its own. Windows: pump-windows.zip. pump-room.html is the room measurement app: open it in Chrome or Edge on either system. Install steps are in INSTALL.txt inside each zip."
           fi

@@ -2,6 +2,16 @@
 
 Planned work that isn't scheduled yet. Newest decisions at the top of each item.
 
+## Room correction (pump ROOM) — in progress (2026-10-28)
+
+Measure the room with any calibrated measurement mic and correct it system-wide (Mac: System EQ; Windows: a free
+system-wide equalizer for now, maybe an app of its own later) and as a plugin for the master bus. Detail in [ROOM.md](ROOM.md).
+1. Measurement app — done (2026-10-28): `room/`, one page for Chrome / Edge on Mac and Windows.
+2. Averaging several positions and designing the correction (targets, limits, delays and trims) — next.
+3. pump ROOM plugin + System EQ + export for the Windows system-wide equalizer.
+4. Handheld measurement, the long-term goal: fast and easy tuning with the mic held in the hand (the mic placed by
+   time of flight from each speaker, a map guiding it through points around the listening position).
+
 ## More creative effects and instruments — planned (2026-10-24)
 
 Everything joins the suite: same look, same repo, "pump" + one word. Each one is committed and pushed when it is

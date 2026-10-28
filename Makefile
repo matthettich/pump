@@ -5,6 +5,7 @@
 #   make tests      build and run the offline DSP tests
 #   make jack       standalone apps (local testing)
 #   make wasm       pump.wasm + pump-meta.js for Thunder Plus (WASI_SDK=...; wasm/build.sh)
+#   make room       bin/pump-room.html, the room measurement app (WASI_SDK=...; room/build.sh)
 
 PLUGINS := $(patsubst plugins/%/Makefile,%,$(wildcard plugins/*/Makefile))
 
@@ -105,6 +106,12 @@ build/tests/test_machine: tests/test_machine.cpp build/tests/pffft.o build/tests
 	$(CXX) $(TEST_FLAGS) -Iplugins/machine $< build/tests/pffft.o build/tests/mfw_unity.o build/tests/mfw_unity2.o -lpthread -o $@
 
 # MACHINE (GPL-3.0) must not leak into any other plugin or into common/ (see LICENSE)
+# pump ROOM, the measurement app (a page, not a plugin)
+room:
+	sh room/build.sh
+
+.PHONY: room
+
 licence-check:
 	@sh tools/check-licence-boundary.sh
 
@@ -117,7 +124,7 @@ tests: licence-check $(TESTS) $(SYNC_TESTS) build/tests/wasm_wrapper $(PARITY_TE
 #   make tests-asan      memory errors and undefined behaviour
 #   make tests-tsan      data races
 # (SAN_TESTS names the quick, self-contained ones; add to it as more are checked.)
-SAN_TESTS ?= wav biquad dsp presets table eq band wide heat gate tune sing_bank boing
+SAN_TESTS ?= wav biquad dsp presets table eq band wide heat gate tune sing_bank boing room
 ASAN_FLAGS = -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=undefined
 TSAN_FLAGS = -O1 -g -fno-omit-frame-pointer -fsanitize=thread
 

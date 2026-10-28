@@ -2,7 +2,7 @@
 
 The pick-up doc: where things stand, what is verified and what is not, and what is open. Conventions and the layout
 are in [DEVELOPING.md](DEVELOPING.md) and the plan is in [ROADMAP.md](ROADMAP.md); this file does not repeat them.
-Last updated 2026-10-27 (GUI pass, COIL modulation, LIFE sound, AU crash fix).
+Last updated 2026-10-28 (pump ROOM measurement app; before it: GUI pass, COIL modulation, LIFE sound, AU crash fix).
 
 ## State
 
@@ -24,6 +24,25 @@ Last updated 2026-10-27 (GUI pass, COIL modulation, LIFE sound, AU crash fix).
   It ignores comments that merely mention MACHINE. Negative-tested against six injected violations.
 - DPF prints `Unknown license string 'All rights reserved (c) wake'` while generating the AU plist. Harmless: DPF only
   knows SPDX names, "Proprietary" hit the same warning, and the string is not written into the plist.
+
+## pump ROOM: room measurement (2026-10-28)
+
+Stage 1 of room correction ([ROOM.md](ROOM.md) has the plan and how it works): `room/` builds one self-contained page,
+`bin/pump-room.html` (`make room`, needs WASI_SDK; CI's `room` job builds it and the release carries it). It measures
+each speaker with a log sweep through any mic + calibration file and shows response, impulse, timing and level
+between the speakers; sessions save as JSON with the impulse responses.
+
+| What | Where | Verified by |
+|---|---|---|
+| Sweep, deconvolution (exact in band, zero outside), arrival between samples, windowed spectrum with fractional-octave smoothing, calibration files (many formats, locale-proof numbers) | `common/dsp/Room.hpp` | `tests/test_room.cpp`: loopback flat within 0.1 dB at 44.1/48/96 kHz; a simulated speaker + room within 0.1 dB 20 Hz..20 kHz; arrivals to 0.01 sample (fractional delays); L/R difference and polarity; a louder reflection doesn't win; a mic's +4 dB shelf removed by its file to 0.13 dB; 14 file formats; also under ASan+UBSan |
+| The page: devices, mic channel, level meter, pink-noise level check, calibration, L/R runs, graphs, list, save/open, TXT/WAV export | `room/app.html`, `app.css`, `app.js`, `worklet.js`, `wasm/room_wasm.cpp`, `room/build.sh` | `tools/room_e2e.mjs` (headless Chromium, `#sim` room): arrivals within 0.6 samples of the simulation, timing, calibration, save/reopen; the real-mic path with Chromium's fake devices (device lists, "not heard" message); screenshots light, dark, phone width |
+
+**Not verified:** a real measurement (real speakers, a real mic, Chrome on Mac and Windows), Bluetooth or very high
+output latency (search window is 1 s), a 192 kHz context. The owner has a MEMS measurement mic from a room correction
+system and may get its calibration file (else a USB measurement mic).
+
+**Next (stage 2):** averaging positions and designing the correction; then the ROOM plugin, System EQ and the
+export for the Windows system-wide equalizer. Handheld measurement is the owner's long-term goal (ROADMAP).
 
 ## NEXT: LIFE's sound against its reference (in progress, 2026-10-27)
 

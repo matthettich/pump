@@ -86,6 +86,24 @@ window; `pump-macos.pkg` installs it in Applications, and `system-eq-macos.zip` 
   after an update.
 - Linear phase adds latency to everything, video included: zero latency suits everyday listening.
 
+## pump ROOM (room measurement, Mac and Windows)
+
+**pump ROOM** measures your speakers in your room with any measurement microphone. It's one page,
+`pump-room.html` on the [latest release](https://github.com/matthettich/pump/releases/tag/latest): open it in Chrome
+or Edge, nothing to install. This is the first stage of room correction; turning measurements into a correction
+(pump ROOM as a plugin, in System EQ, and on Windows as settings for a free system-wide equalizer) comes next. See
+[docs/ROOM.md](docs/ROOM.md).
+
+- **START AUDIO**, pick the mic (and its input, on an interface) and the output. Allow the microphone when asked.
+- **Mic calibration:** load the mic's calibration file (frequency / dB per line: the usual .txt, .cal or .frd files
+  read as they are). Without one the mic is taken as flat.
+- **TEST LEVEL** plays pink noise: set the volume so the mic meter sits in the shaded band (-30 to -12 dBFS).
+- **MEASURE** plays a sweep from each speaker in turn and shows the response (smoothing, window, normalize), the
+  impulse view, and for both speakers how much later one arrives (and by how much to delay the other) and the level
+  difference between them.
+- Turn System EQ (and any other correction) off while measuring. **SAVE** keeps the measurements for later;
+  **TXT** and **WAV** export a response or an impulse response for other tools.
+
 ## Using them
 
 Every plugin shares the same mouse and key conventions. Press **?** in a plugin for its full list.

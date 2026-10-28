@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>pump ROOM</title>
+<style>
+@font-face { font-family: "STM"; src: url(data:font/ttf;base64,@FONT_STM@) format("truetype"); }
+@font-face { font-family: "JBM"; src: url(data:font/ttf;base64,@FONT_JBM@) format("truetype"); }
+@STYLE@
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="brand"><span class="dots">…</span>pump <b>ROOM</b></div>
+  <div class="what">ROOM MEASUREMENT</div>
+  <div class="spacer"></div>
+  <button class="key" id="theme" title="Light or dark">DARK</button>
+</header>
+
+<main>
+  <section class="panel setup">
+    <div class="cap">AUDIO</div>
+    <button class="key wide hot" id="start">START AUDIO</button>
+    <label class="row"><span>MIC</span><select id="mic" disabled><option>—</option></select></label>
+    <label class="row" id="micChRow" hidden><span>MIC INPUT</span><select id="micCh"></select></label>
+    <label class="row"><span>OUTPUT</span><select id="out" disabled><option>System output</option></select></label>
+    <div class="row"><span>RATE</span><b class="num" id="rate">—</b></div>
+    <div class="meter" title="Microphone level">
+      <div class="meter-target"></div><div class="meter-bar" id="meterBar"></div><div class="meter-hold" id="meterHold"></div>
+    </div>
+    <div class="row small"><span>MIC LEVEL</span><b class="num" id="meterText">—</b></div>
+
+    <div class="cap">MIC CALIBRATION</div>
+    <div class="calbox" id="calInfo">No file: the mic is taken as flat.</div>
+    <div class="keys2">
+      <button class="key" id="calLoad">LOAD FILE…</button>
+      <button class="key" id="calClear" disabled>CLEAR</button>
+    </div>
+    <input type="file" id="calFile" accept=".txt,.cal,.frd,.csv,text/plain" hidden>
+
+    <div class="cap">SWEEP</div>
+    <div class="row"><span>SPEAKERS</span>
+      <div class="seg" id="chans"><button data-v="L">LEFT</button><button data-v="R">RIGHT</button><button data-v="LR" class="on">BOTH</button></div>
+    </div>
+    <div class="row"><span>LENGTH</span>
+      <div class="seg" id="len"><button data-v="2">2 S</button><button data-v="4" class="on">4 S</button><button data-v="8">8 S</button></div>
+    </div>
+    <label class="row"><span>LEVEL</span><input type="range" id="level" min="-40" max="-6" step="1" value="-18"><b class="num" id="levelText">-18 dB</b></label>
+    <label class="row"><span>POSITION</span><input type="text" id="pos" value="" placeholder="Listening position" maxlength="40"></label>
+    <div class="keys2">
+      <button class="key" id="noise" disabled title="Pink noise at the sweep's level, to set the volume">TEST LEVEL</button>
+      <button class="key hot" id="measure" disabled>MEASURE</button>
+    </div>
+    <div class="progress"><div id="prog"></div></div>
+    <p class="hint">Turn off System EQ and any room correction while measuring. Mic at ear height, pointing at the ceiling or at the speakers (as its calibration file says), and keep still.</p>
+  </section>
+
+  <section class="results">
+    <div class="screen-wrap">
+      <div class="tabs">
+        <div class="seg" id="view"><button data-v="response" class="on">RESPONSE</button><button data-v="impulse">IMPULSE</button></div>
+        <div class="spacer"></div>
+        <div class="seg" id="smooth" title="Smoothing">
+          <button data-v="0">OFF</button><button data-v="48">1/48</button><button data-v="24">1/24</button><button data-v="12" class="on">1/12</button><button data-v="6">1/6</button><button data-v="3">1/3</button><button data-v="1">1/1</button>
+        </div>
+      </div>
+      <div class="screen"><canvas id="graph"></canvas><div class="empty" id="empty">Start audio, set the level, then MEASURE.</div></div>
+      <div class="tabs under">
+        <span class="lab">WINDOW</span>
+        <div class="seg" id="win" title="How much of the room goes into the response"><button data-v="100">100 MS</button><button data-v="300">300 MS</button><button data-v="500" class="on">500 MS</button></div>
+        <button class="key toggle on" id="norm" title="Line the curves up at 0 dB between 200 Hz and 2 kHz">NORMALIZE</button>
+        <button class="key toggle on" id="useCal" title="Apply the mic calibration file">MIC CAL</button>
+        <div class="spacer"></div>
+        <button class="key" id="open">OPEN…</button>
+        <button class="key" id="save" disabled>SAVE</button>
+        <input type="file" id="openFile" accept=".json,application/json" hidden>
+      </div>
+    </div>
+    <div class="panel runs">
+      <div class="cap">MEASUREMENTS</div>
+      <div id="runList"><p class="none">None yet.</p></div>
+    </div>
+  </section>
+</main>
+
+<footer class="status" id="status">Ready.</footer>
+
+<script>
+const ROOM_WASM = "@WASM@";
+const ROOM_WORKLET = @WORKLET@;
+</script>
+<script>
+@SCRIPT@
+</script>
+</body>
+</html>
