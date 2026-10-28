@@ -220,46 +220,53 @@ function setNoise(on) {
 // ---------------------------------------------------------------------------------------------------------------------
 // measuring
 
+// Play sweeps out of `sides` one after the other and record the mic in the same callbacks; returns the recording's
+// noise floor and, per side, a measurement id in the wasm (or a note why there is none). Used by MEASURE and the
+// handheld mode (its short location pings too).
+async function capture({ sides, seconds, level, preS = PRE_S, tailS = TAIL_S, searchS = SEARCH_S, minSnr = 10 }) {
+  const fs = S.fs;
+  const n = W.x.room_sweep(fs, 10, 0, seconds, level);
+  const sweep = W.f32(W.x.room_sweep_ptr(), n).slice();
+  const pre = Math.round(preS * fs), seg = n + Math.round(tailS * fs), total = pre + sides.length * seg;
+  const out = [new Float32Array(total), new Float32Array(total)];
+  sides.forEach((side, k) => out[side === 'L' ? 0 : 1].set(sweep, pre + k * seg));
+  const result = await new Promise((resolve, reject) => {
+    S.pending = { resolve, reject };
+    S.node.port.postMessage({ type: 'run', out, length: total }, [out[0].buffer, out[1].buffer]);
+  });
+  const rec = result.rec;
+  const noiseDb = pre > 0.1 * fs ? rmsDb(rec.subarray(Math.round(0.05 * fs), pre - Math.round(0.05 * fs))) : null;
+  const chans = [];
+  for (let k = 0; k < sides.length; ++k) {
+    const side = sides[k], name = side === 'L' ? 'left' : 'right';
+    const part = rec.subarray(pre + k * seg, pre + (k + 1) * seg);
+    const p = W.putF32(part);
+    const id = W.x.room_analyze(p, part.length, Math.round(Math.min(searchS, tailS) * fs));
+    W.x.room_release_buf(p);
+    if (id < 0) { chans.push({ side, id: null, note: `Nothing heard from the ${name} speaker.` }); continue; }
+    if (noiseDb !== null && W.x.room_info(id, 3) - noiseDb < minSnr) {
+      W.x.room_free(id);
+      chans.push({ side, id: null, note: `The ${name} sweep was not heard over the noise: check the output, the volume and the mic.` });
+      continue;
+    }
+    chans.push({ side, id, note: '' });
+  }
+  return { fs, noiseDb, dropped: result.dropped, chans };
+}
+
 async function measure() {
   if (!S.node || S.busy) return;
-  if (S.busy) return;
   setNoise(false);
   S.busy = true;
   $('measure').textContent = 'STOP';
   $('measure').classList.remove('hot');
   $('prog').style.width = '0%';
-  const fs = S.fs, sides = S.chans === 'LR' ? ['L', 'R'] : [S.chans];
+  const sides = S.chans === 'LR' ? ['L', 'R'] : [S.chans];
   try {
-    const n = W.x.room_sweep(fs, 10, 0, S.seconds, S.level);
-    const sweep = W.f32(W.x.room_sweep_ptr(), n).slice();
-    const pre = Math.round(PRE_S * fs), seg = n + Math.round(TAIL_S * fs), total = pre + sides.length * seg;
-    const out = [new Float32Array(total), new Float32Array(total)];
-    sides.forEach((side, k) => out[side === 'L' ? 0 : 1].set(sweep, pre + k * seg));
     status(`Measuring ${sides.map((s) => (s === 'L' ? 'left' : 'right')).join(' then ')}… keep quiet and still.`);
-    const result = await new Promise((resolve, reject) => {
-      S.pending = { resolve, reject };
-      S.node.port.postMessage({ type: 'run', out, length: total }, [out[0].buffer, out[1].buffer]);
-    });
-    const rec = result.rec;
-    const noiseDb = rmsDb(rec.subarray(Math.round(0.05 * fs), pre - Math.round(0.05 * fs)));
+    const cap = await capture({ sides, seconds: S.seconds, level: S.level });
     const name = $('pos').value.trim() || 'Position ' + (S.runs.length + 1);
-    const run = { name, time: new Date().toISOString(), fs, seconds: S.seconds, level: S.level, noiseDb, ch: [], notes: [], use: true };
-    if (result.dropped > 0) run.notes.push('The mic input dropped out during the run: measure again.');
-    for (let k = 0; k < sides.length; ++k) {
-      const part = rec.subarray(pre + k * seg, pre + (k + 1) * seg);
-      const p = W.putF32(part);
-      const id = W.x.room_analyze(p, part.length, Math.round(SEARCH_S * fs));
-      W.x.room_release_buf(p);
-      const side = sides[k];
-      if (id < 0) { run.notes.push(`Nothing heard from the ${side === 'L' ? 'left' : 'right'} speaker.`); continue; }
-      const c = channelFrom(id, side);
-      if (c.signalDb - noiseDb < 10) {
-        W.x.room_free(id);
-        run.notes.push(`The ${side === 'L' ? 'left' : 'right'} sweep was not heard over the noise: check the output, the volume and the mic.`);
-        continue;
-      }
-      run.ch.push(c);
-    }
+    const run = runFrom(cap, name, S.seconds, S.level);
     if (run.ch.length === 0) {
       status(run.notes.join(' ') || 'Nothing was measured.', true);
     } else {
@@ -279,6 +286,16 @@ async function measure() {
     renderRuns();
     draw();
   }
+}
+
+function runFrom(cap, name, seconds, level) {
+  const run = { name, time: new Date().toISOString(), fs: cap.fs, seconds, level, noiseDb: cap.noiseDb ?? -120, ch: [], notes: [], use: true };
+  if (cap.dropped > 0) run.notes.push('The mic input dropped out during the run: measure again.');
+  for (const c of cap.chans) {
+    if (c.id === null) run.notes.push(c.note);
+    else run.ch.push(channelFrom(c.id, c.side));
+  }
+  return run;
 }
 
 function stopMeasure() {
@@ -420,6 +437,7 @@ function draw() {
   $('empty').textContent = 'Start audio, set the level, then MEASURE.';
   if (S.view === 'response') drawResponse(w, h, shown);
   else if (S.view === 'impulse') drawImpulse(w, h, shown);
+  else if (S.view === 'handheld') drawHand(w, h);
   else drawCorrection(w, h);
 }
 
@@ -638,6 +656,7 @@ function saveSession() {
     correction: S.corr,
     runs: S.runs.map((run) => ({
       name: run.name, time: run.time, fs: run.fs, seconds: run.seconds, level: run.level, noiseDb: run.noiseDb, notes: run.notes, use: run.use,
+      pos: run.pos || null,
       ch: run.ch.map((c) => {
         const seg = irSegment(c);
         return { side: c.side, arrival: c.arrival, polarity: c.polarity, signalDb: c.signalDb, peakDbFS: c.peakDbFS,
@@ -666,7 +685,8 @@ async function openSession(file) {
       if (!(fs >= 8000 && fs <= 768000) || !Array.isArray(r.ch)) continue;
       const run = { name: String(r.name || 'Position'), time: String(r.time || new Date().toISOString()), fs,
                     seconds: +r.seconds || 0, level: +r.level || 0, noiseDb: +r.noiseDb || -120, ch: [],
-                    notes: Array.isArray(r.notes) ? r.notes.map(String) : [], use: r.use !== false };
+                    notes: Array.isArray(r.notes) ? r.notes.map(String) : [], use: r.use !== false,
+                    pos: r.pos && isFinite(+r.pos.x) && isFinite(+r.pos.y) ? { x: +r.pos.x, y: +r.pos.y } : undefined };
       for (const ch of r.ch) {
         if (typeof ch.ir !== 'string') continue;
         const data = unb64(ch.ir);
@@ -1132,6 +1152,276 @@ function zip(files) {
   return new Blob([...parts, ...central, new Uint8Array(e.buffer)]);
 }
 
+
+// ---------------------------------------------------------------------------------------------------------------------
+// handheld: the mic held in the hand, placed by sound alone
+//
+// Every arrival time is the system's latency plus the distance from that speaker. 1) With the mic against the left
+// speaker, a ping from each speaker gives the latency (the left one is a few cm away) and the speakers' spacing (the
+// right one is across the room). 2) At the listening spot, the distances to both speakers place the mic (speakers at
+// x = -spacing / 2 and + spacing / 2, the listener in front, y > 0): that is the center. 3) A pattern of points around
+// it; the mic's position is tracked with short pings (about one a second) and when it rests on a point a full
+// measurement of both speakers is taken there, checked (still on the point, levels) and added to the measurements.
+// Height isn't tracked (two speakers place the mic in a plane): the user keeps it at ear height.
+
+const H = {
+  lat: null, spacing: null, fs: 0, ctx: null, center: null, targets: [], done: [], cur: -1,
+  mic: null, trail: [], running: false, points: 9, info: '', infoErr: false, tail: 1.0, stopReq: false,
+};
+const HAND = { tolerance: 0.08, still: 0.04, moved: 0.12, grille: 0.03, pingS: 0.25, measureS: 1.0 };
+
+function handPos(tL, tR) {
+  const c = 343, dL = Math.max(0.01, (tL - H.lat) / H.fs * c), dR = Math.max(0.01, (tR - H.lat) / H.fs * c), sp = H.spacing;
+  const x = (dL * dL - dR * dR) / (2 * sp);
+  const y = Math.sqrt(Math.max(0, dL * dL - (x + sp / 2) * (x + sp / 2)));
+  return { x, y, dL, dR };
+}
+
+// one ping from each speaker: their arrivals (samples), or null with the reason
+async function handPing(tailS) {
+  const cap = await capture({ sides: ['L', 'R'], seconds: HAND.pingS, level: S.level, preS: 0.02, tailS, searchS: tailS, minSnr: 0 });
+  const t = {};
+  let why = '';
+  for (const c of cap.chans) {
+    if (c.id === null) { why = c.note; continue; }
+    const peak = W.x.room_info(c.id, 4);
+    t[c.side] = W.x.room_info(c.id, 0);
+    W.x.room_free(c.id);
+    if (peak > -1) why = 'The mic clipped: turn the volume or the sweep level down.';
+  }
+  if (cap.dropped > 0) why = 'The mic input dropped out.';
+  return t.L !== undefined && t.R !== undefined && !why ? { tL: t.L, tR: t.R } : { why: why || 'A speaker was not heard.' };
+}
+
+function handInfo(text, err = false) { H.info = text; H.infoErr = err; showHand(); }
+
+async function handRun(fn) {
+  if (!S.node || S.busy) { if (!S.node) handInfo('START AUDIO first.', true); return; }
+  setNoise(false);
+  S.busy = true;
+  showHand();
+  try { await fn(); } catch (e) { handInfo(e.message === 'Stopped' || e.message === 'Audio stopped' ? 'Stopped.' : 'Failed: ' + e.message, true); }
+  finally { S.busy = false; H.running = false; showHand(); renderRuns(); draw(); }
+}
+
+function handFind() {
+  return handRun(async () => {
+    H.fs = S.fs; H.ctx = S.ctx; H.lat = null; H.spacing = null; H.center = null; H.targets = []; H.done = []; H.cur = -1; H.mic = null; H.trail = [];
+    handInfo('Listening to both speakers…');
+    const p = await handPing(1.0);
+    if (p.why) { handInfo(p.why, true); return; }
+    const lat = p.tL - HAND.grille / 343 * H.fs;
+    const spacing = (p.tR - lat) / H.fs * 343;
+    if (!(spacing > 0.3 && spacing < 8)) { handInfo(`That puts the speakers ${spacing.toFixed(2)} m apart: hold the mic against the LEFT speaker and try again.`, true); return; }
+    H.lat = lat; H.spacing = spacing;
+    H.tail = Math.min(1.0, lat / H.fs + 0.06);   // pings only need the latency and a few metres
+    handInfo(`Speakers ${(spacing * 100).toFixed(0)} cm apart, latency ${(lat / H.fs * 1000).toFixed(1)} ms. Now step 2.`);
+  });
+}
+
+function handCenter() {
+  return handRun(async () => {
+    if (H.ctx !== S.ctx) { handInfo('Audio restarted since step 1: find the speakers again.', true); return; }
+    handInfo('Finding the mic…');
+    const p = await handPing(H.tail);
+    if (p.why) { handInfo(p.why, true); return; }
+    const pos = handPos(p.tL, p.tR);
+    if (pos.y < 0.3) { handInfo('The mic seems to be between the speakers or behind them: hold it at your listening spot and try again.', true); return; }
+    H.center = { x: pos.x, y: pos.y };
+    H.mic = pos; H.trail = [pos];
+    H.targets = handPattern(H.points).map(([dx, dy]) => ({ x: pos.x + dx, y: pos.y + dy }));
+    H.done = H.targets.map(() => false);
+    H.cur = 0;
+    handInfo(`Center ${pos.dL.toFixed(2)} m from the left speaker, ${pos.dR.toFixed(2)} m from the right. Press START.`);
+  });
+}
+
+// points around the center (metres: x to the right, y away from the speakers)
+function handPattern(n) {
+  const ring = (count, r, start) => Array.from({ length: count }, (_, i) => { const a = (start + i * 360 / count) * Math.PI / 180; return [r * Math.cos(a), r * Math.sin(a)]; });
+  if (n <= 5) return [[0, 0], ...ring(4, 0.3, 0)];
+  if (n <= 9) return [[0, 0], ...ring(8, 0.35, 0)];
+  return [[0, 0], ...ring(6, 0.25, 0), ...ring(6, 0.5, 30)];
+}
+
+function handCenterPattern() {
+  if (!H.center) return;
+  H.targets = handPattern(H.points).map(([dx, dy]) => ({ x: H.center.x + dx, y: H.center.y + dy }));
+  H.done = H.targets.map(() => false);
+  H.cur = 0;
+  showHand();
+  draw();
+}
+
+function handNext() {
+  const at = H.mic || H.center;
+  let best = -1, bd = 1e9;
+  H.targets.forEach((t, i) => { if (!H.done[i]) { const d = Math.hypot(t.x - at.x, t.y - at.y); if (d < bd) { bd = d; best = i; } } });
+  return best;
+}
+
+function handStart() {
+  if (H.running) { H.stopReq = true; stopMeasure(); return; }
+  return handRun(async () => {
+    if (H.ctx !== S.ctx || !H.center) { handInfo('Find the speakers and set the center first.', true); return; }
+    H.running = true; H.stopReq = false;
+    showHand();
+    if (H.cur < 0 || H.done[H.cur]) H.cur = handNext();
+    let last = null;
+    while (H.running && !H.stopReq && H.cur >= 0) {
+      const p = await handPing(H.tail);
+      if (p.why) { handInfo(p.why, true); last = null; continue; }
+      const pos = handPos(p.tL, p.tR);
+      H.mic = pos;
+      H.trail.push(pos);
+      if (H.trail.length > 40) H.trail.shift();
+      const t = H.targets[H.cur];
+      const off = Math.hypot(pos.x - t.x, pos.y - t.y);
+      const still = last && Math.hypot(pos.x - last.x, pos.y - last.y) < HAND.still;
+      last = pos;
+      if (off > HAND.tolerance) { handInfo(handDirection(pos, t)); draw(); continue; }
+      if (!still) { handInfo('On the point: hold still…'); draw(); continue; }
+      handInfo('Measuring here: hold still…');
+      draw();
+      const cap = await capture({ sides: ['L', 'R'], seconds: HAND.measureS, level: S.level, preS: 0.3, tailS: H.tail + 0.6, searchS: H.tail + 0.1 });
+      const run = runFrom(cap, `Hand ${H.done.filter(Boolean).length + 1}`, HAND.measureS, S.level);
+      const ok = run.ch.length === 2;
+      let why = run.notes.join(' ');
+      if (ok) {
+        finishRun(run);
+        const at = handPos(run.ch[0].arrival, run.ch[1].arrival);
+        if (Math.hypot(at.x - t.x, at.y - t.y) > HAND.moved) why = 'The mic moved during the measurement.';
+        else {
+          const warn = runWarnings(run);
+          if (warn.length) why = warn.join(' ');
+          run.pos = { x: at.x - H.center.x, y: at.y - H.center.y };
+        }
+      }
+      if (why) {
+        run.ch.forEach((c) => W.x.room_free(c.id));
+        handInfo(`Not kept: ${why}`, true);
+        last = null;
+        continue;
+      }
+      S.runs.push(run);
+      H.done[H.cur] = true;
+      H.cur = handNext();
+      renderRuns();
+      $('save').disabled = false;
+      const n = H.done.filter(Boolean).length;
+      handInfo(H.cur < 0 ? `All ${n} points measured. Open CORRECTION.` : `Point ${n} of ${H.targets.length} kept. Next dot.`);
+      draw();
+    }
+  });
+}
+
+function handDirection(pos, t) {
+  const dx = t.x - pos.x, dy = t.y - pos.y, parts = [];
+  if (Math.abs(dx) > 0.03) parts.push(`${Math.round(Math.abs(dx) * 100)} cm ${dx > 0 ? 'right' : 'left'}`);
+  if (Math.abs(dy) > 0.03) parts.push(`${Math.round(Math.abs(dy) * 100)} cm ${dy > 0 ? 'back' : 'forward'}`);
+  return 'Move ' + (parts.join(', ') || 'a little') + '.';
+}
+
+function handReset() { H.center = null; H.targets = []; H.done = []; H.cur = -1; H.mic = null; H.trail = []; handInfo(H.lat !== null ? 'Set the center again (step 2).' : ''); draw(); }
+
+function showHand() {
+  const ready = H.lat !== null && H.ctx === S.ctx && S.ctx !== null;
+  const finished = H.center && H.targets.length && H.done.every(Boolean);
+  const step = !ready ? 1 : (!H.center ? 2 : (finished ? 4 : 3));
+  for (const k of [1, 2, 3]) { $('hs' + k).classList.toggle('now', k === step); $('hs' + k).classList.toggle('done', k < step); }
+  $('hCal').disabled = S.busy || !S.node;
+  $('hCenter').disabled = S.busy || !ready;
+  $('hStart').disabled = (S.busy && !H.running) || !H.center || (H.cur < 0 && !H.running);
+  $('hStart').textContent = H.running ? 'STOP' : (H.done.some(Boolean) ? 'CONTINUE' : 'START');
+  $('hRestart').disabled = S.busy || !H.center;
+  const n = H.done.filter(Boolean).length;
+  const facts = [];
+  if (ready) facts.push(`SPEAKERS <b>${(H.spacing * 100).toFixed(0)} cm</b> APART · LATENCY <b>${(H.lat / H.fs * 1000).toFixed(1)} ms</b>`);
+  if (H.center) facts.push(`POINTS <b>${n} / ${H.targets.length}</b>`);
+  $('hInfo').innerHTML = facts.join('<br>') + (H.info ? `<br><span class="${H.infoErr ? 'warn' : ''}">${esc(H.info)}</span>` : '');
+  if (S.view === 'handheld') status(H.info || 'Handheld: follow the steps.', H.infoErr);
+}
+
+function drawHand(w, h) {
+  $('empty').style.display = 'none';
+  const sp = H.spacing || 2.4, cy0 = H.center ? H.center.y : 2.5;
+  // left: the whole room from above; right (once there's a center): the points, close up
+  const split = H.center && w > 560 ? Math.round(w * 0.42) : w;
+  const room = { x0: 0, x1: split, y0: 22, y1: h - 8 };
+  const X = Math.max(sp / 2 + 0.6, 1.4), y0 = -0.35, y1 = cy0 + 0.9;
+  const scale = Math.min((room.x1 - room.x0 - 30) / (2 * X), (room.y1 - room.y0 - 20) / (y1 - y0));
+  const ox = (room.x0 + room.x1) / 2, oy = room.y0 + 10 - y0 * scale;
+  const px = (x) => ox + x * scale, py = (y) => oy + y * scale;
+  g2.strokeStyle = theme.grid; g2.lineWidth = 1;
+  for (let x = -Math.floor(X * 2) / 2; x <= X; x += 0.5) { g2.beginPath(); g2.moveTo(px(x), py(y0)); g2.lineTo(px(x), py(y1)); g2.stroke(); }
+  for (let y = 0; y <= y1; y += 0.5) { g2.beginPath(); g2.moveTo(px(-X), py(y)); g2.lineTo(px(X), py(y)); g2.stroke(); }
+  const known = H.spacing !== null;
+  [[-sp / 2, 'L'], [sp / 2, 'R']].forEach(([x, name]) => {
+    const s2 = Math.max(16, 0.16 * scale);
+    g2.fillStyle = css(theme.dim); g2.fillRect(px(x) - s2 / 2 + 3, py(0) - s2 / 2 + 3, s2, s2);
+    g2.fillStyle = known ? css(theme.ink) : css(theme.panel2); g2.fillRect(px(x) - s2 / 2, py(0) - s2 / 2, s2, s2);
+    g2.strokeStyle = css(theme.ink); g2.lineWidth = 1.5; g2.strokeRect(px(x) - s2 / 2, py(0) - s2 / 2, s2, s2);
+    g2.fillStyle = known ? css(theme.on) : css(theme.ink); g2.font = font(11); g2.textAlign = 'center'; g2.textBaseline = 'middle';
+    g2.fillText(name, px(x), py(0));
+  });
+  if (H.center) {
+    g2.strokeStyle = css(theme.ink2); g2.lineWidth = 1; g2.setLineDash([3, 3]);
+    g2.beginPath(); g2.moveTo(px(-sp / 2), py(0)); g2.lineTo(px(H.center.x), py(H.center.y)); g2.lineTo(px(sp / 2), py(0)); g2.stroke(); g2.setLineDash([]);
+  }
+  const marks = (P, pxs, pys, r, bold) => {
+    H.targets.forEach((t, i) => {
+      g2.beginPath(); g2.arc(pxs(t.x), pys(t.y), r, 0, Math.PI * 2);
+      if (H.done[i]) { g2.fillStyle = css(theme.neon); g2.fill(); }
+      g2.strokeStyle = css(i === H.cur ? theme.ink : theme.ink2); g2.lineWidth = i === H.cur ? (bold ? 3.5 : 2.5) : 1.25; g2.stroke();
+      if (H.done[i] && r > 8) { g2.fillStyle = css(theme.neonInk); g2.font = font(Math.min(16, r)); g2.textAlign = 'center'; g2.textBaseline = 'middle'; g2.fillText('✓', pxs(t.x), pys(t.y)); }
+    });
+    if (H.trail.length > 1) {
+      g2.strokeStyle = css(theme.second, 0.35); g2.lineWidth = 2; g2.beginPath();
+      H.trail.forEach((p, i) => (i ? g2.lineTo(pxs(p.x), pys(p.y)) : g2.moveTo(pxs(p.x), pys(p.y)))); g2.stroke();
+    }
+    if (H.mic) {
+      g2.beginPath(); g2.arc(pxs(H.mic.x), pys(H.mic.y), bold ? 9 : 6, 0, Math.PI * 2);
+      g2.fillStyle = css(theme.second); g2.fill(); g2.strokeStyle = css(theme.ink); g2.lineWidth = 1.5; g2.stroke();
+    }
+  };
+  marks(room, px, py, Math.max(3, HAND.tolerance * scale), false);
+  if (!H.center) {
+    g2.fillStyle = css(theme.ink2); g2.font = font(12); g2.textAlign = 'center'; g2.textBaseline = 'alphabetic';
+    g2.fillText(known ? 'STEP 2: SIT WHERE YOU LISTEN, MIC AT YOUR HEAD, SET CENTER' : 'STEP 1: MIC AGAINST THE LEFT SPEAKER, FIND SPEAKERS', w / 2, h - 18);
+  }
+  g2.fillStyle = css(theme.ink2); g2.font = font(11); g2.textAlign = 'left'; g2.textBaseline = 'top';
+  g2.fillText('TOP VIEW · GRID 50 CM', 12, 8);
+  if (split >= w) return;
+
+  // the close-up: 1.5 m square around the center, grid 10 cm
+  const zone = { x0: split + 12, x1: w - 12, y0: 22, y1: h - 12 };
+  g2.strokeStyle = css(theme.ink); g2.lineWidth = 1.5;
+  g2.beginPath(); g2.moveTo(split + 0.5, 6); g2.lineTo(split + 0.5, h - 6); g2.stroke();
+  const half = 0.75, zs = Math.min(zone.x1 - zone.x0, zone.y1 - zone.y0) / (2 * half);
+  const zx0 = (zone.x0 + zone.x1) / 2, zy0 = (zone.y0 + zone.y1) / 2;
+  const qx = (x) => zx0 + (x - H.center.x) * zs, qy = (y) => zy0 + (y - H.center.y) * zs;
+  g2.strokeStyle = theme.grid; g2.lineWidth = 1;
+  for (let d = -half; d <= half + 1e-9; d += 0.1) {
+    g2.beginPath(); g2.moveTo(qx(H.center.x + d), qy(H.center.y - half)); g2.lineTo(qx(H.center.x + d), qy(H.center.y + half)); g2.stroke();
+    g2.beginPath(); g2.moveTo(qx(H.center.x - half), qy(H.center.y + d)); g2.lineTo(qx(H.center.x + half), qy(H.center.y + d)); g2.stroke();
+  }
+  g2.save(); g2.beginPath(); g2.rect(zone.x0, zone.y0, zone.x1 - zone.x0, zone.y1 - zone.y0); g2.clip();
+  marks(zone, qx, qy, HAND.tolerance * zs, true);
+  // where to go: an arrow from the mic to the current dot
+  const t = H.targets[H.cur];
+  if (t && H.mic && Math.hypot(H.mic.x - t.x, H.mic.y - t.y) > HAND.tolerance) {
+    const ax = qx(H.mic.x), ay = qy(H.mic.y), bx = qx(t.x), by = qy(t.y), ang = Math.atan2(by - ay, bx - ax);
+    const ex = bx - Math.cos(ang) * (HAND.tolerance * zs + 4), ey = by - Math.sin(ang) * (HAND.tolerance * zs + 4);
+    g2.strokeStyle = css(theme.ink); g2.lineWidth = 2.5; g2.beginPath(); g2.moveTo(ax, ay); g2.lineTo(ex, ey); g2.stroke();
+    g2.beginPath(); g2.moveTo(ex, ey);
+    g2.lineTo(ex - 12 * Math.cos(ang - 0.45), ey - 12 * Math.sin(ang - 0.45)); g2.lineTo(ex - 12 * Math.cos(ang + 0.45), ey - 12 * Math.sin(ang + 0.45));
+    g2.closePath(); g2.fillStyle = css(theme.ink); g2.fill();
+  }
+  g2.restore();
+  g2.fillStyle = css(theme.ink2); g2.font = font(11); g2.textAlign = 'left'; g2.textBaseline = 'top';
+  g2.fillText('CLOSE UP · GRID 10 CM · SPEAKERS ▲', split + 12, 8);
+}
+
 // ---------------------------------------------------------------------------------------------------------------------
 // wiring
 
@@ -1170,7 +1460,19 @@ function init() {
   $('calLoad').onclick = () => $('calFile').click();
   $('calFile').onchange = () => { const f = $('calFile').files[0]; if (f) loadCal(f); $('calFile').value = ''; };
   $('calClear').onclick = clearCal;
-  seg('view', (v) => { S.view = v; $('corrPanel').hidden = v !== 'correction'; $('smooth').style.visibility = v === 'correction' ? 'hidden' : ''; draw(); });
+  seg('view', (v) => {
+    S.view = v;
+    $('corrPanel').hidden = v !== 'correction';
+    $('handPanel').hidden = v !== 'handheld';
+    $('smooth').style.visibility = v === 'correction' || v === 'handheld' ? 'hidden' : '';
+    if (v === 'handheld') showHand();
+    draw();
+  });
+  seg('hPoints', (v) => { H.points = +v; if (H.center && !H.running && !H.done.some(Boolean)) handCenterPattern(); });
+  $('hCal').onclick = handFind;
+  $('hCenter').onclick = handCenter;
+  $('hStart').onclick = handStart;
+  $('hRestart').onclick = () => { if (!S.busy) handReset(); showHand(); };
   initCorrection();
   seg('smooth', (v) => { S.smooth = +v; draw(); });
   seg('win', (v) => {
@@ -1190,7 +1492,7 @@ function init() {
   new ResizeObserver(() => draw()).observe(canvas);
   if (document.fonts) document.fonts.ready.then(draw);
   if (S.sim) status('Test mode: a simulated room stands in for the speakers and mic. START AUDIO, then MEASURE.');
-  window.pumpRoom = { S, W, measure, startAudio, applyCal, saveSession, openSession, draw, designCorrection, saveProfile, exportWindows, exportPi };   // for tests
+  window.pumpRoom = { S, W, H, measure, startAudio, applyCal, saveSession, openSession, draw, designCorrection, saveProfile, exportWindows, exportPi };   // for tests
 }
 
 init();

@@ -59,7 +59,7 @@
   <section class="results">
     <div class="screen-wrap">
       <div class="tabs">
-        <div class="seg" id="view"><button data-v="response" class="on">RESPONSE</button><button data-v="impulse">IMPULSE</button><button data-v="correction">CORRECTION</button></div>
+        <div class="seg" id="view"><button data-v="response" class="on">RESPONSE</button><button data-v="impulse">IMPULSE</button><button data-v="correction">CORRECTION</button><button data-v="handheld">HANDHELD</button></div>
         <div class="spacer"></div>
         <div class="seg" id="smooth" title="Smoothing">
           <button data-v="0">OFF</button><button data-v="48">1/48</button><button data-v="24">1/24</button><button data-v="12" class="on">1/12</button><button data-v="6">1/6</button><button data-v="3">1/3</button><button data-v="1">1/1</button>
@@ -108,6 +108,22 @@
         <button class="key hot" id="cSave" title="A .pumproom file for pump ROOM (the plugin) and System EQ">SAVE PROFILE</button>
         <button class="key" id="cWin" title="Filters and a config file for the system-wide equalizer on Windows">EXPORT FOR WINDOWS</button>
         <button class="key" id="cPi" title="Filters, a CamillaDSP config and an install script for a Raspberry Pi between your sources and speakers">EXPORT FOR PI</button>
+      </div>
+    </div>
+    <div class="panel corr" id="handPanel" hidden>
+      <div class="cap">HANDHELD</div>
+      <div class="hand-cols">
+        <div class="hand-steps">
+          <div class="hstep" id="hs1"><b>1</b><span>Hold the mic against the <b>left</b> speaker's grille, in front of the tweeter, and press <b>FIND SPEAKERS</b>.</span></div>
+          <div class="hstep" id="hs2"><b>2</b><span>Sit where you listen. Hold the mic where your head is, at ear height, and press <b>SET CENTER</b>.</span></div>
+          <div class="hstep" id="hs3"><b>3</b><span>Press <b>START</b> and move the mic to each dot. Hold still on a dot: it measures by itself, then shows the next.</span></div>
+        </div>
+        <div>
+          <div class="row"><span>POINTS</span><div class="seg" id="hPoints"><button data-v="5">5</button><button data-v="9" class="on">9</button><button data-v="13">13</button></div></div>
+          <div class="keys2"><button class="key" id="hCal">FIND SPEAKERS</button><button class="key" id="hCenter" disabled>SET CENTER</button></div>
+          <div class="keys2"><button class="key hot" id="hStart" disabled>START</button><button class="key" id="hRestart" disabled>START OVER</button></div>
+          <div class="readout" id="hInfo"></div>
+        </div>
       </div>
     </div>
     <div class="panel runs">

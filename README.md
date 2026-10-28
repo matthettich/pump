@@ -103,9 +103,13 @@ it to Applications; the first time, right-click > Open, since it isn't notarized
   difference between them.
 - Turn System EQ (and any other correction) off while measuring. **SAVE** keeps the measurements for later;
   **TXT** and **WAV** export a response or an impulse response for other tools.
+- **HANDHELD** measures with the mic in your hand: hold it against the left speaker (*FIND SPEAKERS*: it learns
+  the spacing and the latency), then at your head where you sit (*SET CENTER*), then *START* and carry it to each dot
+  on the map: it tracks the mic by sound, says which way to move, and measures by itself when you hold still on a dot.
 - **CORRECTION** turns the measurements ticked *IN CORRECTION* (measure a few spots around where you sit) into a
   correction: target (tilt, bass, treble), range, maximum boost and cut, *SKIP NULLS* (no chasing dips EQ can't fill),
-  *PROTECT LOW END* (no boost below what the speakers can play), *TIME ALIGN*, amount. Before / after on the graph.
+  *PROTECT LOW END* (no boost below what the speakers can play), *TIME ALIGN*, *ALIGN PHASE* (each speaker's bass,
+  mids and treble lined up in time; with *LINEAR PHASE* filters), amount. Before / after on the graph.
 - **SAVE PROFILE** writes a `.pumproom` file for **pump ROOM**, the plugin (on your master bus or monitor chain:
   amount, minimum or linear phase, time alignment) and for **System EQ** on the Mac (*Room Correction* in its menu,
   *Show Room Correction…* to load the profile, per output).

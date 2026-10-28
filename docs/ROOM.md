@@ -48,12 +48,19 @@ The plan, what's built, and how the measurement works. Stage 1 (measurement) is 
    BY FREQUENCY (measured faint, corrected bold) and the spread before and after. Tested: a speaker with a 4th-order
    roll-off at 50 Hz and a crossover allpass at 2 kHz (2.5 ms spread 100 Hz..2.5 kHz -> 0.4 ms), with reflections
    4.4 dB down (still within 0.35 ms of the speaker 300 Hz..3 kHz).
-4. **Handheld measurement** — the long-term goal (the owner's): fast, easy tuning holding the mic in the hand. Before
-   each sweep, short pings from each speaker give the mic's distance to each (time of flight, from the arrival times
-   stage 1 already measures to a few hundredths of a sample); with the speakers' spacing that places the mic. A map
-   guides it to the next point, measurements too far off or too noisy are refused, about 20-40 points around the
-   listening position are averaged. Needs: a latency reference (the mic held at a known spot first, or a loopback
-   input), short sweeps, a hold-still check, and averaging that tolerates the body's reflections.
+4. **Handheld measurement** — built (2026-10-28, the owner's goal, asked for early). The app's HANDHELD view
+   (`app.js`, "handheld"): (1) FIND SPEAKERS with the mic against the left speaker's grille: a 0.25 s ping from each
+   speaker gives the system latency (the left one is taken as 3 cm away) and the speakers' spacing; (2) SET CENTER
+   at the listening spot: the two distances place the mic (speakers at x = -spacing/2 and +spacing/2, listener at
+   y > 0); (3) START: 5, 9 or 13 points around the center (rings of 0.25 / 0.3 / 0.35 / 0.5 m); the mic is tracked with
+   pings (about one a second: tail = latency + 60 ms), the close-up shows it with an arrow to the next dot and the
+   text says how far and which way; on a dot (within 8 cm) and still (moved under 4 cm since the last ping) it
+   measures both speakers (1 s sweeps), checks it didn't move (12 cm) and the levels, and adds the run ("Hand n",
+   with its position, in the correction). Height isn't tracked (two speakers place the mic in a plane only).
+   Tested: `tools/room_e2e.mjs` moves the page's simulated mic (`simMic` in the worklet): spacing within 1 cm,
+   latency exact, center within 2 cm, all 5 points kept at the right positions, the guidance shown when off the dot.
+   **Not tried with a real mic in a hand yet**: body reflections and handling noise are the open questions (short
+   sweeps and averaging many points are the defence); the tolerances in `HAND` are first guesses.
 
 ## How the measurement works
 

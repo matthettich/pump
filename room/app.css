@@ -109,8 +109,15 @@ main { flex: 1; display: grid; grid-template-columns: 330px 1fr; gap: 16px; padd
 .run-head .key.use.on { background: var(--ink); color: var(--on); }
 
 @media (max-width: 1100px) { .corr-cols { grid-template-columns: 1fr 1fr; } }
+.hand-cols { display: grid; grid-template-columns: 1.3fr 1fr; gap: 6px 22px; }
+.hstep { display: flex; gap: 10px; align-items: flex-start; padding: 6px 8px; margin-bottom: 6px; border: 1px solid var(--grid); color: var(--ink2); }
+.hstep > b { font-family: "JBM", monospace; font-weight: normal; min-width: 18px; height: 18px; line-height: 18px; text-align: center; border: var(--line) solid var(--ink2); }
+.hstep.now { border-color: var(--ink); color: var(--ink); background: var(--panel2); }
+.hstep.now > b { background: var(--ink); color: var(--on); border-color: var(--ink); }
+.hstep.done > b { background: var(--neon); color: var(--neonInk); border-color: var(--ink); }
+.hstep span b { font-weight: normal; color: var(--ink); }
 @media (max-width: 860px) {
-  .corr-cols { grid-template-columns: 1fr; }
+  .corr-cols, .hand-cols { grid-template-columns: 1fr; }
   main { grid-template-columns: 1fr; padding: 12px; }
   .screen { height: 320px; }
   .chan { grid-template-columns: 22px 44px 1fr 1fr auto; }

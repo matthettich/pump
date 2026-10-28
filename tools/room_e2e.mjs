@@ -129,6 +129,47 @@ await page.setInputFiles('#openFile', saved);
 await page.waitForFunction(() => window.pumpRoom.S.runs.length === 2, null, { timeout: 10000 });
 const again = await page.evaluate(() => window.pumpRoom.S.runs.map((r) => ({ dt: r.dtMs, ld: r.levelDiff, a: r.ch.map((c) => c.arrival) })));
 check(Math.abs(again[1].dt - again[0].dt) < 1e-6 && Math.abs(again[1].ld - again[0].ld) < 0.01, 'reopened session matches');
+// handheld: the simulated mic against the left speaker, then at the listening spot, then carried to every dot
+await page.click('#view button[data-v="handheld"]');
+await page.click('#hPoints button[data-v="5"]');
+const before = await page.evaluate(() => window.pumpRoom.S.runs.length);
+const simMic = (x, y) => page.evaluate(([a, b]) => window.pumpRoom.S.node.port.postMessage({ type: 'simMic', x: a, y: b }), [x, y]);
+await simMic(-1.2, 0.03);
+await page.click('#hCal');
+await page.waitForFunction(() => !window.pumpRoom.S.busy, null, { timeout: 20000 });
+const cal = await page.evaluate(() => ({ spacing: window.pumpRoom.H.spacing, lat: window.pumpRoom.H.lat / window.pumpRoom.H.fs * 1000, info: window.pumpRoom.H.info }));
+check(cal.spacing && Math.abs(cal.spacing - 2.4) < 0.06 && Math.abs(cal.lat - 12) < 0.3, `handheld: speakers ${cal.spacing && cal.spacing.toFixed(3)} m apart (2.4), latency ${cal.lat.toFixed(2)} ms (12) ${cal.spacing ? '' : cal.info}`);
+const seat = { x: 0.1, y: 2.6 };
+await simMic(seat.x, seat.y);
+await page.click('#hCenter');
+await page.waitForFunction(() => !window.pumpRoom.S.busy, null, { timeout: 20000 });
+const ctr = await page.evaluate(() => window.pumpRoom.H.center);
+check(ctr && Math.hypot(ctr.x - seat.x, ctr.y - seat.y) < 0.05, `handheld: center found at (${ctr && ctr.x.toFixed(3)}, ${ctr && ctr.y.toFixed(3)}) m, mic at (${seat.x}, ${seat.y})`);
+if (shots) await page.screenshot({ path: join(shots, 'room-hand-start.png') });
+await page.click('#hStart');
+// carry the mic: first a little off the dot (it must say where to go), then onto it
+let guided = false;
+for (let step = 0; step < 400; ++step) {
+  const st = await page.evaluate(() => { const H = window.pumpRoom.H; return { cur: H.cur, t: H.targets[H.cur], running: H.running, info: H.info, done: H.done.filter(Boolean).length }; });
+  if (!st.running || st.cur < 0) break;
+  if (/Move /.test(st.info)) guided = true;
+  const offDot = step % 12 < 2;
+  await simMic(st.t.x + (offDot ? 0.2 : 0.01), st.t.y + (offDot ? -0.1 : 0.01));
+  await page.waitForTimeout(250);
+}
+await page.waitForFunction(() => !window.pumpRoom.S.busy, null, { timeout: 30000 });
+const hand = await page.evaluate(() => ({ done: window.pumpRoom.H.done.filter(Boolean).length, n: window.pumpRoom.H.targets.length, info: window.pumpRoom.H.info,
+  runs: window.pumpRoom.S.runs.filter((r) => r.pos).map((r) => r.pos) }));
+check(hand.done === 5 && hand.runs.length === 5, `handheld: ${hand.done} of ${hand.n} points measured (${hand.info})`);
+check(guided, 'handheld: it said which way to move');
+const truth = [[0, 0], [0.3, 0], [0, 0.3], [-0.3, 0], [0, -0.3]];
+check(hand.runs.every((p) => truth.some(([x, y]) => Math.hypot(p.x - x, p.y - y) < 0.06)), `handheld: positions recorded within 6 cm of their dots`);
+check(await page.evaluate((b) => window.pumpRoom.S.runs.length === b + 5, before), 'handheld: the points joined the measurements');
+if (shots) await page.screenshot({ path: join(shots, 'room-hand-done.png') });
+await page.click('#view button[data-v="correction"]');
+await page.waitForTimeout(200);
+const pos = await page.evaluate(() => window.pumpRoom.S.design && window.pumpRoom.S.design.positions);
+check(pos >= 6, `the correction averages ${pos} positions (the handheld ones included)`);
 check(errors.length === 0, 'no page errors' + (errors.length ? ': ' + errors.join('; ') : ''));
 await browser.close();
 console.log(fails ? `\n${fails} FAILED` : '\nall passed');

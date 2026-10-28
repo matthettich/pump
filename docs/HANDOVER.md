@@ -2,7 +2,7 @@
 
 The pick-up doc: where things stand, what is verified and what is not, and what is open. Conventions and the layout
 are in [DEVELOPING.md](DEVELOPING.md) and the plan is in [ROADMAP.md](ROADMAP.md); this file does not repeat them.
-Last updated 2026-10-28 (pump ROOM: measurement, correction, plugin, System EQ, exports; before it: GUI pass, COIL modulation, LIFE sound, AU crash fix).
+Last updated 2026-10-28 (pump ROOM: measurement, correction, plugin, System EQ, exports, phase, handheld; before it: GUI pass, COIL modulation, LIFE sound, AU crash fix).
 
 ## State
 
@@ -30,7 +30,8 @@ Last updated 2026-10-28 (pump ROOM: measurement, correction, plugin, System EQ, 
 Room correction ([ROOM.md](ROOM.md) has the plan, how every part works and the file formats). Everything below was
 built on 2026-10-28 and has **only ever run against simulated rooms**: the owner measures real speakers for the first
 time and sends the results. The next session's job is to look at that data, fix what the real world breaks, and tune
-the correction rules on it. Do this before anything else in pump ROOM (the handheld mode waits for it).
+the correction rules on it. Later the same day the owner asked for the **handheld mode** and **phase correction**
+early: both are built too (rows below), equally untried on real hardware.
 
 ### What exists
 
@@ -43,6 +44,8 @@ the correction rules on it. Do this before anything else in pump ROOM (the handh
 | pump ROOM plugin: loads a profile (kept in the session), amount, minimum / linear phase, time align, output | `plugins/room` (engine: `RoomEngine.hpp`) | in `pump-macos.pkg` / `pump-macos.zip` / `pump-windows.zip` / linux | engine in `tests/test_room.cpp` (impulse = design, alignment, amount, linear latency; TSan); builds on all three in CI. **The window has never been opened** (no GL in the session that made it: syntax-checked against stub GL headers only) |
 | Room Correction in System EQ (Mac): ROOM's AU after the EQ, menu toggle, its own window, state per output | `system/main.mm`, `system/build.sh` | `pump-macos.pkg`, `system-eq-macos.zip` | compiles in CI. **Never run** |
 | Windows export: stereo min-phase filters at 44.1-192 kHz + a config (`If: sampleRate == ...` / `Convolution:`) for the free system-wide equalizer the owner uses | `exportWindows()` in `room/app.js` | (made by the app) | zip contents checked; the config syntax is from that equalizer's documentation, **never tried in it** |
+| Phase correction: each speaker's group delay (frequency-dependent window, octave smoothing), lined up 60 Hz..3 kHz with linear-phase filters; profile 5th column; ARRIVAL BY FREQUENCY graph | `groupDelayMs`, `designPhaseCorrection`, `designFir(..., groupDelayMs)` in `RoomCorrect.hpp`; ALIGN PHASE / NO LATENCY-LINEAR PHASE in the app; the plugin in linear phase | everything above | `tests/test_room.cpp` (a 50 Hz 4th-order roll-off + crossover allpass: 2.5 ms spread -> 0.4 ms; with reflections 4.4 dB down within 0.35 ms 300 Hz..3 kHz), e2e |
+| Handheld measurement: FIND SPEAKERS (latency + spacing with the mic at the left speaker), SET CENTER, tracked by pings, auto-capture on each dot, map + close-up with direction | HANDHELD view, `H` / `HAND` in `room/app.js`; `simMic` in `worklet.js` | the app | e2e moves the simulated mic through 5 points (positions within 6 cm, guidance shown). **Never held by a person**: body reflections, handling noise and the tolerances (`HAND`) are the open questions |
 | Pi export: mono filters per speaker and rate, a CamillaDSP v4 config, `install.sh` (filters to /etc/pump-room, CamillaDSP from GitHub if missing, a boot service) | `exportPi()` in `room/app.js` | (made by the app) | YAML parses, script parses, its device-keeping re-install merge works; **never run on a Pi or in CamillaDSP** |
 
 ### The owner's setup and what they'll send
@@ -87,11 +90,18 @@ Where Playwright lives: in the session that built this it was `/opt/npm-tools/no
    pumping or a missing low end, suspect the browser or OS still processing the mic (Windows "enhancements", a
    communications device). Different input and output devices can drift (sweep lengths are short enough that this
    should only smear the top octave).
-5. **The correction rules on a real room** (`designCorrection` in `RoomCorrect.hpp`): the low-end guard (first point
+5. **Handheld on a real mic** (if they tried it): did FIND SPEAKERS get a plausible spacing (tape-measure it)? Does
+   the tracked position jitter more than 4 cm when still (then nothing is ever captured: raise `HAND.still`)? Are
+   points rejected as "moved" (the measurement's own arrivals disagree with the pings)? Compare the handheld runs'
+   responses with a tripod measurement at the center.
+6. **Phase correction on real speakers**: the measured group delay (CORRECTION view, ARRIVAL BY FREQUENCY) should
+   rise smoothly toward the bass and step at the crossover; ragged curves mean the room dominates (fewer cycles,
+   more smoothing, a narrower band). It's only applied with linear-phase filters.
+7. **The correction rules on a real room** (`designCorrection` in `RoomCorrect.hpp`): the low-end guard (first point
    under 150 Hz that stays 6 dB under the target) can be fooled by a room null; the null rule (boost only the 1/3-oct
    deficit) and the 1/12..1/3-oct smoothing were chosen on simulations. Tune against the owner's ears, keep the tests'
    intent, add a test from the real data (anonymised responses are fine to commit as test data).
-6. **Plugin window and System EQ first run.** The owner will be the first to open both. Renoise's crash log is
+8. **Plugin window and System EQ first run.** The owner will be the first to open both. Renoise's crash log is
    `~/Library/Logs/Renoise.log` on Mac; look for the AU idle-timer patch class of problem
    (`patches/dpf/0009-...`). The profile is a ~28 KB state string with newlines: check hosts keep it (save, reopen).
    In System EQ: the menu items appear only when `pump-room.component` is inside the app.

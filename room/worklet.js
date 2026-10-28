@@ -6,6 +6,8 @@
 //               {type:'stop'}                                                  abort a run (sends 'aborted')
 //               {type:'noise', on, left, right, level}                         pink noise for setting the level
 //               {type:'sim', on}                                               simulated room instead of the mic (tests)
+//               {type:'simMic', x, y}                                          move the simulated mic (metres; speakers at
+//                                                                              x = -1.2 / +1.2, y = 0; the listener at y > 0)
 // Messages out: {type:'meter', peak, rms, outPeak}   every ~50 ms (dBFS of the mic)
 //               {type:'progress', done, length}
 //               {type:'done', rec:Float32Array, dropped}   dropped = render calls that had no mic input
@@ -32,6 +34,8 @@ class RoomIO extends AudioWorkletProcessor {
             this.noise = { on: !!m.on, left: !!m.left, right: !!m.right, gain: Math.pow(10, (m.level || -20) / 20) };
         } else if (m.type === 'sim') {
             this.sim = m.on ? this.makeSim() : null;
+        } else if (m.type === 'simMic' && this.sim) {
+            this.placeSimMic(m.x, m.y);
         }
     }
 
@@ -52,12 +56,23 @@ class RoomIO extends AudioWorkletProcessor {
         const chan = (dist, refl) => ({
             filters: [hp(40, 0.7), peak(110, 5, 9), peak(3000, 1.5, -5)],
             taps: [{ d: lat + Math.round(dist / 343 * fs), g: 0.5 }].concat(refl.map(([d, g]) => ({ d: lat + Math.round(d / 343 * fs), g }))),
+            extra: refl.map(([d]) => d - dist),   // the reflections' extra path (they move with the mic)
         });
         return {
             size, buf: [new Float32Array(size), new Float32Array(size)], w: 0,
             ch: [chan(2.9, [[4.1, 0.22], [6.3, 0.12]]), chan(3.1, [[3.8, 0.2], [7.0, 0.1]])],
-            seed: 12345,
+            seed: 12345, lat, speakers: [[-1.2, 0], [1.2, 0]],
         };
+    }
+
+    placeSimMic(x, y) {
+        const s = this.sim, fs = sampleRate;
+        s.ch.forEach((c, i) => {
+            const [sx, sy] = s.speakers[i];
+            const dist = Math.max(0.01, Math.hypot(x - sx, y - sy));
+            c.taps[0].d = s.lat + Math.round(dist / 343 * fs);
+            c.extra.forEach((e, k) => { c.taps[k + 1].d = s.lat + Math.round((dist + e) / 343 * fs); });
+        });
     }
 
     simSample(outL, outR) {
