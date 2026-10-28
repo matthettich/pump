@@ -1,0 +1,89 @@
+diff --git a/distrho/src/DistrhoUIAU.mm b/distrho/src/DistrhoUIAU.mm
+index fb3b1cd..cc11fb2 100644
+--- a/distrho/src/DistrhoUIAU.mm
++++ b/distrho/src/DistrhoUIAU.mm
+@@ -115,15 +115,7 @@ public:
+        #endif
+ 
+         // setup idle timer
+-        constexpr const CFTimeInterval interval = 60 * 0.0001;
+-
+-        CFRunLoopTimerContext context = {};
+-        context.info = this;
+-        fTimerRef = CFRunLoopTimerCreate(kCFAllocatorDefault, CFAbsoluteTimeGetCurrent() + interval, interval, 0, 0,
+-                                         _idleCallback, &context);
+-        DISTRHO_SAFE_ASSERT_RETURN(fTimerRef != nullptr,);
+-
+-        CFRunLoopAddTimer(CFRunLoopGetCurrent(), fTimerRef, kCFRunLoopCommonModes);
++        startIdle();
+ 
+         // setup property listeners
+         AudioUnitAddPropertyListener(fComponent, kAudioUnitProperty_SampleRate, auPropertyChangedCallback, this);
+@@ -147,11 +139,37 @@ public:
+         AudioUnitRemovePropertyListenerWithUserData(fComponent, 'DPFs', auPropertyChangedCallback, this);
+        #endif
+ 
++        stopIdle();
++    }
++
++    // The idle timer runs only while the view is in a window. Hosts close the editor and dispose of the plugin while
++    // the (autoreleased) view can still be alive for a moment; a timer left running then idled a UI whose plugin was
++    // already gone (Renoise: SIGSEGV in the timer callback after "Uninitialize"). Invalidating works from any thread
++    // and removes the timer from every run loop it was added to.
++    void startIdle()
++    {
+         if (fTimerRef != nullptr)
+-        {
+-            CFRunLoopRemoveTimer(CFRunLoopGetCurrent(), fTimerRef, kCFRunLoopCommonModes);
+-            CFRelease(fTimerRef);
+-        }
++            return;
++
++        constexpr const CFTimeInterval interval = 60 * 0.0001;
++
++        CFRunLoopTimerContext context = {};
++        context.info = this;
++        fTimerRef = CFRunLoopTimerCreate(kCFAllocatorDefault, CFAbsoluteTimeGetCurrent() + interval, interval, 0, 0,
++                                         _idleCallback, &context);
++        DISTRHO_SAFE_ASSERT_RETURN(fTimerRef != nullptr,);
++
++        CFRunLoopAddTimer(CFRunLoopGetMain(), fTimerRef, kCFRunLoopCommonModes);
++    }
++
++    void stopIdle()
++    {
++        if (fTimerRef == nullptr)
++            return;
++
++        CFRunLoopTimerInvalidate(fTimerRef);
++        CFRelease(fTimerRef);
++        fTimerRef = nullptr;
+     }
+ 
+     void postSetup()
+@@ -420,8 +438,25 @@ using DISTRHO_NAMESPACE::d_nextSampleRate;
+   return YES;
+ }
+ 
++- (void) viewWillMoveToWindow:(NSWindow*)newWindow
++{
++    // leaving its window (the editor closed, or the host took the view away): stop idling the UI at once
++    if (ui != nullptr)
++    {
++        if (newWindow == nil)
++            ui->stopIdle();
++        else
++            ui->startIdle();
++    }
++
++    [super viewWillMoveToWindow:newWindow];
++}
++
+ - (void) dealloc
+ {
++    if (ui != nullptr)
++        ui->stopIdle();
++
+     delete ui;
+     ui = nullptr;
+ 
