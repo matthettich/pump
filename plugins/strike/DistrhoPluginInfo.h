@@ -4,7 +4,7 @@
 #define DISTRHO_PLUGIN_BRAND           "wake instruments"
 #define DISTRHO_PLUGIN_NAME            "pump STRIKE Drum Synth"   // hosts identify plugins by the ids below, not the name
 #define PUMP_PLUGIN_KIND               "Drum Synth"   // shown next to the tag in the window
-#define PUMP_PLUGIN_ABOUT              "A drum synth of seven engines: modal membranes, plates, bars and bells with snare wires; waveguide strings; analog bridged-T circuits; three-operator FM; west-coast folds through a low-pass gate; additive cymbals and gongs; and chaos. Eight pads a whole step apart from C4 (the General MIDI drum notes play them too)."
+#define PUMP_PLUGIN_ABOUT              "A drum synth of seven engines: modal membranes, plates, bars and bells with snare wires; waveguide strings; analog bridged-T circuits; three-operator FM; west-coast folds through a low-pass gate; additive cymbals and gongs; and chaos. Eight pads on the white keys up from C4 (the General MIDI drum notes play them too)."
 #define DISTRHO_PLUGIN_URI             "https://github.com/matthettich/pump#strike"
 #define DISTRHO_PLUGIN_CLAP_ID         "com.wake.pump.strike"
 #define DISTRHO_PLUGIN_BRAND_ID        Wake

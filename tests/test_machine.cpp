@@ -1,4 +1,4 @@
-// pump MACHINE: the sounds sit on C4 up in whole steps and the GM drum notes still play them; every sound plays from its MIDI note at 44.1 and 48 kHz; a hit sounds the same at both rates; two
+// pump MACHINE: the sounds sit on C4 up the white keys and the GM drum notes still play them; every sound plays from its MIDI note at 44.1 and 48 kHz; a hit sounds the same at both rates; two
 // instances interleaved block by block each match an instance rendered alone, bit for bit (the firmware's state is
 // swapped correctly); a parameter change reaches the voice (coarse tune raises the pitch); channels 2-8 play the
 // sounds chromatically; random parameters and hits stay finite. CPU.
@@ -136,16 +136,16 @@ int main()
     }
     printf("== notes\n");
     {
-        // the sounds in order a whole step apart from C4 (60) on channel 1 and 9-16; the General MIDI drum notes still play
+        // the sounds in order on the white keys up from C4 (60) on channel 1 and 9-16; the General MIDI drum notes still play
         // the same sounds (and sound the same); channels 2-8 still play their sound chromatically
         bool order = true;
-        for (int s = 0; s < kSounds; ++s) order = order && noteForSound(s) == 60 + 2 * s && soundForNote(60 + 2 * s) == s;
-        CHECK(order, "sounds on C4 D4 E4 F#4 G#4 A#4 C5 (60-72 in whole steps)");
+        for (int s = 0; s < kSounds; ++s) order = order && noteForSound(s) == whiteKeyNote(s) && soundForNote(whiteKeyNote(s)) == s;
+        CHECK(order, "sounds on C4 D4 E4 F4 G4 A4 B4 (the white keys from 60)");
         static const int gm[kSounds] = { 36, 45, 37, 38, 49, 42, 46 };
         bool gmMap = true;
         for (int s = 0; s < kSounds; ++s) gmMap = gmMap && soundForNote(gm[s]) == s;
         for (int n : { 35, 41, 43, 47, 39, 48, 50, 40, 51, 52, 55, 57, 59, 44 }) gmMap = gmMap && soundForNote(n) >= 0;
-        for (int n : { 61, 63, 73, 74, 34 }) gmMap = gmMap && soundForNote(n) == -1;
+        for (int n : { 61, 63, 66, 72, 73, 74, 34 }) gmMap = gmMap && soundForNote(n) == -1;
         CHECK(gmMap, "the General MIDI drum notes still map to the same sounds; odd notes between and past the new ones play nothing");
         const double sr = 48000.0;
         auto plays = [&](uint8_t status, int note, std::vector<float>* out) {   // the one sound a note plays, -1 none, -2 more

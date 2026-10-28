@@ -245,7 +245,7 @@ protected:
     }
     std::vector<std::pair<std::string, std::string>> helpLines() override
     {
-        return { { "Click a pad / keys 1-8", "play it and edit it (higher in the pad = harder)" }, { "MIDI", "C4 up in whole steps (C4 kick ... D5 cymbal); General MIDI drum notes too" },
+        return { { "Click a pad / keys 1-8", "play it and edit it (higher in the pad = harder)" }, { "MIDI", "C4 up the white keys (C4 kick, D4 snare, E4 rim ... C5 cymbal); General MIDI drum notes too" },
                  { "TONE / CHAR A / CHAR B", "named for what they do in the pad's engine" } };
     }
     std::string footerInfo() override

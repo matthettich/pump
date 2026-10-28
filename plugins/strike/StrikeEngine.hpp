@@ -168,8 +168,8 @@ private:
         // the General MIDI drum notes (the pads' notes before 2026-10-27, so older patterns still play)
         static const int gm[kPads] = { 36, 38, 37, 43, 48, 42, 46, 49 };
         for (int p = 0; p < kPads; ++p) if (gm[p] == m.d1) { hit(p, m.d2 / 127.0); return; }
-        // and what is left of the old run of pads up from 60 in semitones: 60, 62, 64 and 66 are the pads' own notes now,
-        // so only 61 (snare), 63 (low tom), 65 (closed hat) and 67 (cymbal) still play their old pads
+        // and what is left of the old run of pads up from 60 in semitones: the white keys are the pads' own notes now,
+        // so only 61 (snare) and 63 (low tom) still play their old pads
         if (m.d1 >= 61 && m.d1 < 60 + kPads && (m.d1 & 1)) hit(m.d1 - 60, m.d2 / 127.0);
     }
 

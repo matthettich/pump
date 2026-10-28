@@ -1,5 +1,6 @@
 // pump KIT: parameters and factory kits (shared by the DSP and the UI).
 #pragma once
+#include "dsp/Util.hpp"
 
 #include "PumpParams.hpp"
 #include <deque>
@@ -28,17 +29,17 @@ static const char* const kModelNames[] = { "Kick", "Snare", "Clap", "Hat", "Tom"
 static const char* const kModelKeys[] = { "KICK", "SNARE", "CLAP", "HAT", "TOM", "METAL", "FM", "NOISE" };
 
 struct PadInfo { const char* sym; const char* name; const char* label; int note; int model; float tune, decay, pitch, pdecay, tone, noise, click, chr, drive, level, pan; };
-// The pads play in order, a whole step apart from C4 (60): C4 D4 E4 F#4 G#4 A#4 C5 D5. The General MIDI drum notes
+// The pads play in order on the white keys up from C4 (60): C4 D4 E4 F4 G4 A4 B4 C5 (whiteKeyNote). The General MIDI drum notes
 // (36 kick, 38 snare..., the toms 41-50 at their own pitches) still play them too: see padForNote.
 static const PadInfo kPadInfo[kPads] = {
-    { "kick",  "Kick",       "KICK",   60, kKick,       0, 450, 30, 40, 50,   0, 40, 20, 10,   0,   0 },
-    { "snare", "Snare",      "SNARE",  62, kSnare,      0, 220, 12, 30, 55,  60, 40, 50,  0,  -2,   0 },
-    { "clap",  "Clap",       "CLAP",   64, kClap,       0, 260,  0, 20, 50, 100,  0, 50,  0,  -4,  10 },
-    { "chat",  "Closed Hat", "C-HAT",  66, kHat,        0,  60,  0, 10, 60,  30, 20, 50,  0,  -8, -20 },
-    { "ohat",  "Open Hat",   "O-HAT",  68, kHat,        0, 420,  0, 10, 60,  30,  0, 50,  0,  -9, -20 },
-    { "tom",   "Tom",        "TOM",    70, kTom,        0, 350, 14, 60, 50,   5, 20, 30,  0,  -4,  25 },
-    { "perc",  "Perc",       "PERC",   72, kFm,         0, 160, 24, 40, 60,   0, 30, 35,  0,  -8, -30 },
-    { "cym",   "Cymbal",     "CYMBAL", 74, kMetal,      0, 1500, 0, 10, 55,  30,  0, 50,  0, -12,  30 },
+    { "kick",  "Kick",       "KICK",   whiteKeyNote(0), kKick,       0, 450, 30, 40, 50,   0, 40, 20, 10,   0,   0 },
+    { "snare", "Snare",      "SNARE",  whiteKeyNote(1), kSnare,      0, 220, 12, 30, 55,  60, 40, 50,  0,  -2,   0 },
+    { "clap",  "Clap",       "CLAP",   whiteKeyNote(2), kClap,       0, 260,  0, 20, 50, 100,  0, 50,  0,  -4,  10 },
+    { "chat",  "Closed Hat", "C-HAT",  whiteKeyNote(3), kHat,        0,  60,  0, 10, 60,  30, 20, 50,  0,  -8, -20 },
+    { "ohat",  "Open Hat",   "O-HAT",  whiteKeyNote(4), kHat,        0, 420,  0, 10, 60,  30,  0, 50,  0,  -9, -20 },
+    { "tom",   "Tom",        "TOM",    whiteKeyNote(5), kTom,        0, 350, 14, 60, 50,   5, 20, 30,  0,  -4,  25 },
+    { "perc",  "Perc",       "PERC",   whiteKeyNote(6), kFm,         0, 160, 24, 40, 60,   0, 30, 35,  0,  -8, -30 },
+    { "cym",   "Cymbal",     "CYMBAL", whiteKeyNote(7), kMetal,      0, 1500, 0, 10, 55,  30,  0, 50,  0, -12,  30 },
 };
 
 inline const std::vector<ParamSpec>& params()

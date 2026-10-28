@@ -20,8 +20,8 @@ struct Settings {
     double kitDrive = 0.0, velocity = 0.6, humanize = 0.0, volumeDb = -6.0;
 };
 
-// which pad a note plays, and at what pitch offset (semitones); -1 = none. The pads' own notes (C4 up in whole steps,
-// 60-74) first; then the General MIDI drum notes (the pads' notes before 2026-10-27, so older patterns still play)
+// which pad a note plays, and at what pitch offset (semitones); -1 = none. The pads' own notes (C4 up the white keys,
+// 60-72) first; then the General MIDI drum notes (the pads' notes before 2026-10-27, so older patterns still play)
 inline int padForNote(int note, double& offset)
 {
     offset = 0.0;

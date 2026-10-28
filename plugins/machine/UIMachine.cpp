@@ -251,7 +251,7 @@ protected:
     std::vector<std::pair<std::string, std::string>> helpLines() override
     {
         return { { "Click a pad / keys 1-7", "play it and edit its voice (higher in the pad = harder)" },
-                 { "MIDI", "C4 up in whole steps (C4 drum 1 ... C5 open hat); General MIDI drum notes too; channels 2-8 play the sounds chromatically" },
+                 { "MIDI", "C4 up the white keys (C4 drum 1 ... B4 open hat); General MIDI drum notes too; channels 2-8 play the sounds chromatically" },
                  { "Sound engine", "an open-source drum machine firmware, modified (not official); GPL-3.0, see NOTICE.md" } };
     }
     std::string footerInfo() override

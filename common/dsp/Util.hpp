@@ -52,6 +52,19 @@ constexpr int kAnalyzerRing = 1 << 16;
 
 template <typename T> inline T clampv(T v, T lo, T hi) { return v < lo ? lo : (v > hi ? hi : v); }
 
+// The drum plugins' pads (KIT, BOING, STRIKE, MACHINE) sit in order on the white keys up from C4 (60):
+// C4 D4 E4 F4 G4 A4 B4 C5 D5 ... so a keyboard plays kick, snare, clap, hat... one white key each.
+constexpr int kWhiteKeySteps[7] = { 0, 2, 4, 5, 7, 9, 11 };   // semitones above C of C D E F G A B
+constexpr int whiteKeyNote(int i) { return 60 + 12 * (i / 7) + kWhiteKeySteps[i % 7]; }
+// the pad (index) a note's white key is, or -1 for a black key / below C4
+constexpr int whiteKeyIndex(int note)
+{
+    if (note < 60) return -1;
+    const int o = (note - 60) / 12, k = (note - 60) % 12;
+    const int i = k == 0 ? 0 : k == 2 ? 1 : k == 4 ? 2 : k == 5 ? 3 : k == 7 ? 4 : k == 9 ? 5 : k == 11 ? 6 : -1;
+    return i < 0 ? -1 : o * 7 + i;
+}
+
 // One-pole coefficient for a time constant in seconds (reaches 1 - 1/e after `seconds`).
 inline double tauCoef(double seconds, double sampleRate)
 {

@@ -166,10 +166,10 @@ int main()
     }
     printf("== notes\n");
     {
-        // the pads in order a whole step apart from C4 (60); the General MIDI drum notes still play the same pads, the same
+        // the pads in order on the white keys up from C4 (60); the General MIDI drum notes still play the same pads, the same
         bool order = true;
-        for (int p = 0; p < kPads; ++p) order = order && kPadInfo[p].note == 60 + 2 * p;
-        CHECK(order, "pads on C4 D4 E4 F#4 G#4 A#4 C5 D5 (60-74 in whole steps)");
+        for (int p = 0; p < kPads; ++p) order = order && kPadInfo[p].note == whiteKeyNote(p);
+        CHECK(order, "pads on C4 D4 E4 F4 G4 A4 B4 C5 (the white keys from 60)");
         static const int gm[kPads] = { 36, 38, 39, 42, 46, 45, 37, 49 };
         bool allNew = true, allGm = true, same = true;
         for (int p = 0; p < kPads; ++p)

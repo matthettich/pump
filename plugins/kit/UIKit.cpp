@@ -259,7 +259,7 @@ protected:
     }
     std::vector<std::pair<std::string, std::string>> helpLines() override
     {
-        return { { "Click a pad / keys 1-8", "play it and edit it (higher in the pad = harder)" }, { "MIDI", "C4 up in whole steps (C4 kick ... D5 cymbal); General MIDI drum notes too, toms 41-50 at their own pitches" } };
+        return { { "Click a pad / keys 1-8", "play it and edit it (higher in the pad = harder)" }, { "MIDI", "C4 up the white keys (C4 kick, D4 snare, E4 clap, F4 hat ... C5 cymbal); General MIDI drum notes too, toms 41-50 at their own pitches" } };
     }
     std::string footerInfo() override
     {
