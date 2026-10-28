@@ -69,7 +69,7 @@ int main()
     {
         // saved connections keep their meaning: sources and targets that existed before LFO 3 kept their numbers
         static_assert(mod::kSrcLfo1 == 1 && mod::kSrcLfo2 == 2 && mod::kSrcVelocity == 3 && mod::kSrcRandom == 7 && mod::kSrcLfo3 == 8, "source numbers are saved");
-        CHECK(lfoRateTarget(0) == 15 && lfoRateTarget(1) == 16 && lfoRateTarget(2) == 17 && kNumTargets == 18, "targets: LFO 1, 2, 3 rates are 15, 16, 17");
+        CHECK(lfoRateTarget(0) == 15 && lfoRateTarget(1) == 16 && lfoRateTarget(2) == 17 && targetOfParam(kBowPressure) == 18 && targetOfParam(kBowSpeed) == 19, "targets keep their numbers: LFO 1, 2, 3 rates 15, 16, 17; bow pressure and speed after (18, 19)");
         CHECK(lfoParam(2, kLfoShape) == kSlotBase + 3 * mod::kSlots && lfoParam(1, kLfoRetrig) == kSlotBase - 1, "LFO 3's settings come after the connections");
         Dsp a; a.prepareDsp();
         Dsp b; connect(b, 9, mod::kSrcLfo3, targetOfParam(kTension), 80.0f); b.values[lfoParam(2, kLfoRate)] = 3.0f; b.prepareDsp();

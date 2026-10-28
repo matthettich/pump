@@ -28,6 +28,10 @@ public:
         harmD = dial(kHarmonic, "HARMONIC", false, "0: the springs' own clang and drip · 100: the partials line up into a clean pluck", Dial::Large);
         spreadD = dial(kSpread, "SPREAD", false, "0: every spring on the note · 100: the tank's own length ratios (an inharmonic cluster)");
         exciteD = dial(kExcite, "EXCITE", false, "The kick: more thump (0) or more crack (100)");
+        bowSeg = addSegmented(kBowed, { "STRUCK", "BOWED" });
+        bowSeg->tip = "STRUCK: every note kicks the springs · BOWED: a bow rubs them, singing while the key is held";
+        pressD = dial(kBowPressure, "PRESSURE", false, "How hard the bow presses: light and airy, then richer, then raspy");
+        speedD = dial(kBowSpeed, "SPEED", false, "How fast the bow moves: louder and brighter (velocity scales it)");
         decayD = dial(kDecay, "DECAY");
         relD = dial(kRelease, "RELEASE", false, "How fast a note dies once the key is up");
         velD = dial(kVelocity, "VELOCITY", false, "How much velocity sets the kick's strength");
@@ -61,7 +65,7 @@ public:
 
         springsView.tank = true;
         const std::pair<int, Dial*> dl[] = { { kTension, tensionD }, { kDrip, dripD }, { kWobble, wobbleD }, { kGrit, gritD }, { kTone, toneD },
-                                             { kHarmonic, harmD }, { kSpread, spreadD }, { kExcite, exciteD }, { kDecay, decayD }, { kRelease, relD },
+                                             { kHarmonic, harmD }, { kSpread, spreadD }, { kExcite, exciteD }, { kBowPressure, pressD }, { kBowSpeed, speedD }, { kDecay, decayD }, { kRelease, relD },
                                              { kVelocity, velD }, { kTank, tankD }, { kWidth, widthD }, { kVolume, volD },
                                              { lfoParam(0, kLfoRate), lRate[0] }, { lfoParam(1, kLfoRate), lRate[1] },
                                              { lfoParam(2, kLfoRate), lRate[2] } };
@@ -86,10 +90,11 @@ protected:
     {
         const float top = 58, sh = 240, hm = Dial::heightFor(Dial::Medium), hl = Dial::heightFor(Dial::Large);
         // top: the springs; beside them VOICE (the dials that change the springs most); KICK over the scope; meters
-        springsR = Rect(14, top, 600, sh);
-        voicePanel = Rect(626, top, 170, sh);
-        harmD->r = Rect(641, top + 24, 140, hl);
-        spreadD->r = Rect(631, top + 126, 80, hm); exciteD->r = Rect(711, top + 126, 80, hm);
+        springsR = Rect(14, top, 560, sh);
+        voicePanel = Rect(586, top, 210, sh);
+        harmD->r = Rect(621, top + 24, 140, hl);
+        bowSeg->r = Rect(598, top + 212, 186, 20);
+        layoutVoiceRow();
         kickR = Rect(808, top, 152, 84);
         scopeR = Rect(808, top + 96, 152, sh - 96);
         meterL = Rect(966, top, 8, sh - 12); meterR = Rect(977, top, 8, sh - 12);
@@ -137,6 +142,15 @@ protected:
         }
     }
 
+    // VOICE's lower row: SPREAD and EXCITE when struck; SPREAD, PRESSURE and SPEED when bowed
+    void layoutVoiceRow()
+    {
+        const float top = voicePanel.y, hm = Dial::heightFor(Dial::Medium);
+        const bool bowed = value(kBowed) >= 0.5f;
+        exciteD->visible = !bowed; pressD->visible = speedD->visible = bowed;
+        if (bowed) { spreadD->r = Rect(592, top + 126, 66, hm); pressD->r = Rect(658, top + 126, 66, hm); speedD->r = Rect(724, top + 126, 66, hm); }
+        else { spreadD->r = Rect(601, top + 126, 90, hm); exciteD->r = Rect(691, top + 126, 90, hm); }
+    }
     // ---- modulation: pages, sources, connections ----
     void setPage(int p) { page = p; applyPage(); saveUi(); }
     void selectSource(int s) { selSrc = pump::clampv(s, 1, pump::mod::kNumSources - 1); page = 1; applyPage(); saveUi(); }
@@ -226,6 +240,7 @@ protected:
     {
         t += dt;
         gritD->enabled = value(kModel) >= 3.5f;
+        layoutVoiceRow();
         applyPage();
         if (shapesDirty && shapeDrag == kNoShapeDrag) sendShapes();
         for (int L = 0; L < pump::mod::kNumLfos; ++L)
@@ -263,8 +278,6 @@ protected:
         auto panel = [&](const Rect& r, const char* c) { strokeRect(r, theme.dim, 1.0f); caption(r.x + 12, r.y + 16, c); };
         panel(voicePanel, "VOICE"); panel(playPanel, "PLAY");
         if (page == 0) { panel(springPanel, "SPRING"); panel(envPanel, "ENVELOPE  ·  TANK"); }
-        const float h = value(kHarmonic) * 0.01f;
-        textAt(voicePanel.cx(), voicePanel.b() - 12, h < 0.2f ? "CLANG AND DRIP" : h < 0.8f ? "IN BETWEEN" : "A CLEAN PLUCK", kLabel, 9.0f, theme.ink2, ALIGN_CENTER | ALIGN_MIDDLE, 0.8f);
         if (page == 0) drawEnvelope();
         else { drawEditor(); drawConnections(); }
         drawSources();
@@ -844,7 +857,7 @@ protected:
     std::vector<std::pair<std::string, std::string>> helpLines() override
     {
         return { { "Keys / MIDI", "every note tunes the springs to it and kicks them" }, { "KICK / K", "kick the ringing springs and the tank (Shift: a nudge)" },
-                 { "HARMONIC", "the springs' clang (0) to a clean pluck (100)" }, { "TANK", "SPRING's own tank around the notes" },
+                 { "HARMONIC", "the springs' clang (0) to a clean pluck (100)" }, { "STRUCK / BOWED", "kick the springs, or bow them: they sing while the key is held (PRESSURE, SPEED)" }, { "TANK", "SPRING's own tank around the notes" },
                  { "MODULATION", "drag a source's grip onto any dial; its ring shows the swing" }, { "MOD page", "the source's settings and every connection (x removes)" } };
     }
     std::string footerInfo() override
@@ -881,6 +894,8 @@ private:
     int rowSlot[kRows] = {};
     std::vector<std::pair<int, Dial*>> targetDials;
     Segmented* modelSeg;
+    Segmented* bowSeg;
+    Dial *pressD, *speedD;
     Dial *tensionD, *dripD, *wobbleD, *gritD, *toneD, *harmD, *spreadD, *exciteD, *decayD, *relD, *velD, *tankD, *widthD, *octD, *bendD, *volD, *voicesD;
     KeyboardUI keyboard;
     pump::coil::SpringsView springsView;

@@ -2261,3 +2261,6 @@ COIL 128 lfo3_retrig
 COIL 129 lfo1_draw
 COIL 130 lfo2_draw
 COIL 131 lfo3_draw
+COIL 132 bowed
+COIL 133 bow_pressure
+COIL 134 bow_speed

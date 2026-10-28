@@ -113,6 +113,7 @@ private:
         s.excite = v[kExcite] * 0.01; s.tank = v[kTank] * 0.01; s.grit = v[kGrit]; s.width = v[kWidth] * 0.01;
         s.octave = (int)v[kOctave]; s.bend = v[kBend]; s.velocity = v[kVelocity] * 0.01; s.volumeDb = v[kVolume] + kTrimDb;
         s.voices = (int)v[kVoices];
+        s.bowed = v[kBowed] >= 0.5f; s.bowPressure = v[kBowPressure] * 0.01; s.bowSpeed = v[kBowSpeed] * 0.01;
         return s;
     }
 

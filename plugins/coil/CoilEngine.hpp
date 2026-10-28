@@ -22,6 +22,10 @@
 //              (aliasing): the cheap digital "spring", in tune
 //   TANK       the real SPRING of the same model, kicked by every note and fed the voices: exactly SPRING's sound,
 //              as a body around the tuned springs
+//   BOWED      instead of a kick, a bow: friction between a moving bow and the loop's wave where it comes round (the
+//              bowed string's stick and slip: the wave is dragged along while it sticks, let go when it slips), fed
+//              back every pass, so the spring sings for as long as the key is held. PRESSURE is how hard it presses
+//              (more stick: richer, then raspy), SPEED how fast it moves (louder, brighter); velocity sets the speed
 // COIL plays notes (poly, 8 voices; velocity is the kick's strength). TWANG is a resonator: its input, through
 // SPRING's driver (DWELL), excites springs tuned to the held MIDI notes or to a chord.
 #pragma once
@@ -48,6 +52,9 @@ struct Settings {
     int tuning = kTuneChord, root = 9, chord = kChordFifth;
     double dwell = 50.0, mix = 0.5;
     int voices = 8;   // COIL's VOICES (TWANG keeps 8)
+    // COIL's bow (BOWED instead of struck)
+    bool bowed = false;
+    double bowPressure = 0.5, bowSpeed = 0.5;
 };
 
 constexpr int kMaxVoices = 16, kMaxSections = spring::kSections;
@@ -135,6 +142,10 @@ public:
         silentFor = 0;
     }
     void release(const Settings& s) { held = false; design(s, false); }
+    // the bow's speed for this note (0..1 of the full speed: the velocity)
+    void setBowScale(double v) { bowScale = clampv(v, 0.0, 1.5); }
+    // the bow feels the wave up to this many times the note (tuning experiments may change it)
+    static inline double kBowLpRatio = 3.0;
     void kick(double strength) { if (!active) return; burst.trigger(strength); hitSprings(); }
     // each spring takes the kick a little harder or softer; all with the same sign (tuned alike, springs hit with
     // opposite signs would cancel each other in mono)
@@ -172,8 +183,12 @@ public:
     {
         if (!active) return;
         const double k = burst.next();
+        // the bow: on while the key is held (a short attack), lifted when it goes up
+        bowEnv += ((bowing && held ? 1.0 : 0.0) - bowEnv) * (bowing && held ? bowAtt : bowRel);
+        bowV = bowEnv > 1e-5 ? bowSpeedV * bowScale * bowEnv * (1.0 + 0.05 * rng.bi()) : 0.0;
         double L = 0.0, R = 0.0;
         if (digital) digitalStep(x, k, frac, L, R); else tankStep(x, k, frac, L, R);
+        if (bowing) { L *= kBowOut; R *= kBowOut; }   // a held bowed note sits about as loud as a struck one sounds
         oL += L; oR += R;
         const double e = std::fabs(L) + std::fabs(R);
         energy += (e - energy) * 0.0005;
@@ -191,9 +206,18 @@ private:
         model = clampv(s.model, 0, spring::kNumModels - 1);
         digital = spring::isDigital(model);
         const double h = clampv(s.harmonic, 0.0, 1.0), sp = clampv(s.spread, 0.0, 1.0);
-        const double P0 = sr / freq;
+        // bowed, the friction moves a tank's pitch a little: about 10 cents sharp up to C4, then less (measured over
+        // the models): the loop is made that much longer (the digital ones need nothing)
+        const double bowTune = spring::isDigital(clampv(s.model, 0, spring::kNumModels - 1)) ? 1.0 : 1.006 - 0.008 * clampv(std::log2(freq / 261.63), 0.0, 1.0);
+        const double P0 = sr / freq * (s.bowed ? bowTune : 1.0);
         const double t60 = held ? clampv(s.decay, 0.05, 20.0) : clampv(std::min(s.decay, s.release), 0.02, 20.0);
         wobDepth = clampv(s.wobble, 0.0, 1.0) * 0.004;
+        bowing = s.bowed;
+        bowSlope = 5.5 - 3.0 * clampv(s.bowPressure, 0.0, 1.0);
+        bowSpeedV = 0.05 + 0.55 * clampv(s.bowSpeed, 0.0, 1.0);
+        bowDcK = 1.0 - std::exp(-kTwoPi * 0.08 * freq / sr);
+        bowLpK = 1.0 - std::exp(-kTwoPi * std::min(0.4 * sr, kBowLpRatio * freq) / sr);
+        bowAtt = 1.0 - std::exp(-1.0 / (0.06 * sr)); bowRel = 1.0 - std::exp(-1.0 / (0.012 * sr));
         burst.mixCrack = 0.4 + 1.2 * clampv(s.excite, 0.0, 1.0);
         burst.mixThump = 1.6 - 1.2 * clampv(s.excite, 0.0, 1.0);
         if (digital)
@@ -304,7 +328,7 @@ private:
             const double d = dl[l].cur + wobFrom[l] + (wobTo[l] - wobFrom[l]) * frac;
             const float t = line[l].read(d);
             tap[l] = t;
-            xs[l] = (float)(x * inNorm[l] + k * kickG[l] + g[l].cur * t);
+            xs[l] = (float)(x * inNorm[l] + k * kickG[l] + g[l].cur * t + (bowV > 0.0 ? bowAt(l, t) : 0.0));
         }
         f4 v;
         std::memcpy(&v, xs, sizeof v);
@@ -378,7 +402,7 @@ private:
         for (int l = 0; l < lanes; ++l)
         {
             const double y = comb[l].read(dl[l].cur);
-            comb[l].push((float)spring::truncate(inHeld * (kickG[l] * kickPart + inNorm[l] * (1.0 - kickPart)) + g[l].cur * damp[l].lp(y), loopQ));
+            comb[l].push((float)spring::truncate(inHeld * (kickG[l] * kickPart + inNorm[l] * (1.0 - kickPart)) + g[l].cur * damp[l].lp(y) + (bowV > 0.0 ? bowAt(l, y) : 0.0), loopQ));
             o[0] += panL[l] * norm[l] * y; o[1] += panR[l] * norm[l] * y;
         }
         // the output held between clock ticks (no reconstruction filter worth the name)
@@ -386,6 +410,28 @@ private:
         L += hold[0] * kDigitalOut; R += hold[1] * kDigitalOut;
     }
 
+    // the bow on the wave t coming round: the velocity difference through the friction curve (it sticks when they
+    // move nearly alike, slips when they differ), the bowed string's junction
+    // (the wave's slow drift is taken out first: the bow would otherwise just push the whole loop along, a DC
+    // offset, instead of setting it swinging)
+    inline double bowAt(int l, double t)
+    {
+        bowDc[l] += (t - bowDc[l]) * bowDcK;
+        // the bow feels the wave's lower partials: a dispersive spring's sharp corners come round at their own
+        // (different) times and would drag the stick-and-slip off the note
+        bowLp[l] += (t - bowDc[l] - bowLp[l]) * bowLpK;
+        // and the push it gives has its drift taken out too, so the loop can never fill up with a standing offset
+        const double f = bowForce(bowLp[l]);
+        bowFdc[l] += (f - bowFdc[l]) * bowDcK;
+        return f - bowFdc[l];
+    }
+    inline double bowForce(double t) const
+    {
+        const double dv = bowV - kBowWave * t;
+        double f = std::fabs(dv * bowSlope) + 0.75;
+        f = f * f; f = std::min(1.0, 1.0 / (f * f));
+        return kBowIn * dv * f;
+    }
     // SPRING's kick, with EXCITE leaning it toward the crack or the thump
     struct KickB {
         fx::Rng rng { 0x51A7u };
@@ -407,6 +453,11 @@ private:
 
     static constexpr int kChirp = 6;
     static constexpr double kHfLevel = 0.35, kLoopOut = 0.6, kDigitalOut = 0.5;
+    // the bow: how the loop's wave reads as the string's velocity at the bow, and how much of its force goes in
+    static constexpr double kBowWave = 1.0, kBowIn = 1.0, kBowOut = 0.5;
+    double bowEnv = 0.0, bowV = 0.0, bowScale = 1.0, bowSlope = 3.0, bowSpeedV = 0.15, bowAtt = 0.001, bowRel = 0.002;
+    double bowDc[4] = {}, bowFdc[4] = {}, bowLp[4] = {}, bowDcK = 0.01, bowLpK = 0.1;
+    bool bowing = false;
     double sr = 48000.0, freq = 220.0, glideK = 0.05, wobDepth = 0.0, energy = 0.0;
     int kint = 4, rows = 16, lanes = 2, sections = -1, wpos = 0, model = 0, note = -1, silentFor = 0;
     bool active = false, held = false, digital = false;
@@ -668,7 +719,10 @@ private:
             case synth::VoiceCmd::Glide:
             {
                 const double vel = c.velocity >= 0.0f ? c.velocity : 0.8;
-                const double strength = set.resonator ? 0.0 : (1.0 - set.velocity * (1.0 - vel)) * 1.2;
+                // bowed: a soft touch of the kick sets the spring moving, so the bow catches it at once (a low note
+                // would otherwise take most of a second to build)
+                const double strength = set.resonator ? 0.0 : (1.0 - set.velocity * (1.0 - vel)) * (set.bowed ? 0.35 : 1.2);
+                v.setBowScale(1.0 - set.velocity * (1.0 - vel));
                 v.modVel = vel;
                 modRng = modRng * 1664525u + 1013904223u;
                 v.modRnd = (double)(modRng >> 8) * (2.0 / 16777216.0) - 1.0;

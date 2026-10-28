@@ -171,6 +171,7 @@ int main()
                     s.model = (int)(u(rng) * 6); s.tension = u(rng) * 200 - 100; s.drip = 100 * u(rng); s.decay = 0.1 + 15 * u(rng) * u(rng); s.release = 0.02 + 4 * u(rng);
                     s.harmonic = u(rng); s.spread = u(rng); s.wobble = u(rng); s.tone = u(rng) * 2 - 1; s.excite = u(rng); s.tank = u(rng) < 0.3 ? u(rng) : 0.0; s.grit = 100 * u(rng);
                     s.width = u(rng); s.octave = (int)(u(rng) * 5) - 2; s.resonator = u(rng) < 0.3; s.tuning = (int)(u(rng) * 3); s.root = (int)(u(rng) * 12); s.chord = (int)(u(rng) * kNumChords); s.mix = u(rng);
+                    s.bowed = u(rng) < 0.35; s.bowPressure = u(rng); s.bowSpeed = u(rng);
                     e.setSettings(s);
                 }
                 for (auto& x : in) x = (float)(0.4 * (u(rng) * 2 - 1));
@@ -191,6 +192,51 @@ int main()
             run(e, (int)sr, ev);
             const double secs = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
             printf("  cpu: 8 three-spring voices: %.1f %% of one core\n", 100.0 * secs);
+        }
+    }
+    printf("== bowed\n");
+    {
+        const double sr = 48000.0;
+        for (int model : { 0, 1, 3, 4 })
+        {
+            double worst = 0.0, lowHeld = 1e9, maxAfter = 0.0, struckPeak = 0.0, bowedLevel = 0.0;
+            for (int note : { 36, 48, 60, 72 })
+            {
+                Engine e; Settings s; s.model = model; s.bowed = true; e.prepare(sr, 256); e.setSettings(s);
+                const auto x = run(e, (int)(3.0 * sr), { { 0, 0x90, (uint8_t)note, 100 }, { (uint32_t)(2.0 * sr), 0x80, (uint8_t)note, 0 } });
+                const double want = 440.0 * std::exp2((note - 69) / 12.0);
+                const double f = peakHz(spectrum(x, (size_t)(1.2 * sr), 16384, sr), want * 0.8, want * 1.25);
+                worst = std::max(worst, std::fabs(cents(f, want)));
+                if (std::getenv("COIL_TUNE")) printf("    model %d note %d: %+.1f cents\n", model, note, cents(f, want));
+                lowHeld = std::min(lowHeld, rms(x, (size_t)(1.5 * sr), (size_t)(2.0 * sr)) / std::max(1e-9, rms(x, (size_t)(0.5 * sr), (size_t)(1.0 * sr))));
+                maxAfter = std::max(maxAfter, rms(x, (size_t)(2.6 * sr), (size_t)(3.0 * sr)));
+                if (note == 60)
+                {
+                    bowedLevel = rms(x, (size_t)(1.0 * sr), (size_t)(2.0 * sr));
+                    Engine st; Settings ss; ss.model = model; st.prepare(sr, 256); st.setSettings(ss);
+                    struckPeak = rms(run(st, (int)(0.3 * sr), { { 0, 0x90, 60, 100 } }), 0, (size_t)(0.3 * sr));
+                }
+            }
+            CHECK(worst < 40.0, "model %d: bowed notes in tune (worst %.0f cents, C2..C5; a bow pulls a little)", model, worst);
+            CHECK(lowHeld > 0.7, "model %d: it keeps singing while held (level holds to %.0f %%)", model, 100 * lowHeld);
+            CHECK(maxAfter < 1e-3, "model %d: and stops once the key is up (%.5f rms after)", model, maxAfter);
+            CHECK(bowedLevel < 2.0 * struckPeak && bowedLevel > 0.25 * struckPeak, "model %d: a held bowed C4 (%.3f rms) sits near a struck one's first 0.3 s (%.3f)", model, bowedLevel, struckPeak);
+        }
+        // pressure and speed change it; extremes stay finite and bounded
+        {
+            double prev = -1.0; bool differ = true, sane = true;
+            for (double p : { 0.0, 0.5, 1.0 }) for (double v : { 0.0, 1.0 })
+            {
+                Engine e; Settings s; s.model = 1; s.bowed = true; s.bowPressure = p; s.bowSpeed = v; e.prepare(sr, 256); e.setSettings(s);
+                std::vector<synth::Midi> ev; for (int k = 0; k < 6; ++k) ev.push_back({ 0, 0x90, (uint8_t)(30 + 11 * k), 127 });
+                const auto x = run(e, (int)(2.0 * sr), ev);
+                for (float y : x) if (!std::isfinite(y) || std::fabs(y) > 4.0f) sane = false;
+                const double r = rms(x, (size_t)sr, (size_t)(2 * sr));
+                if (prev >= 0.0 && std::fabs(r - prev) < 1e-6) differ = false;
+                prev = r;
+            }
+            CHECK(sane, "six bowed notes at every pressure and speed: finite and bounded");
+            CHECK(differ, "pressure and speed change the sound");
         }
     }
     if (fails) { printf("%d failure(s)\n", fails); return 1; }

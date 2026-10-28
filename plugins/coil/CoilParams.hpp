@@ -33,7 +33,9 @@ enum Param : int {
     kLfo3Base = kSlotBase + 3 * pump::mod::kSlots,
     // appended 2026-10-28: each LFO plays its drawn shape instead (the shapes are saved as the "shapes" state)
     kDrawBase = kLfo3Base + 5,
-    kNumParams = kDrawBase + 3
+    // appended 2026-10-28: the bow (BOWED instead of struck)
+    kBowed = kDrawBase + 3, kBowPressure, kBowSpeed,
+    kNumParams
 };
 inline int lfoDrawParam(int lfo) { return kDrawBase + lfo; }
 enum LfoParam : int { kLfoShape = 0, kLfoRate, kLfoSync, kLfoDiv, kLfoRetrig, kPerLfo };
@@ -45,10 +47,10 @@ inline int slotParam(int slot, int what) { return kSlotBase + slot * kPerSlot + 
 // slot's target is saved as this index.)
 static const int kTargetParams[] = { -1, kTension, kDrip, kDecay, kRelease, kHarmonic, kSpread, kWobble, kTone, kExcite, kTank, kGrit,
                                      kWidth, kVelocity, kVolume, -2 /* LFO 1 rate */, -3 /* LFO 2 rate */,
-                                     -4 /* LFO 3 rate */ };
+                                     -4 /* LFO 3 rate */, kBowPressure, kBowSpeed };
 static const char* const kTargetNames[] = { "None", "Tension", "Drip", "Decay", "Release", "Harmonic", "Spread", "Wobble", "Tone", "Excite",
                                             "Tank", "Grit", "Width", "Velocity", "Volume", "LFO 1 rate", "LFO 2 rate",
-                                            "LFO 3 rate" };
+                                            "LFO 3 rate", "Bow pressure", "Bow speed" };
 constexpr int kNumTargets = (int)(sizeof(kTargetParams) / sizeof(kTargetParams[0]));
 // the target that is LFO l's rate, and which LFO's rate a target is (-1: none)
 inline int lfoRateTarget(int l) { for (int t = 1; t < kNumTargets; ++t) if (kTargetParams[t] == -2 - l) return t; return 0; }
@@ -111,6 +113,10 @@ inline const std::vector<ParamSpec>& params()
     // appended 2026-10-28
     for (int l = 0; l < 3; ++l)
         v.push_back({ str("lfo" + std::to_string(l + 1) + "_draw"), str("LFO " + std::to_string(l + 1) + " Drawn"), "Draw", 0, 1, 0, PUnit::None, PScale::Linear, kPAutomatable | kPBoolean, nullptr, 1 });
+    // appended 2026-10-28: the bow
+    v.push_back({ "bowed", "Bowed", "Bowed", 0, 1, 0, PUnit::None, PScale::Linear, kPAutomatable | kPBoolean, nullptr, 1 });
+    v.push_back({ "bow_pressure", "Bow Pressure", "Pressure", 0, 100, 50, PUnit::Percent, PScale::Linear, A, nullptr, 1 });
+    v.push_back({ "bow_speed", "Bow Speed", "Speed", 0, 100, 50, PUnit::Percent, PScale::Linear, A, nullptr, 1 });
     return v;
     }();
     return v;
