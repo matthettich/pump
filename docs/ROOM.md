@@ -97,6 +97,13 @@ The plan, what's built, and how the measurement works. Stage 1 (measurement) is 
 - **Exports:** TXT (frequency, dB, phase 0, every 1/48 octave, with the current smoothing, window and calibration:
   the usual text format other tools import) and WAV (the impulse response, 32-bit float).
 
+## On the web
+
+CI's `pages` job puts the room job's page on the `gh-pages` branch (as `index.html`, with `.nojekyll`) on every push to
+main, force-pushed as a single commit with plain git. GitHub Pages serves it at https://matthettich.github.io/pump/
+once the repo's Settings > Pages source is "Deploy from a branch: gh-pages, / (root)" (a one-time setting the owner
+makes; sessions can't reach the Pages API). HTTPS is what the browser needs for the microphone.
+
 ## The desktop app
 
 `room/electron/` wraps the same page in Electron (`main.js`): one window, only the microphone and output choice

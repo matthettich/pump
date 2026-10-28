@@ -92,7 +92,8 @@ window; `pump-macos.pkg` installs it in Applications, and `system-eq-macos.zip` 
 **pump ROOM** measures your speakers in your room with any measurement microphone. On the
 [latest release](https://github.com/matthettich/pump/releases/tag/latest): `pump-room-macos.zip` (the Mac app: drag
 it to Applications; the first time, right-click > Open, since it isn't notarized), `pump-room-windows-setup.exe` or
-`pump-room-windows.zip` (Windows), or the same thing as one page, `pump-room.html`, to open in Chrome or Edge. See [docs/ROOM.md](docs/ROOM.md) for how it works.
+`pump-room-windows.zip` (Windows), or the same thing as one page, `pump-room.html`, to open in Chrome or Edge. It's also on the web at
+**https://matthettich.github.io/pump/** (the newest build from main). See [docs/ROOM.md](docs/ROOM.md) for how it works.
 
 - **START AUDIO**, pick the mic (and its input, on an interface) and the output. Allow the microphone when asked.
 - **Mic calibration:** load the mic's calibration file (frequency / dB per line: the usual .txt, .cal or .frd files
