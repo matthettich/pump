@@ -58,8 +58,8 @@ The plan, what's built, and how the measurement works. Stage 1 (measurement) is 
 allowed, no network, Save / Open through the system's file dialogs. `sh room/electron/build.sh` (after `make room`)
 packages it on a Mac (universal `pump ROOM.app`, ad-hoc signed, zipped) or on Windows (installer + zip); CI's
 `room-app-mac` and `room-app-windows` jobs do that and run the packaged app once with `PUMP_ROOM_SMOKE=1`, which
-measures the simulated room and fails the build if the timing is off. Electron and its packager come from npm at
-build time (latest; the CI log prints the versions). Not notarized yet: the first open on a Mac is right-click > Open.
+measures the simulated room and fails the build if the timing is off. Electron (45.1.0) and its packager (26.18.0) come
+from npm at build time, pinned in build.sh. Not notarized yet: the first open on a Mac is right-click > Open.
 
 ## Notes
 

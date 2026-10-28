@@ -1,7 +1,6 @@
 #!/bin/sh
 # Packages pump ROOM as a desktop app with Electron: run on a Mac for the Mac app, on Windows (Git Bash) for Windows.
-# Needs bin/pump-room.html first (make room) and Node. Electron and its packager are fetched by npm (latest), not
-# committed; CI prints the versions it used.
+# Needs bin/pump-room.html first (make room) and Node. Electron and its packager are fetched by npm (pinned below).
 #
 #   sh room/electron/build.sh            -> room/electron/dist/
 #     Mac:     pump-room-macos.zip ("pump ROOM.app", universal, ad-hoc signed)
@@ -14,7 +13,8 @@ E="$H/room/electron"
 mkdir -p "$E/app"
 cp "$H/bin/pump-room.html" "$E/app/pump-room.html"
 cd "$E"
-npm install --no-audit --no-fund --save-dev electron@latest electron-builder@latest   # (records them in package.json for the packager; not committed)
+# pinned (the versions the first CI build used); recorded in package.json for the packager while it runs, not committed
+npm install --no-audit --no-fund --save-dev electron@45.1.0 electron-builder@26.18.0
 npx electron --version
 npx electron-builder --version
 case "$(uname -s)" in

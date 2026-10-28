@@ -10,8 +10,13 @@
     "appId": "com.wake.pump-room",
     "productName": "pump ROOM",
     "copyright": "(c) wake",
-    "directories": { "output": "dist" },
-    "files": ["main.js", "app/**"],
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "app/**"
+    ],
     "mac": {
       "icon": "icon.png",
       "category": "public.app-category.music",
@@ -24,14 +29,27 @@
     },
     "win": {
       "icon": "icon.png",
-      "target": [{ "target": "nsis", "arch": ["x64"] }, { "target": "zip", "arch": ["x64"] }]
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "pump-room-windows.${ext}"
     },
     "nsis": {
       "oneClick": false,
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,
       "artifactName": "pump-room-windows-setup.${ext}"
-    },
-    "zip": { "artifactName": "pump-room-windows.${ext}" }
+    }
   }
 }
