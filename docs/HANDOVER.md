@@ -2,11 +2,11 @@
 
 The pick-up doc: where things stand, what is verified and what is not, and what is open. Conventions and the layout
 are in [DEVELOPING.md](DEVELOPING.md) and the plan is in [ROADMAP.md](ROADMAP.md); this file does not repeat them.
-Last updated 2026-10-28 (pump ROOM measurement app; before it: GUI pass, COIL modulation, LIFE sound, AU crash fix).
+Last updated 2026-10-28 (pump ROOM: measurement, correction, plugin, System EQ, exports; before it: GUI pass, COIL modulation, LIFE sound, AU crash fix).
 
 ## State
 
-- 28 plugins (effects, mastering, instruments), VST3 + CLAP everywhere, AU on macOS. All 28 build on macOS with
+- 29 plugins (effects, mastering, instruments, and ROOM room correction), VST3 + CLAP everywhere, AU on macOS. All build on macOS with
   `make -C plugins/<name> MACOS=true` (serial per plugin, see "Build gotchas").
 - CI (`.github/workflows/build.yml`) builds Windows x64 (MinGW cross-compile), macOS universal, Linux, runs the DSP
   tests and the licence-boundary check, and refreshes the `latest` pre-release on every push to `main`.
@@ -25,38 +25,95 @@ Last updated 2026-10-28 (pump ROOM measurement app; before it: GUI pass, COIL mo
 - DPF prints `Unknown license string 'All rights reserved (c) wake'` while generating the AU plist. Harmless: DPF only
   knows SPDX names, "Proprietary" hit the same warning, and the string is not written into the plist.
 
-## pump ROOM: room measurement (2026-10-28)
+## NEXT: pump ROOM, the owner's first real measurement (2026-10-29 or later)
 
-Stage 1 of room correction ([ROOM.md](ROOM.md) has the plan and how it works): `room/` builds one self-contained page,
-`bin/pump-room.html` (`make room-page`, needs WASI_SDK; CI's `room` job builds it and the release carries it). It measures
-each speaker with a log sweep through any mic + calibration file and shows response, impulse, timing and level
-between the speakers; sessions save as JSON with the impulse responses.
+Room correction ([ROOM.md](ROOM.md) has the plan, how every part works and the file formats). Everything below was
+built on 2026-10-28 and has **only ever run against simulated rooms**: the owner measures real speakers for the first
+time and sends the results. The next session's job is to look at that data, fix what the real world breaks, and tune
+the correction rules on it. Do this before anything else in pump ROOM (the handheld mode waits for it).
 
-| What | Where | Verified by |
-|---|---|---|
-| Sweep, deconvolution (exact in band, zero outside), arrival between samples, windowed spectrum with fractional-octave smoothing, calibration files (many formats, locale-proof numbers) | `common/dsp/Room.hpp` | `tests/test_room.cpp`: loopback flat within 0.1 dB at 44.1/48/96 kHz; a simulated speaker + room within 0.1 dB 20 Hz..20 kHz; arrivals to 0.01 sample (fractional delays); L/R difference and polarity; a louder reflection doesn't win; a mic's +4 dB shelf removed by its file to 0.13 dB; 14 file formats; also under ASan+UBSan |
-| The page: devices, mic channel, level meter, pink-noise level check, calibration, L/R runs, graphs, list, save/open, TXT/WAV export | `room/app.html`, `app.css`, `app.js`, `worklet.js`, `wasm/room_wasm.cpp`, `room/build.sh` | `tools/room_e2e.mjs` (headless Chromium, `#sim` room): arrivals within 0.6 samples of the simulation, timing, calibration, save/reopen; the real-mic path with Chromium's fake devices (device lists, "not heard" message); screenshots light, dark, phone width |
+### What exists
 
-Also a desktop app (2026-10-28): `room/electron/` (Electron) packaged by CI for Mac and Windows and smoke-tested on
-the simulated room in the packaged app. It could not be built in the session that made it (no npm registry access
-there): the first CI run is its first build.
+| Part | Where | Ships as (CI, `latest` release) | Verified |
+|---|---|---|---|
+| Measurement DSP: log sweeps, deconvolution, arrival between samples, windowed spectra, smoothing, mic calibration files | `common/dsp/Room.hpp` | inside everything below | `tests/test_room.cpp` (known rooms within 0.1 dB, arrivals to 0.01 sample, 14 cal-file formats; ASan) |
+| Correction design: power average per speaker, target (tilt, bass, treble), cuts on detail / boosts only on the 1/3-octave deficit, no boost below the roll-off, limits, band, amount, time alignment, preamp; min/linear-phase FIR design; `.pumproom` profiles | `common/dsp/RoomCorrect.hpp` | inside everything below | `tests/test_room.cpp` (rules against known rooms, FIRs within 0.07 dB of the design, profile round trip) |
+| The app: measure (devices, level check, cal file, L/R sweeps), RESPONSE / IMPULSE / CORRECTION views, session save/open, SAVE PROFILE, EXPORT FOR WINDOWS, EXPORT FOR PI | `room/` (`app.html`, `app.css`, `app.js`, `worklet.js`), `wasm/room_wasm.cpp`, `room/build.sh` (`make room-page`) | `pump-room.html` (Chrome / Edge) | `tools/room_e2e.mjs` (headless Chromium on the page's `#sim` room: timing, cal, correction, every export, save/reopen) |
+| Desktop app (Electron around the page) | `room/electron/` | `pump-room-macos.zip`, `pump-room-windows-setup.exe`, `pump-room-windows.zip` | CI packages both and runs each once with `PUMP_ROOM_SMOKE=1` (measures the sim room, checks the timing) |
+| pump ROOM plugin: loads a profile (kept in the session), amount, minimum / linear phase, time align, output | `plugins/room` (engine: `RoomEngine.hpp`) | in `pump-macos.pkg` / `pump-macos.zip` / `pump-windows.zip` / linux | engine in `tests/test_room.cpp` (impulse = design, alignment, amount, linear latency; TSan); builds on all three in CI. **The window has never been opened** (no GL in the session that made it: syntax-checked against stub GL headers only) |
+| Room Correction in System EQ (Mac): ROOM's AU after the EQ, menu toggle, its own window, state per output | `system/main.mm`, `system/build.sh` | `pump-macos.pkg`, `system-eq-macos.zip` | compiles in CI. **Never run** |
+| Windows export: stereo min-phase filters at 44.1-192 kHz + a config (`If: sampleRate == ...` / `Convolution:`) for the free system-wide equalizer the owner uses | `exportWindows()` in `room/app.js` | (made by the app) | zip contents checked; the config syntax is from that equalizer's documentation, **never tried in it** |
+| Pi export: mono filters per speaker and rate, a CamillaDSP v4 config, `install.sh` (filters to /etc/pump-room, CamillaDSP from GitHub if missing, a boot service) | `exportPi()` in `room/app.js` | (made by the app) | YAML parses, script parses, its device-keeping re-install merge works; **never run on a Pi or in CamillaDSP** |
 
-**Not verified:** a real measurement (real speakers, a real mic, Chrome on Mac and Windows), Bluetooth or very high
-output latency (search window is 1 s), a 192 kHz context. The owner has a MEMS measurement mic from a room correction
-system and may get its calibration file (else a USB measurement mic).
+### The owner's setup and what they'll send
 
-Stages 2 and 3 (same day): the app's CORRECTION view (`common/dsp/RoomCorrect.hpp`), `.pumproom` profiles, the
-Windows export, the **pump ROOM plugin** (`plugins/room`) and **Room Correction in System EQ** (`system/main.mm`: ROOM's
-AU after the EQ, its own window and per-output state). Verified: `tests/test_room.cpp` (correction rules against known
-rooms, FIRs within 0.07 dB of the design, profiles, the plugin engine: impulse = design, time alignment, amount, linear
-latency; ASan and TSan), `tools/room_e2e.mjs` (correction, profile, Windows zip). **Not verified here:** the plugin's
-window and System EQ's changes were only compiled in CI (no GL headers or macOS in the session that made them; the
-UI was syntax-checked against stub GL headers); nobody has run either yet. The Windows config's `If: sampleRate ==`
-/ `ElseIf:` / `EndIf:` lines follow the equalizer's documented syntax but weren't tried in it.
+- Mic: a MEMS measurement mic from a commercial room-correction kit; they hoped to get its calibration file, else
+  they'll buy a USB measurement mic. Main computer Windows (Renoise, VST3, plug-in sandboxing on, 150 %+ display
+  scaling); also Macs (Ableton Live; System EQ). They want this for their studio and for several rooms in the house
+  (turntable, streamer, phone; one cheap Pi box per room: Pi Zero 2 W + a 16-bit USB line in/out interface named
+  "CODEC" under ALSA, which is what the Pi export's defaults assume).
+- Expect: one or more **session files** (`pump-room-*.json`: every speaker's impulse response from 20 ms before the
+  direct sound to 1 s after, arrivals, levels, the calibration file's text, the correction settings), maybe a
+  `.pumproom`, screenshots, and notes on what they heard. Ask which app (page / desktop), browser, OS and audio
+  interface, the speakers, and roughly where they sat if it isn't in the notes.
 
-Handheld measurement is the owner's long-term goal (ROADMAP).
+### How to look at a session
 
-## NEXT: LIFE's sound against its reference (in progress, 2026-10-27)
+```
+make room-page                     # needs WASI_SDK (wasi-sdk 25; download from its GitHub releases)
+node tools/room_session.mjs path/to/session.json build/room-session    # Playwright
+```
+
+`tools/room_session.mjs` opens the session in the built page with the app's own code and writes `summary.txt` (per
+run and speaker: arrival, SNR, sweep level at the mic, peak, polarity; L/R timing and level; the correction with the
+session's own settings: preamp, delays, low-end limit, largest cut and boost), `responses.csv` (every speaker,
+1/12 octave), `correction.csv` (averaged measurement, target, correction, predicted result per speaker) and screenshots
+of the three views. Plot the CSVs (matplotlib) and send the owner images when discussing curves.
+
+Where Playwright lives: in the session that built this it was `/opt/npm-tools/node_modules` (link it as
+`node_modules` in the repo root for the run, then remove the link). npm's registry was blocked there.
+
+### What to check first, and the likely failures
+
+1. **Levels.** SNR under ~30 dB or peaks over -1 dBFS make everything else noise: tell the owner to change the volume /
+   sweep level, not the code. Sweep at the mic around -30..-12 dBFS is the aim.
+2. **Was the direct sound found?** Arrival = system latency + distance (a few ms to a few tens of ms). The search
+   window is the first 1 s after the sweep starts (`SEARCH_S` in `app.js`): Bluetooth or a big buffer could exceed it.
+   L/R difference should match the geometry (343 m/s: 1 ms = 34.3 cm). Polarity should agree between speakers.
+3. **Calibration sign.** Files list the mic's own deviation; the code subtracts it. If corrected responses get worse
+   (e.g. a rising top end gets steeper), the file may be the other convention. Check a known-flat region. MEMS mic
+   files often come as 0° and 90° versions: ask which way the mic pointed.
+4. **Browser audio.** Echo cancellation / noise suppression / AGC are requested off; if the response has odd
+   pumping or a missing low end, suspect the browser or OS still processing the mic (Windows "enhancements", a
+   communications device). Different input and output devices can drift (sweep lengths are short enough that this
+   should only smear the top octave).
+5. **The correction rules on a real room** (`designCorrection` in `RoomCorrect.hpp`): the low-end guard (first point
+   under 150 Hz that stays 6 dB under the target) can be fooled by a room null; the null rule (boost only the 1/3-oct
+   deficit) and the 1/12..1/3-oct smoothing were chosen on simulations. Tune against the owner's ears, keep the tests'
+   intent, add a test from the real data (anonymised responses are fine to commit as test data).
+6. **Plugin window and System EQ first run.** The owner will be the first to open both. Renoise's crash log is
+   `~/Library/Logs/Renoise.log` on Mac; look for the AU idle-timer patch class of problem
+   (`patches/dpf/0009-...`). The profile is a ~28 KB state string with newlines: check hosts keep it (save, reopen).
+   In System EQ: the menu items appear only when `pump-room.component` is inside the app.
+
+### Owner's preferences that apply here
+
+- No third-party product or company names anywhere in the repo, git history included (call the Windows equalizer
+  "the free system-wide equalizer", the room-correction kit "a commercial room-correction kit"). Chat is fine.
+- Commit and push after each finished piece so they can test from the `latest` release; say what to test.
+- Wants it simple like the commercial tools (hold the mic, get a correction); **handheld measurement is the
+  long-term goal** (ROOM.md stage 4) and comes after the real data has shaped the rules.
+- Lowest-cost hardware for the per-room Pi boxes; existing open-source DSP on the Pi is fine (no need to write our own).
+
+### Session gotchas (from the 2026-10-28 session)
+
+- CI logs: the log download host may be blocked; the failing steps report errors as annotations instead
+  (`gh api repos/matthettich/pump/check-runs/<job id>/annotations`). `gh release view` (GraphQL) is blocked; use
+  `gh api repos/matthettich/pump/releases/tags/latest`.
+- A push cancels the running CI (the `concurrency` group): don't push while waiting on a result you need.
+- `make room` builds the plugin; the page is `make room-page`.
+
+## Also open: LIFE's sound against its reference (in progress, 2026-10-27)
 
 LIFE is modelled on a groovebox the owner knows well (the reference; it is named in the owner's own notes, not here:
 this repo names no third-party products). The goal is to sound closer to it. The owner will send a **recording of the
