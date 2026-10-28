@@ -32,6 +32,7 @@
 #include "../plugins/chop/ChopParams.hpp"
 #include "../plugins/amp/AmpParams.hpp"
 #include "../plugins/table/TableParams.hpp"
+#include "../plugins/room/RoomParams.hpp"
 #include "../plugins/mono/MonoParams.hpp"
 #include "../plugins/poly/PolyParams.hpp"
 #include "../plugins/wob/WobParams.hpp"
@@ -229,6 +230,7 @@ int main()
         { "STRIKE", strike::params(), strike::presets(), strike::kNumParams },
         { "FREEZE", freeze::params(), freeze::presets(), freeze::kNumParams },
         { "TRACT", tract::params(), tract::presets(), tract::kNumParams },
+        { "ROOM", roomfx::params(), roomfx::presets(), roomfx::kNumParams },
     };
     std::map<std::string, int> sections;
     std::vector<std::vector<std::string>> chains;

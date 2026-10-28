@@ -28,7 +28,7 @@ Last updated 2026-10-28 (pump ROOM measurement app; before it: GUI pass, COIL mo
 ## pump ROOM: room measurement (2026-10-28)
 
 Stage 1 of room correction ([ROOM.md](ROOM.md) has the plan and how it works): `room/` builds one self-contained page,
-`bin/pump-room.html` (`make room`, needs WASI_SDK; CI's `room` job builds it and the release carries it). It measures
+`bin/pump-room.html` (`make room-page`, needs WASI_SDK; CI's `room` job builds it and the release carries it). It measures
 each speaker with a log sweep through any mic + calibration file and shows response, impulse, timing and level
 between the speakers; sessions save as JSON with the impulse responses.
 
@@ -45,8 +45,16 @@ there): the first CI run is its first build.
 output latency (search window is 1 s), a 192 kHz context. The owner has a MEMS measurement mic from a room correction
 system and may get its calibration file (else a USB measurement mic).
 
-**Next (stage 2):** averaging positions and designing the correction; then the ROOM plugin, System EQ and the
-export for the Windows system-wide equalizer. Handheld measurement is the owner's long-term goal (ROADMAP).
+Stages 2 and 3 (same day): the app's CORRECTION view (`common/dsp/RoomCorrect.hpp`), `.pumproom` profiles, the
+Windows export, the **pump ROOM plugin** (`plugins/room`) and **Room Correction in System EQ** (`system/main.mm`: ROOM's
+AU after the EQ, its own window and per-output state). Verified: `tests/test_room.cpp` (correction rules against known
+rooms, FIRs within 0.07 dB of the design, profiles, the plugin engine: impulse = design, time alignment, amount, linear
+latency; ASan and TSan), `tools/room_e2e.mjs` (correction, profile, Windows zip). **Not verified here:** the plugin's
+window and System EQ's changes were only compiled in CI (no GL headers or macOS in the session that made them; the
+UI was syntax-checked against stub GL headers); nobody has run either yet. The Windows config's `If: sampleRate ==`
+/ `ElseIf:` / `EndIf:` lines follow the equalizer's documented syntax but weren't tried in it.
+
+Handheld measurement is the owner's long-term goal (ROADMAP).
 
 ## NEXT: LIFE's sound against its reference (in progress, 2026-10-27)
 

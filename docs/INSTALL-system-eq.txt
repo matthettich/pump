@@ -11,3 +11,5 @@ System EQ puts pump EQ on everything your Mac plays. (pump-macos.pkg installs it
      top right. Its menu opens the EQ window and has EQ On, Separate EQ for each output, Open at Login.
   4. The first start asks for permission to record system audio (that's how it hears other apps).
      If you hear nothing, choose Audio Recording Permission… in its menu.
+  5. Room Correction: make a profile with the pump ROOM app (SAVE PROFILE), then choose Show Room Correction…
+     in the menu and LOAD it. Room Correction in the menu turns it on and off; each output keeps its own.

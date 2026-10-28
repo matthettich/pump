@@ -15,6 +15,7 @@ offset block, Share Tech Mono, one light-neon colour per plugin, light or dark. 
 | **pump WIDE** Stereo Imager | blue | multiband width and stereoize, mono bass, vectorscope and correlation |
 | **pump HEAT** Saturator | coral | multiband warm/tape/tube/triode/retro/clip saturation, oversampled |
 | **pump METER** Loudness Meter | yellow | LUFS (momentary, short-term, integrated), LRA, true peak, PLR/PSR, history |
+| **pump ROOM** Room Correction | amber | applies a room profile made with the pump ROOM measurement app: per-speaker correction, time alignment, headroom; minimum or linear phase, amount |
 
 ### Creative effects
 
@@ -70,7 +71,7 @@ each has an uninstaller (`Uninstall pump.bat`, `Uninstall pump.command`).
 
 ## System EQ (Mac)
 
-**System EQ** puts pump EQ on everything your Mac plays (macOS 14.2 or later). It's a menu-bar app with the full EQ
+**System EQ** puts pump EQ, and pump ROOM's room correction, on everything your Mac plays (macOS 14.2 or later). It's a menu-bar app with the full EQ
 window; `pump-macos.pkg` installs it in Applications, and `system-eq-macos.zip` has the app on its own.
 
 - It follows the Mac's own output and sample rate: pick speakers or headphones as usual and it moves with you.
@@ -91,9 +92,7 @@ window; `pump-macos.pkg` installs it in Applications, and `system-eq-macos.zip` 
 **pump ROOM** measures your speakers in your room with any measurement microphone. On the
 [latest release](https://github.com/matthettich/pump/releases/tag/latest): `pump-room-macos.zip` (the Mac app: drag
 it to Applications; the first time, right-click > Open, since it isn't notarized), `pump-room-windows-setup.exe` or
-`pump-room-windows.zip` (Windows), or the same thing as one page, `pump-room.html`, to open in Chrome or Edge. This is the first stage of room correction; turning measurements into a correction
-(pump ROOM as a plugin, in System EQ, and on Windows as settings for a free system-wide equalizer) comes next. See
-[docs/ROOM.md](docs/ROOM.md).
+`pump-room-windows.zip` (Windows), or the same thing as one page, `pump-room.html`, to open in Chrome or Edge. See [docs/ROOM.md](docs/ROOM.md) for how it works.
 
 - **START AUDIO**, pick the mic (and its input, on an interface) and the output. Allow the microphone when asked.
 - **Mic calibration:** load the mic's calibration file (frequency / dB per line: the usual .txt, .cal or .frd files
@@ -104,6 +103,14 @@ it to Applications; the first time, right-click > Open, since it isn't notarized
   difference between them.
 - Turn System EQ (and any other correction) off while measuring. **SAVE** keeps the measurements for later;
   **TXT** and **WAV** export a response or an impulse response for other tools.
+- **CORRECTION** turns the measurements ticked *IN CORRECTION* (measure a few spots around where you sit) into a
+  correction: target (tilt, bass, treble), range, maximum boost and cut, *SKIP NULLS* (no chasing dips EQ can't fill),
+  *PROTECT LOW END* (no boost below what the speakers can play), *TIME ALIGN*, amount. Before / after on the graph.
+- **SAVE PROFILE** writes a `.pumproom` file for **pump ROOM**, the plugin (on your master bus or monitor chain:
+  amount, minimum or linear phase, time alignment) and for **System EQ** on the Mac (*Room Correction* in its menu,
+  *Show Room Correction…* to load the profile, per output).
+- **EXPORT FOR WINDOWS** makes filters (every common sample rate) and a config file for the free system-wide
+  equalizer for Windows that reads `config.txt`: unzip into its config folder and add `Include: pump-room.txt`.
 
 ## Using them
 

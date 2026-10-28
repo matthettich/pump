@@ -2264,3 +2264,8 @@ COIL 131 lfo3_draw
 COIL 132 bowed
 COIL 133 bow_pressure
 COIL 134 bow_speed
+ROOM 0 amount
+ROOM 1 phase
+ROOM 2 time_align
+ROOM 3 out_gain
+ROOM 4 bypass

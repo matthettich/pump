@@ -73,7 +73,7 @@ wasm/                    the nine mastering engines for Thunder Plus (see "WebAs
   build.sh               pump.wasm + pump-meta.js, pump-synth.wasm + pump-synth-meta.js (wasi-sdk 25)
   compare.cpp/.mjs       the wasm against a native build of the same wrapper, on the test mix
 room/                    pump ROOM, the room measurement app: one page (app.html + app.css + app.js + worklet.js, the DSP
-                         as wasm through wasm/room_wasm.cpp), built by room/build.sh into bin/pump-room.html (make room);
+                         as wasm through wasm/room_wasm.cpp), built by room/build.sh into bin/pump-room.html (make room-page);
                          tools/room_e2e.mjs checks the built page in headless Chromium
 tools/shot.sh            headless screenshot of a standalone build
 tools/apply-dpf-patches.sh  applies patches/dpf/*.patch to DPF (run by make; see patches/dpf/README.md)

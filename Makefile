@@ -5,7 +5,8 @@
 #   make tests      build and run the offline DSP tests
 #   make jack       standalone apps (local testing)
 #   make wasm       pump.wasm + pump-meta.js for Thunder Plus (WASI_SDK=...; wasm/build.sh)
-#   make room       bin/pump-room.html, the room measurement app (WASI_SDK=...; room/build.sh)
+#   make room-page  bin/pump-room.html, the room measurement app (WASI_SDK=...; room/build.sh)
+#                   (make room builds the pump ROOM plugin, like any other plugin)
 
 PLUGINS := $(patsubst plugins/%/Makefile,%,$(wildcard plugins/*/Makefile))
 
@@ -106,11 +107,11 @@ build/tests/test_machine: tests/test_machine.cpp build/tests/pffft.o build/tests
 	$(CXX) $(TEST_FLAGS) -Iplugins/machine $< build/tests/pffft.o build/tests/mfw_unity.o build/tests/mfw_unity2.o -lpthread -o $@
 
 # MACHINE (GPL-3.0) must not leak into any other plugin or into common/ (see LICENSE)
-# pump ROOM, the measurement app (a page, not a plugin)
-room:
+# pump ROOM's measurement app (a page; `make room` is the plugin)
+room-page:
 	sh room/build.sh
 
-.PHONY: room
+.PHONY: room-page
 
 licence-check:
 	@sh tools/check-licence-boundary.sh

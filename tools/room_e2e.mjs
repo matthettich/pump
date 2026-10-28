@@ -1,4 +1,4 @@
-// End-to-end check of the built pump ROOM page (bin/pump-room.html, `make room`) in headless Chromium, with the
+// End-to-end check of the built pump ROOM page (bin/pump-room.html, `make room-page`) in headless Chromium, with the
 // page's simulated room (#sim) standing in for the speakers and mic: a measurement of both speakers, the timing and
 // level between them, a calibration file, and a session saved and opened again.
 // Needs Playwright:  node tools/room_e2e.mjs [path/to/pump-room.html] [screenshot folder]

@@ -1,6 +1,6 @@
 #!/bin/sh
 # Packages pump ROOM as a desktop app with Electron: run on a Mac for the Mac app, on Windows (Git Bash) for Windows.
-# Needs bin/pump-room.html first (make room) and Node. Electron and its packager are fetched by npm (pinned below).
+# Needs bin/pump-room.html first (make room-page) and Node. Electron and its packager are fetched by npm (pinned below).
 #
 #   sh room/electron/build.sh            -> room/electron/dist/
 #     Mac:     pump-room-macos.zip ("pump ROOM.app", universal, ad-hoc signed)
@@ -9,7 +9,7 @@
 set -e
 H=$(cd "$(dirname "$0")/../.." && pwd)
 E="$H/room/electron"
-[ -f "$H/bin/pump-room.html" ] || { echo "bin/pump-room.html is missing: build it first (make room)"; exit 1; }
+[ -f "$H/bin/pump-room.html" ] || { echo "bin/pump-room.html is missing: build it first (make room-page)"; exit 1; }
 mkdir -p "$E/app"
 cp "$H/bin/pump-room.html" "$E/app/pump-room.html"
 cd "$E"

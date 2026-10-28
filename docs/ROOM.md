@@ -4,7 +4,7 @@ The plan, what's built, and how the measurement works. Stage 1 (measurement) is 
 
 ## Stages
 
-1. **Measurement** — built (2026-10-28). `room/`: a single page (`bin/pump-room.html`, `make room`) that plays log
+1. **Measurement** — built (2026-10-28). `room/`: a single page (`bin/pump-room.html`, `make room-page`) that plays log
    sweeps out of each speaker, records any measurement mic with its calibration file, and shows the response, the
    impulse, and the timing and level differences between the speakers. The DSP is `common/dsp/Room.hpp` (tested in
    `tests/test_room.cpp`), compiled to wasm through `wasm/room_wasm.cpp`.
@@ -18,10 +18,18 @@ The plan, what's built, and how the measurement works. Stage 1 (measurement) is 
    the largest boost. SAVE PROFILE writes a `.pumproom` file (below); EXPORT FOR WINDOWS writes a zip with stereo
    minimum-phase filters at 44.1, 48, 88.2, 96 and 192 kHz (preamp and delays inside), a config file that picks the
    one for the device's rate (`If: sampleRate == ...` / `Convolution:`) and a read-me.
-3. **Applying it** — pump ROOM as a plugin (VST3 / CLAP / AU) that loads a profile: minimum phase (no latency) or
-   linear phase; in System EQ on the Mac (after the EQ, per output); on Windows, exported as an impulse response and
-   a config for the free system-wide convolution equalizer the owner uses on Windows (named in the owner's
-   notes, not here). A native Windows system-wide app maybe later.
+3. **Applying it** — built (2026-10-28).
+   - **pump ROOM, the plugin** (`plugins/room`, VST3 / CLAP / AU): LOAD a `.pumproom`; the profile's text is kept in
+     the session (state `profile`; `profile_file` remembers where it came from). AMOUNT (the preamp follows), PHASE
+     (minimum: 256 samples of latency, the convolution block; linear: plus half the filter, 8192 samples at 48 kHz),
+     TIME ALIGN, OUTPUT, bypass. The window shows the profile and, scaled by AMOUNT, measured / corrected / target and
+     the correction. `RoomEngine.hpp` designs the filters on a worker thread at the host's rate and crossfades them in
+     (tested in `tests/test_room.cpp`, also under TSan).
+   - **System EQ** (Mac): bundles pump ROOM after the EQ. Menu: *Room Correction* (on / off) and *Show Room
+     Correction…* (the plugin's window: load the profile there). Kept per output like the EQ (`room-<output>.plist`
+     next to the EQ's files; a new output starts from the last one).
+   - **Windows:** EXPORT FOR WINDOWS in the app (see stage 2) for the free system-wide equalizer; a native app maybe
+     later.
 4. **Handheld measurement** — the long-term goal (the owner's): fast, easy tuning holding the mic in the hand. Before
    each sweep, short pings from each speaker give the mic's distance to each (time of flight, from the arrival times
    stage 1 already measures to a few hundredths of a sample); with the speakers' spacing that places the mic. A map
@@ -67,7 +75,7 @@ The plan, what's built, and how the measurement works. Stage 1 (measurement) is 
 ## The desktop app
 
 `room/electron/` wraps the same page in Electron (`main.js`): one window, only the microphone and output choice
-allowed, no network, Save / Open through the system's file dialogs. `sh room/electron/build.sh` (after `make room`)
+allowed, no network, Save / Open through the system's file dialogs. `sh room/electron/build.sh` (after `make room-page`)
 packages it on a Mac (universal `pump ROOM.app`, ad-hoc signed, zipped) or on Windows (installer + zip); CI's
 `room-app-mac` and `room-app-windows` jobs do that and run the packaged app once with `PUMP_ROOM_SMOKE=1`, which
 measures the simulated room and fails the build if the timing is off. Electron (45.1.0) and its packager (26.18.0) come

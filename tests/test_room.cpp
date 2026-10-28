@@ -3,6 +3,7 @@
 // arrival times and polarities right; and calibration files in the formats people actually have must read.
 #include "../common/dsp/Room.hpp"
 #include "../common/dsp/RoomCorrect.hpp"
+#include "RoomEngine.hpp"   // plugins/room (the plugin's engine)
 #include <complex>
 #include <cstdio>
 #include <random>
@@ -503,6 +504,71 @@ static void testProfile()
     CHECK(parseProfile(one, std::strlen(one), r, w) && r.channels == 1 && r.side('R') == nullptr && std::fabs(curveAt(r.ch[0].f, r.ch[0].correction, 1000) + 2) < 1e-9, "one channel, comments");
 }
 
+// The plugin's engine: an impulse through it comes out as the designed filters, after one block; AMOUNT and the
+// phase mode redesign on the worker; no profile = a straight wire.
+static void testEngine()
+{
+    printf("plugin engine\n");
+    using namespace pump::roomfx;
+    const double fs = 48000;
+    Path p;
+    p.filters = { Bq::peak(fs, 90, 4, 8), Bq::peak(fs, 3000, 1, -4) };
+    const std::vector<double> g = correctionGrid();
+    const std::vector<double> m = curveOf(p, fs, -30);
+    const ChannelCorrection c = designCorrection(g, m, targetLevel(g, { &m }), CorrectionSpec());
+    Profile prof;
+    prof.name = "test";
+    prof.channels = 2;
+    for (int k = 0; k < 2; ++k)
+    {
+        prof.ch[k].side = k ? 'R' : 'L';
+        prof.ch[k].delayMs = k ? 0.0 : 0.5;
+        prof.ch[k].f = g; prof.ch[k].correction = c.correction; prof.ch[k].measured = m; prof.ch[k].target = c.target;
+    }
+    auto impulse = [&](Engine& e, int n) {
+        std::vector<float> L((size_t)n, 0.0f), R((size_t)n, 0.0f);
+        L[0] = R[0] = 1.0f;
+        for (int i = 0; i < n; i += 512) e.process(L.data() + i, R.data() + i, std::min(512, n - i));
+        return std::make_pair(L, R);
+    };
+    {
+        Engine e;
+        e.prepare(fs);
+        const auto io = impulse(e, 4096);
+        CHECK(std::fabs(io.first[Engine::kBlock] - 1.0f) < 1e-5 && e.latency() == Engine::kBlock, "no profile: a wire, %d samples late", e.latency());
+    }
+    Engine e;
+    e.setProfile(&prof);
+    e.prepare(fs);
+    const int n = 32768;
+    const auto io = impulse(e, n);
+    DesignInput in; in.profile = prof; in.hasProfile = true; in.fs = fs;
+    const Design d = designFilters(in, Engine::kBlock);
+    double err = 0, ref = 0;
+    for (size_t i = 0; i < d.fir[0].size() && i + Engine::kBlock < (size_t)n; ++i)
+    {
+        err = std::max(err, (double)std::fabs(io.first[i + Engine::kBlock] - d.fir[0][i]));
+        ref = std::max(ref, (double)std::fabs(d.fir[0][i]));
+    }
+    CHECK(err < 1e-4 * ref && std::fabs(d.delayMs[0] - 0.5) < 1e-9 && d.preampDb < 0, "impulse = the left filter after one block (error %.1e), left delayed 0.5 ms, preamp %.2f dB", err / ref, d.preampDb);
+    // the left channel's direct sound 24 samples (0.5 ms) after the right's
+    int pl = 0, pr = 0; float vl = 0, vr = 0;
+    for (int i = 0; i < 2000; ++i) { if (std::fabs(io.first[(size_t)i]) > vl) { vl = std::fabs(io.first[(size_t)i]); pl = i; } if (std::fabs(io.second[(size_t)i]) > vr) { vr = std::fabs(io.second[(size_t)i]); pr = i; } }
+    CHECK(pl - pr == 24, "time alignment: left peaks %d samples after right", pl - pr);
+    // half the amount: the worker redesigns, the preamp halves
+    Settings s; s.amount = 0.5;
+    e.setSettings(s);
+    e.settle();
+    CHECK(std::fabs(e.info().preampDb - 0.5 * d.preampDb) < 1e-6, "amount 50 %%: preamp %.2f dB (was %.2f)", e.info().preampDb, d.preampDb);
+    s.linear = true;
+    e.setSettings(s);
+    e.settle();
+    CHECK(e.latency() == Engine::kBlock + correctionTaps(fs) / 2, "linear phase: latency %d samples", e.latency());
+    e.setProfile(nullptr);
+    e.settle();
+    CHECK(e.info().preampDb == 0.0, "profile cleared");
+}
+
 int main()
 {
     testSweep();
@@ -521,6 +587,7 @@ int main()
     testCorrectionLimits();
     testFir();
     testProfile();
+    testEngine();
     printf(fails ? "\n%d FAILED\n" : "\nall passed\n", fails);
     return fails ? 1 : 0;
 }

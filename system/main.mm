@@ -1,4 +1,4 @@
-// System EQ: pump EQ on everything the Mac plays.
+// System EQ: pump EQ (and pump ROOM's room correction) on everything the Mac plays.
 //
 // A menu-bar app (macOS 14.2+). It taps the mix of every other app with a Core Audio process tap (muted for as long as
 // the tap exists), runs it through the pump EQ Audio Unit bundled inside the app (Contents/PlugIns/pump-eq.component,
@@ -9,7 +9,11 @@
 // the EQ during silence and stops the audio device entirely while no app is playing.
 //
 // Audio path:   every app (except this one) -> tap -> private aggregate device [tap + output device]
-//               -> IOProc -> pump EQ (AudioUnitRender) -> output device
+//               -> IOProc -> pump EQ (AudioUnitRender) -> pump ROOM (when Room Correction is on) -> output device
+//
+// pump ROOM (Contents/PlugIns/pump-room.component, when the app was built with it) applies a room profile made with
+// the pump ROOM app; like the EQ it keeps its settings (and profile) per output. Without a profile it passes the sound
+// through.
 //
 // Nothing on the audio thread allocates, locks or calls Objective-C.
 
@@ -110,6 +114,9 @@ struct Engine
 {
     AudioUnit au = nullptr;
     double auRate = 0.0;
+    AudioUnit room = nullptr;               // pump ROOM after the EQ (null when the app was built without it)
+    double roomRate = 0.0;                  // the rate it is initialized at (0: not usable)
+    std::atomic<bool> roomOn { true };      // Room Correction in the menu
 
     AudioObjectID tap = kAudioObjectUnknown;
     AudioObjectID aggregate = kAudioObjectUnknown;
@@ -120,7 +127,7 @@ struct Engine
     double outputRate = 0.0;              // the output device's rate when we started
 
     // audio-thread buffers (allocated once)
-    std::vector<float> inL, inR, outL, outR;
+    std::vector<float> inL, inR, outL, outR, midL, midR;   // mid: the EQ's output, ROOM's input
     Float64 sampleTime = 0.0;
     std::atomic<bool> running { false };   // tap + device exist (EQ on)
     bool paused = false;                   // device stopped while nothing plays (main thread)
@@ -128,7 +135,7 @@ struct Engine
     // frames of continuous silence at the tap (written by the audio thread, read by the main thread)
     std::atomic<uint64_t> silentFrames { 0 };
 
-    Engine() : inL(kMaxFrames), inR(kMaxFrames), outL(kMaxFrames), outR(kMaxFrames) {}
+    Engine() : inL(kMaxFrames), inR(kMaxFrames), outL(kMaxFrames), outR(kMaxFrames), midL(kMaxFrames), midR(kMaxFrames) {}
 
     // --- the AudioUnit's input: the tap samples of the current slice
     static OSStatus renderInput(void* refCon, AudioUnitRenderActionFlags*, const AudioTimeStamp*, UInt32,
@@ -136,6 +143,23 @@ struct Engine
     {
         Engine* e = static_cast<Engine*>(refCon);
         const float* src[2] = { e->inL.data(), e->inR.data() };
+        for (UInt32 b = 0; b < io->mNumberBuffers && b < 2; ++b)
+        {
+            if (io->mBuffers[b].mData == nullptr)
+                io->mBuffers[b].mData = const_cast<float*>(src[b]);
+            else if (io->mBuffers[b].mData != src[b])
+                std::memcpy(io->mBuffers[b].mData, src[b], frames * sizeof(float));
+            io->mBuffers[b].mDataByteSize = frames * sizeof(float);
+        }
+        return noErr;
+    }
+
+    // --- ROOM's input: what the EQ just produced
+    static OSStatus renderRoomInput(void* refCon, AudioUnitRenderActionFlags*, const AudioTimeStamp*, UInt32,
+                                    UInt32 frames, AudioBufferList* io)
+    {
+        Engine* e = static_cast<Engine*>(refCon);
+        const float* src[2] = { e->midL.data(), e->midR.data() };
         for (UInt32 b = 0; b < io->mNumberBuffers && b < 2; ++b)
         {
             if (io->mBuffers[b].mData == nullptr)
@@ -234,8 +258,31 @@ struct Engine
             }
             e->sampleTime += n;
 
-            writeChannel(outOutput, e->outLeft, static_cast<float*>(out.list.mBuffers[0].mData), n, done);
-            writeChannel(outOutput, e->outRight, static_cast<float*>(out.second.mData), n, done);
+            const float* resL = static_cast<float*>(out.list.mBuffers[0].mData);
+            const float* resR = static_cast<float*>(out.second.mData);
+            if (e->room != nullptr && e->roomRate == e->auRate && e->roomOn.load(std::memory_order_relaxed))
+            {
+                std::memcpy(e->midL.data(), resL, n * sizeof(float));
+                std::memcpy(e->midR.data(), resR, n * sizeof(float));
+                struct { AudioBufferList list; AudioBuffer second; } ro;
+                ro.list.mNumberBuffers = 2;
+                ro.list.mBuffers[0] = { 1, n * (UInt32)sizeof(float), e->outL.data() };
+                ro.second = { 1, n * (UInt32)sizeof(float), e->outR.data() };
+                AudioUnitRenderActionFlags rflags = 0;
+                if (AudioUnitRender(e->room, &rflags, &ts, 0, n, &ro.list) == noErr)
+                {
+                    resL = static_cast<float*>(ro.list.mBuffers[0].mData);
+                    resR = static_cast<float*>(ro.second.mData);
+                }
+                else
+                {
+                    resL = e->midL.data();   // the EQ's output rather than dropping out
+                    resR = e->midR.data();
+                }
+            }
+
+            writeChannel(outOutput, e->outLeft, resL, n, done);
+            writeChannel(outOutput, e->outRight, resR, n, done);
             done += n;
         }
         return noErr;
@@ -247,7 +294,10 @@ struct Engine
         if (au == nullptr)
             return false;
         if (rate == auRate)
+        {
+            prepareRoom(rate);
             return true;
+        }
 
         AudioUnitUninitialize(au);
 
@@ -287,7 +337,42 @@ struct Engine
             return false;
         }
         auRate = rate;
+        prepareRoom(rate);
         return true;
+    }
+
+    // --- ROOM the same way (its failing only leaves Room Correction out)
+    void prepareRoom(double rate)
+    {
+        if (room == nullptr || rate == roomRate)
+            return;
+        AudioUnitUninitialize(room);
+        roomRate = 0.0;
+        AudioStreamBasicDescription fmt = {};
+        fmt.mSampleRate = rate;
+        fmt.mFormatID = kAudioFormatLinearPCM;
+        fmt.mFormatFlags = kAudioFormatFlagIsFloat | kAudioFormatFlagIsPacked | kAudioFormatFlagIsNonInterleaved;
+        fmt.mBytesPerPacket = sizeof(float);
+        fmt.mFramesPerPacket = 1;
+        fmt.mBytesPerFrame = sizeof(float);
+        fmt.mChannelsPerFrame = 2;
+        fmt.mBitsPerChannel = 32;
+        UInt32 maxFrames = kMaxFrames;
+        AURenderCallbackStruct cb = { renderRoomInput, this };
+        OSStatus st = AudioUnitSetProperty(room, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Input, 0, &fmt, sizeof(fmt));
+        if (st == noErr)
+            st = AudioUnitSetProperty(room, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Output, 0, &fmt, sizeof(fmt));
+        if (st == noErr)
+            st = AudioUnitSetProperty(room, kAudioUnitProperty_MaximumFramesPerSlice, kAudioUnitScope_Global, 0,
+                                      &maxFrames, sizeof(maxFrames));
+        if (st == noErr)
+            st = AudioUnitSetProperty(room, kAudioUnitProperty_SetRenderCallback, kAudioUnitScope_Input, 0, &cb, sizeof(cb));
+        if (st != noErr || AudioUnitInitialize(room) != noErr)
+        {
+            NSLog(@"%@: room correction could not start at %.0f Hz (error %d)", kAppName, rate, (int)st);
+            return;
+        }
+        roomRate = rate;
     }
 
     // --- start: tap everything but this process, build the aggregate, run (main thread)
@@ -546,6 +631,30 @@ static AudioComponent registerBundledEQ()
     return AudioComponentRegister(&desc, CFSTR("wake: pump EQ Equalizer"), 0x00010000, factory);
 }
 
+// pump ROOM, the same way (optional: an app built without it has no Room Correction)
+static AudioComponent registerBundledRoom()
+{
+    NSString* path = [[NSBundle.mainBundle builtInPlugInsPath]
+                      stringByAppendingPathComponent:@"pump-room.component/Contents/MacOS/pump-room"];
+    if (![NSFileManager.defaultManager fileExistsAtPath:path])
+        return nullptr;
+    void* lib = dlopen(path.fileSystemRepresentation, RTLD_NOW | RTLD_LOCAL);
+    if (lib == nullptr)
+    {
+        NSLog(@"%@: couldn't load %@: %s", kAppName, path, dlerror());
+        return nullptr;
+    }
+    auto factory = reinterpret_cast<AudioComponentFactoryFunction>(dlsym(lib, "PluginAUFactory"));
+    if (factory == nullptr)
+        return nullptr;
+
+    AudioComponentDescription desc = {};
+    desc.componentType = 'aufx';
+    desc.componentSubType = 'pmRM';
+    desc.componentManufacturer = 'Wake';
+    return AudioComponentRegister(&desc, CFSTR("wake: pump ROOM Room Correction"), 0x00010000, factory);
+}
+
 // ---------------------------------------------------------------------------------------------------------------------
 // the app: status item, EQ window, state
 
@@ -572,6 +681,9 @@ static NSView* keyViewIn(NSView* v)
     NSWindow* window;
     NSView* eqView;
     id frameObserver;
+    NSWindow* roomWindow;                // pump ROOM's own window
+    NSView* roomView;
+    id roomFrameObserver;
     NSString* problem;
     BOOL wantOn;
     NSString* stateKey;                  // whose settings the EQ holds: an output's UID, or nil for "every output"
@@ -597,18 +709,24 @@ static NSURL* stateDir()
 // latest settings of any output: where an output seen for the first time starts)
 static NSURL* lastStateURL() { return [stateDir() URLByAppendingPathComponent:@"eq-last.plist"]; }
 
-static NSURL* stateURL(NSString* key)
+static NSURL* roomLastStateURL() { return [stateDir() URLByAppendingPathComponent:@"room-last.plist"]; }
+
+// "eq-..." for the EQ, "room-..." for room correction (the same keys)
+static NSURL* stateURLFor(NSString* prefix, NSString* key)
 {
     if (key == nil)
-        return [stateDir() URLByAppendingPathComponent:@"eq-state.plist"];
+        return [stateDir() URLByAppendingPathComponent:[NSString stringWithFormat:@"%@-state.plist", prefix]];
     NSMutableString* safe = [NSMutableString string];
     for (NSUInteger i = 0; i < key.length && safe.length < 120; ++i)
     {
         const unichar c = [key characterAtIndex:i];
         [safe appendFormat:@"%C", (unichar)(((c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')) ? c : '_')];
     }
-    return [stateDir() URLByAppendingPathComponent:[NSString stringWithFormat:@"eq-%@.plist", safe]];
+    return [stateDir() URLByAppendingPathComponent:[NSString stringWithFormat:@"%@-%@.plist", prefix, safe]];
 }
+
+static NSURL* stateURL(NSString* key) { return stateURLFor(@"eq", key); }
+static NSURL* roomStateURL(NSString* key) { return stateURLFor(@"room", key); }
 
 static NSString* currentOutputKey()
 {
@@ -625,12 +743,19 @@ static NSString* currentOutputKey()
     }
     else
     {
+        AudioComponent roomComp = registerBundledRoom();
+        if (roomComp == nullptr || AudioComponentInstanceNew(roomComp, &engine.room) != noErr)
+            engine.room = nullptr;
+        engine.roomOn = ![prefs() boolForKey:@"roomOff"];
         Float64 rate = 48000.0;
         getProp(defaultOutputDevice(), kAudioDevicePropertyNominalSampleRate, rate);
         engine.prepareUnit(rate);
         stateKey = currentOutputKey();
         if (![self loadStateFor:stateKey] && stateKey != nil)
+        {
             [self loadStateFrom:lastStateURL()];   // a new output starts from the latest settings, if any
+            [self loadRoomStateFrom:roomLastStateURL()];
+        }
     }
 
     statusItem = [NSStatusBar.systemStatusBar statusItemWithLength:NSVariableStatusItemLength];
@@ -744,9 +869,13 @@ static NSString* currentOutputKey()
     {
         NSString* name = stringProp(defaultOutputDevice(), kAudioObjectPropertyName) ?: @"output";
         window.title = [NSString stringWithFormat:@"System EQ — %@ — %@", name, state];
+        roomWindow.title = [NSString stringWithFormat:@"Room Correction — %@", name];
     }
     else
+    {
         window.title = [NSString stringWithFormat:@"System EQ — every output — %@", state];
+        roomWindow.title = @"Room Correction — every output";
+    }
 }
 
 // restart on a new default output, a sample-rate change or a device going away
@@ -855,6 +984,16 @@ static OSStatus processListener(AudioObjectID, UInt32, const AudioObjectProperty
     NSMenuItem* show = [menu addItemWithTitle:@"Show EQ…" action:@selector(showEQ:) keyEquivalent:@""];
     show.target = self;
 
+    if (engine.room != nullptr)
+    {
+        NSMenuItem* roomOn = [menu addItemWithTitle:@"Room Correction" action:@selector(toggleRoom:) keyEquivalent:@""];
+        roomOn.target = self;
+        roomOn.state = engine.roomOn.load() ? NSControlStateValueOn : NSControlStateValueOff;
+        NSMenuItem* roomShow = [menu addItemWithTitle:@"Show Room Correction…" action:@selector(showRoom:)
+                                        keyEquivalent:@""];
+        roomShow.target = self;
+    }
+
     [menu addItem:NSMenuItem.separatorItem];
 
     NSString* outName = stringProp(defaultOutputDevice(), kAudioObjectPropertyName) ?: @"none";
@@ -888,6 +1027,13 @@ static OSStatus processListener(AudioObjectID, UInt32, const AudioObjectProperty
     [menu addItem:NSMenuItem.separatorItem];
     NSMenuItem* quit = [menu addItemWithTitle:@"Quit System EQ" action:@selector(terminate:) keyEquivalent:@"q"];
     quit.target = NSApp;
+}
+
+- (void)toggleRoom:(id)sender
+{
+    const bool on = !engine.roomOn.load();
+    engine.roomOn = on;
+    [prefs() setBool:!on forKey:@"roomOff"];
 }
 
 - (void)togglePerDevice:(id)sender
@@ -926,9 +1072,16 @@ static OSStatus processListener(AudioObjectID, UInt32, const AudioObjectProperty
 
 - (NSView*)makeView
 {
+    return [self makeViewFor:engine.au size:NSMakeSize(1040, 660)];
+}
+
+- (NSView*)makeViewFor:(AudioUnit)unit size:(NSSize)want
+{
+    if (unit == nullptr)
+        return nil;
     AudioUnitCocoaViewInfo info = {};
     UInt32 size = sizeof(info);
-    if (AudioUnitGetProperty(engine.au, kAudioUnitProperty_CocoaUI, kAudioUnitScope_Global, 0, &info, &size) != noErr)
+    if (AudioUnitGetProperty(unit, kAudioUnitProperty_CocoaUI, kAudioUnitScope_Global, 0, &info, &size) != noErr)
         return nil;
 
     NSURL* bundleURL = (__bridge_transfer NSURL*)info.mCocoaAUViewBundleLocation;
@@ -938,7 +1091,7 @@ static OSStatus processListener(AudioObjectID, UInt32, const AudioObjectProperty
     id<AUCocoaUIBase> factory = [cls new];
     if (factory == nil)
         return nil;
-    return [factory uiViewForAudioUnit:engine.au withSize:NSMakeSize(1040, 660)];
+    return [factory uiViewForAudioUnit:unit withSize:want];
 }
 
 - (void)attachView:(NSView*)view
@@ -978,11 +1131,81 @@ static OSStatus processListener(AudioObjectID, UInt32, const AudioObjectProperty
 // the view reads its state when it opens: after loading other settings, open a fresh one
 - (void)reloadView
 {
+    if (roomWindow != nil && roomView != nil)
+    {
+        NSView* rv = [self makeViewFor:engine.room size:NSMakeSize(940, 540)];
+        if (rv != nil)
+            [self attachRoomView:rv];
+    }
     if (window == nil || eqView == nil)
         return;
     NSView* view = [self makeView];
     if (view != nil)
         [self attachView:view];
+}
+
+// --- pump ROOM's window (its own view: load a profile, amount, phase)
+
+- (void)attachRoomView:(NSView*)view
+{
+    if (roomFrameObserver != nil)
+        [NSNotificationCenter.defaultCenter removeObserver:roomFrameObserver];
+    roomFrameObserver = nil;
+    const NSSize want = view.frame.size;
+    roomView = view;
+    roomWindow.contentView = view;
+    [roomWindow setContentSize:want];
+    [view setFrameSize:want];
+    view.postsFrameChangedNotifications = YES;
+    __weak AppDelegate* weakSelf = self;
+    roomFrameObserver = [NSNotificationCenter.defaultCenter addObserverForName:NSViewFrameDidChangeNotification
+                                                                        object:view
+                                                                         queue:nil
+                                                                    usingBlock:^(NSNotification*) {
+        AppDelegate* me = weakSelf;
+        if (me == nil || me->roomWindow == nil || me->roomView == nil)
+            return;
+        NSRect content = [me->roomWindow contentRectForFrameRect:me->roomWindow.frame];
+        const NSSize size = me->roomView.frame.size;
+        if (NSEqualSizes(content.size, size))
+            return;
+        NSRect frame = [me->roomWindow frameRectForContentRect:
+            NSMakeRect(content.origin.x, NSMaxY(content) - size.height, size.width, size.height)];
+        [me->roomWindow setFrame:frame display:YES];
+    }];
+    [roomWindow makeFirstResponder:keyViewIn(view) ?: view];
+}
+
+- (void)showRoom:(id)sender
+{
+    if (engine.room == nullptr)
+        return;
+    if (roomWindow == nil)
+    {
+        roomWindow = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 940, 540)
+                                                 styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
+                                                           NSWindowStyleMaskMiniaturizable
+                                                   backing:NSBackingStoreBuffered
+                                                     defer:NO];
+        roomWindow.releasedWhenClosed = NO;
+        roomWindow.delegate = self;
+        if (![roomWindow setFrameUsingName:@"SystemEQRoom"])
+            [roomWindow center];
+        [roomWindow setFrameAutosaveName:@"SystemEQRoom"];
+    }
+    if (roomView == nil)
+    {
+        NSView* view = [self makeViewFor:engine.room size:NSMakeSize(940, 540)];
+        if (view == nil)
+            return;
+        const NSPoint topLeft = NSMakePoint(NSMinX(roomWindow.frame), NSMaxY(roomWindow.frame));
+        [self attachRoomView:view];
+        [roomWindow setFrameTopLeftPoint:topLeft];
+    }
+    [self updateStatus];
+    [NSApp activateIgnoringOtherApps:YES];
+    [roomWindow makeKeyAndOrderFront:nil];
+    [roomWindow makeFirstResponder:keyViewIn(roomView) ?: roomView];
 }
 
 - (void)showEQ:(id)sender
@@ -1024,6 +1247,15 @@ static OSStatus processListener(AudioObjectID, UInt32, const AudioObjectProperty
 - (void)windowWillClose:(NSNotification*)note
 {
     [self saveState];
+    if (note.object == roomWindow && roomWindow != nil)
+    {
+        if (roomFrameObserver != nil)
+            [NSNotificationCenter.defaultCenter removeObserver:roomFrameObserver];
+        roomFrameObserver = nil;
+        roomWindow.contentView = [[NSView alloc] initWithFrame:NSZeroRect];
+        roomView = nil;
+        return;
+    }
     if (frameObserver != nil)
         [NSNotificationCenter.defaultCenter removeObserver:frameObserver];
     frameObserver = nil;
@@ -1050,11 +1282,45 @@ static OSStatus processListener(AudioObjectID, UInt32, const AudioObjectProperty
     [data writeToURL:stateURL(stateKey) atomically:YES];
     if (stateKey != nil)
         [data writeToURL:lastStateURL() atomically:YES];   // the starting point for outputs not seen yet
+
+    // room correction (its profile included) alongside
+    if (engine.room == nullptr)
+        return;
+    plist = nullptr;
+    size = sizeof(plist);
+    if (AudioUnitGetProperty(engine.room, kAudioUnitProperty_ClassInfo, kAudioUnitScope_Global, 0, &plist, &size)
+        != noErr || plist == nullptr)
+        return;
+    NSData* rdata = [NSPropertyListSerialization dataWithPropertyList:(__bridge id)plist
+                                                               format:NSPropertyListBinaryFormat_v1_0
+                                                              options:0
+                                                                error:nil];
+    CFRelease(plist);
+    [rdata writeToURL:roomStateURL(stateKey) atomically:YES];
+    if (stateKey != nil)
+        [rdata writeToURL:roomLastStateURL() atomically:YES];
 }
 
 - (BOOL)loadStateFor:(NSString*)key
 {
+    // room correction: this output's own, else whatever it had (a new output keeps the current profile)
+    [self loadRoomStateFrom:roomStateURL(key)];
     return [self loadStateFrom:stateURL(key)];
+}
+
+- (BOOL)loadRoomStateFrom:(NSURL*)url
+{
+    if (engine.room == nullptr)
+        return NO;
+    NSData* data = [NSData dataWithContentsOfURL:url];
+    if (data == nil)
+        return NO;
+    id plist = [NSPropertyListSerialization propertyListWithData:data options:0 format:nil error:nil];
+    if (plist == nil)
+        return NO;
+    CFPropertyListRef ref = (__bridge CFPropertyListRef)plist;
+    return AudioUnitSetProperty(engine.room, kAudioUnitProperty_ClassInfo, kAudioUnitScope_Global, 0, &ref,
+                                sizeof(ref)) == noErr;
 }
 
 - (BOOL)loadStateFrom:(NSURL*)url
