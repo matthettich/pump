@@ -147,6 +147,7 @@ public:
     bool isHeld() const { return held; }
     // modulation: the note's velocity (0..1) and its random value (-1..1), set when it starts
     double modVel = 0.8, modRnd = 0.0;
+    uint32_t modStarts = 0;   // counts its notes (a drawn shape restarts per note)
     int noteNumber() const { return note; }
     double level() const { return energy; }
 
@@ -478,6 +479,7 @@ public:
     double voiceVelocity(int i) const { return voices[(size_t)clampv(i, 0, kMaxVoices - 1)].modVel; }
     double voiceRandom(int i) const { return voices[(size_t)clampv(i, 0, kMaxVoices - 1)].modRnd; }
     int lastVoice() const { return lastStarted; }
+    uint32_t voiceStarts(int i) const { return voices[(size_t)clampv(i, 0, kMaxVoices - 1)].modStarts; }
     double wheel() const { return wheelV; }
     double aftertouch() const { return touchV; }
     uint32_t noteOns() const { return noteOnCount; }
@@ -670,6 +672,7 @@ private:
                 v.modVel = vel;
                 modRng = modRng * 1664525u + 1013904223u;
                 v.modRnd = (double)(modRng >> 8) * (2.0 / 16777216.0) - 1.0;
+                if (c.kind == synth::VoiceCmd::Start) ++v.modStarts;
                 v.start(c.note, hzOf(c.note), strength, set);
                 if (!set.resonator && set.tank > 0.001) body.kick(0.4 * strength);
                 lastStarted = c.voice;

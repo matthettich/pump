@@ -102,7 +102,7 @@ public:
         if (!shown) ui.textAt(r.cx(), r.b() - 14, "PLAY A NOTE (OR KICK)", P::kLabel, 9.5f, th.dim, NanoVG::ALIGN_CENTER | NanoVG::ALIGN_MIDDLE, 1.0f);
     }
 
-private:
+public:
     // a colour per spring, around the wheel: [0] the light neon (sleeve), [1] its deep shade (strands in light mode)
     static Color springColour(int i, bool deep)
     {
@@ -116,6 +116,8 @@ private:
     {
         return th.dark ? mixColor(springColour(i, false), hexColor(0xFFFFFF), 0.18f) : springColour(i, true);
     }
+
+private:
 
     // SPRING's tank: the transducers either side, the hooks fanning out to every spring, each spring a helix in its
     // glowing sleeve; under the pan, the notes sounding (each in its spring's colour)

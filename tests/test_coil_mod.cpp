@@ -88,6 +88,49 @@ int main()
         }
         CHECK(fast > 2 * std::max(1, slow) || slow > 2 * std::max(1, fast), "LFO 3 moves LFO 1's rate: %d cycles, then %d", fast, slow);
     }
+    printf("== drawn shapes\n");
+    {
+        using mod::DrawnShape;
+        DrawnShape d = DrawnShape::defaultShape(0);
+        // text round trip (and a comma-decimal-safe format)
+        const DrawnShape e = DrawnShape::fromText(d.toText().c_str(), 0);
+        bool same = e.n == d.n && e.loopA == d.loopA && e.loopB == d.loopB && e.loop == d.loop;
+        for (int k = 0; k < d.n; ++k) same = same && std::fabs(e.u[k] - d.u[k]) < 1e-3f && std::fabs(e.v[k] - d.v[k]) < 1e-3f && std::fabs(e.c[k] - d.c[k]) < 1e-3f;
+        CHECK(same, "a shape survives as text: %s", d.toText().c_str());
+        // through the points; a straight line is linear; a bend bows it but keeps the ends
+        CHECK(std::fabs(d.at(d.u[2]) - d.v[2]) < 1e-6 && std::fabs(d.at(0.0) - d.v[0]) < 1e-6 && std::fabs(d.at(1.0) - d.v[5]) < 1e-6, "it passes through its points");
+        DrawnShape l; l.n = 2; l.u[0] = 0; l.v[0] = -1; l.u[1] = 1; l.v[1] = 1; l.c[1] = 0; l.loopA = 0; l.loopB = 1;
+        CHECK(std::fabs(l.at(0.25) + 0.5) < 1e-6, "a straight line is straight (%.3f at a quarter)", l.at(0.25));
+        l.c[1] = -0.7f; const double up = l.at(0.25); l.c[1] = 0.7f; const double down = l.at(0.25);
+        CHECK(up > -0.5 && down < -0.5, "bent one way it rises early (%.3f), the other way late (%.3f)", up, down);
+        // the loop: past its end it goes round between points 1 and 4; with no loop it stops at the end
+        const double a = d.u[1], b = d.u[4];
+        CHECK(std::fabs(d.wrap(b + 0.01) - (a + 0.01)) < 1e-9 && std::fabs(d.wrap(0.05) - 0.05) < 1e-12, "it plays the start once, then round the loop");
+        d.loop = false;
+        CHECK(d.wrap(3.7) == 1.0, "with no loop it stops at the end");
+        // nonsense text gives a sane shape
+        const DrawnShape bad = DrawnShape::fromText("0.5:9:x 0.2:-3:2 nan:1:1|7:2:1", 0);
+        bool sane = bad.n >= 2 && bad.u[0] == 0.0f && bad.u[bad.n - 1] == 1.0f && bad.loopA < bad.loopB && bad.loopB < bad.n;
+        for (int k = 1; k < bad.n; ++k) sane = sane && bad.u[k] >= bad.u[k - 1] && std::fabs(bad.v[k]) <= 1.0f;
+        CHECK(sane, "bad text still gives a sane shape (%d points)", bad.n);
+        // in the plugin: LFO 1 drawn as a square-ish step (low half, high half) on VOLUME, 1 Hz: loud and quiet halves
+        Dsp p; p.values[kVolume] = 0.0f;
+        connect(p, 0, mod::kSrcLfo1, targetOfParam(kVolume), -60.0f);
+        p.values[lfoDrawParam(0)] = 1.0f; p.values[lfoParam(0, kLfoRate)] = 1.0f;
+        p.prepareDsp();
+        p.setShapesText("0:-1:0 0.5:-1:0 0.5:1:0 1:1:0|0:3:1;;");
+        std::vector<synth::Midi> held; for (int k = 0; k < 4; ++k) held.push_back({ (uint32_t)(k * 12000), 0x90, 52, 110 });
+        const auto x = render(p, 2.0, held);
+        const double loud = rms(x, 54000, 66000), quiet = rms(x, 78000, 90000);
+        CHECK(loud > 3.0 * quiet, "a drawn step on VOLUME: first half of each second %.4f, second half %.4f rms", loud, quiet);
+        // RETRIG: each note gets its own copy (a note started late is at its own start, not the shared position)
+        Dsp r; connect(r, 0, mod::kSrcLfo1, targetOfParam(kTone), 50.0f);
+        r.values[lfoDrawParam(0)] = 1.0f; r.values[lfoParam(0, kLfoRetrig)] = 1.0f; r.values[lfoParam(0, kLfoRate)] = 0.25f; r.prepareDsp();
+        render(r, 1.5, { { 0, 0x90, 48, 100 } });
+        render(r, 0.1, { { 0, 0x90, 60, 100 } });
+        const float ph = r.lfoPhaseNow[0].load();
+        CHECK(ph < 0.05f, "per note: the newest note's shape is near its start (%.3f) though the first note's is at %.2f", ph, 1.6 * 0.25);
+    }
     printf("== shapes\n");
     {
         bool inRange = true; double jump = 0.0;

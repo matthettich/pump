@@ -6,6 +6,7 @@
 #include "ui/PumpUI.hpp"
 #include "ui/KeyboardUI.hpp"
 #include "PluginCoil.hpp"
+#include "dsp/ModShape.hpp"
 #include "CoilView.hpp"
 
 START_NAMESPACE_DISTRHO
@@ -52,8 +53,11 @@ public:
             lSync[L] = addToggle(lfoParam(L, kLfoSync), "SYNC");
             lSync[L]->tip = "Follow the song's tempo (and its position while it plays)";
             lRetrig[L] = addToggle(lfoParam(L, kLfoRetrig), "RETRIG");
-            lRetrig[L]->tip = "Every new note starts the LFO from the beginning";
+            lRetrig[L]->tip = "Every new note starts the LFO from the beginning (a drawn shape: each note gets its own)";
+            lDraw[L] = addToggle(lfoDrawParam(L), "DRAW");
+            lDraw[L]->tip = "Play a shape you draw instead: points, bent lines, a loop";
         }
+        for (int L = 0; L < pump::mod::kNumLfos; ++L) shapes[L] = pump::mod::DrawnShape::defaultShape(L);
 
         springsView.tank = true;
         const std::pair<int, Dial*> dl[] = { { kTension, tensionD }, { kDrip, dripD }, { kWobble, wobbleD }, { kGrit, gritD }, { kTone, toneD },
@@ -125,7 +129,7 @@ protected:
         lfoScreenR = Rect(26, y1 + 28, 140, 110);
         for (int L = 0; L < pump::mod::kNumLfos; ++L)
         {
-            lShape[L]->r = Rect(178, y1 + 28, 324, 22);
+            lShape[L]->r = Rect(178, y1 + 28, 256, 22);
             lRate[L]->r = Rect(178, y1 + 58, 96, hm);
             lDiv[L]->r = Rect(184, y1 + 84, 100, 24);
             lSync[L]->r = Rect(296, y1 + 66, 96, 22);
@@ -151,16 +155,37 @@ protected:
         for (int L = 0; L < pump::mod::kNumLfos; ++L)
         {
             const bool on = !snd && pump::mod::lfoOf(selSrc) == L, sync = value(lfoParam(L, kLfoSync)) >= 0.5f;
-            lShape[L]->visible = lSync[L]->visible = lRetrig[L]->visible = on;
-            lRate[L]->visible = on && !sync;
+            const bool dr = value(lfoDrawParam(L)) >= 0.5f;
+            lSync[L]->visible = lRetrig[L]->visible = lDraw[L]->visible = on;
+            lShape[L]->visible = on && !dr;
+            lRate[L]->visible = on && !sync && !dr;
             lDiv[L]->visible = on && sync;
+            // drawn: the shape takes the panel; its settings stack up on the right
+            const float y1 = editPanel.y, cx = editPanel.r() - 116, cw = 104;
+            if (dr)
+            {
+                lDraw[L]->r = Rect(cx, y1 + 26, cw, 20);
+                lDiv[L]->r = Rect(cx, y1 + 50, cw, 22);
+                lSync[L]->r = Rect(cx, y1 + 76, cw, 20);
+                lRetrig[L]->r = Rect(cx, y1 + 100, cw, 20);
+            }
+            else
+            {
+                lDraw[L]->r = Rect(440, y1 + 28, 62, 22);
+                lDiv[L]->r = Rect(184, y1 + 84, 100, 24);
+                lSync[L]->r = Rect(296, y1 + 66, 96, 22);
+                lRetrig[L]->r = Rect(406, y1 + 66, 96, 22);
+            }
         }
     }
-    Color srcColour(int s) const
+    // every source in a spring's colour (the springs' palette, in the order the tabs show them): the light shade
+    // fills, the deep one draws lines
+    int srcIndex(int s) const { for (int k = 0; k < pump::mod::kNumSources - 1; ++k) if (pump::mod::kSourceOrder[k] == s) return k; return 0; }
+    Color srcColour(int s) const { return pump::coil::SpringsView::springColour(srcIndex(s) * 2 + 1, false); }
+    Color srcInk(int s) const
     {
-        static const unsigned c[pump::mod::kNumSources] = { 0x888888, 0, 0xFFD04A, 0xB9A0FF, 0x4DF3FF, 0x5CFFB4, 0xFFB24F, 0xFF6FB5, 0x7FA8FF };
-        if (s == pump::mod::kSrcLfo1) return theme.second;
-        return pump::mixColor(pump::hexColor(c[pump::clampv(s, 0, pump::mod::kNumSources - 1)]), theme.ink, theme.dark ? 0.0f : 0.3f);
+        const Color c = pump::coil::SpringsView::springColour(srcIndex(s) * 2 + 1, false);
+        return theme.dark ? pump::mixColor(c, pump::hexColor(0xFFFFFF), 0.18f) : pump::coil::SpringsView::springColour(srcIndex(s) * 2 + 1, true);
     }
     int slotSrc(int k) const { return (int)value(slotParam(k, kSlotSrc)); }
     int slotDst(int k) const { return (int)value(slotParam(k, kSlotDst)); }
@@ -202,10 +227,12 @@ protected:
         t += dt;
         gritD->enabled = value(kModel) >= 3.5f;
         applyPage();
+        if (shapesDirty && shapeDrag == kNoShapeDrag) sendShapes();
         for (int L = 0; L < pump::mod::kNumLfos; ++L)
         {
             const double hz = value(lfoParam(L, kLfoSync)) >= 0.5f ? 1.0 / pump::noteSeconds((int)value(lfoParam(L, kLfoDiv)), 120.0) : value(lfoParam(L, kLfoRate));
-            previewPhase[L] = std::fmod(previewPhase[L] + hz * dt, 1.0);
+            if (value(lfoDrawParam(L)) >= 0.5f) { previewPhase[L] = shapes[L].wrap(previewPhase[L] + hz * dt); if (!shapes[L].loop && previewPhase[L] >= 1.0) previewPhase[L] = 0.0; }
+            else previewPhase[L] = std::fmod(previewPhase[L] + hz * dt, 1.0);
         }
         if (kickHeld) kickPress = 1.0f; else kickPress = std::max(0.0f, kickPress - dt * 8.0f);
         kickAge += dt;
@@ -254,7 +281,7 @@ protected:
             keyBox(r, on, false, nullptr, 3.0f);
             const Color tc = on ? theme.on : theme.ink;
             const Rect sw(r.x + 8, r.cy() - 5, 10, 10);
-            fillRect(sw, srcColour(s)); strokeRect(sw, tc, 1.0f);
+            fillRect(sw, srcColour(s)); strokeRect(sw, on ? tc : srcInk(s), 1.0f);
             textAt(r.x + 24, r.cy(), pump::mod::kSourceKeys[s], kLabel, 9.5f, tc, ALIGN_LEFT | ALIGN_MIDDLE, 0.8f);
             if (used) { char b[8]; std::snprintf(b, sizeof b, "%d", usedCount(s)); textAt(gripR[s].x - 4, r.cy(), b, kMono, 9.5f, on ? theme.on : theme.ink2, ALIGN_RIGHT | ALIGN_MIDDLE); }
             // the grip: drag it onto a dial
@@ -271,6 +298,7 @@ protected:
         caption(r.x + 12, r.y + 16, pump::mod::kSourceKeys[selSrc]);
         std::snprintf(b, sizeof b, n == 1 ? "IN 1 CONNECTION" : "IN %d CONNECTIONS", n);
         textAt(r.r() - 12, r.y + 16, b, kLabel, 9.0f, theme.ink2, ALIGN_RIGHT | ALIGN_MIDDLE, 0.6f);
+        if (pump::mod::lfoOf(selSrc) >= 0 && value(lfoDrawParam(pump::mod::lfoOf(selSrc))) >= 0.5f) { drawShapeEditor(); return; }
         if (pump::mod::lfoOf(selSrc) >= 0)
         {
             const int L = pump::mod::lfoOf(selSrc), shape = (int)value(lfoParam(L, kLfoShape));
@@ -308,6 +336,221 @@ protected:
             textAt(r.x + 12, r.y + 126, "DRAG ITS GRIP (BELOW) ONTO ANY DIAL TO CONNECT IT", kLabel, 8.5f, theme.ink2, ALIGN_LEFT | ALIGN_MIDDLE, 0.6f);
         }
     }
+    // ---- drawn shapes ----
+    int drawnLfo() const { const int L = pump::mod::lfoOf(selSrc); return page == 1 && L >= 0 && value(lfoDrawParam(L)) >= 0.5f ? L : -1; }
+    float shapeX(float u) const { return shapePlot.x + shapePlot.w * u; }
+    float shapeYv(float v) const { return shapePlot.cy() - v * shapePlot.h * 0.5f; }
+    float shapeU(float x) const { return pump::clampv((x - shapePlot.x) / std::max(1.0f, shapePlot.w), 0.0f, 1.0f); }
+    float shapeV(float y) const { return pump::clampv((shapePlot.cy() - y) / std::max(1.0f, shapePlot.h * 0.5f), -1.0f, 1.0f); }
+    void sendShapes() { setState("shapes", pump::mod::shapesToText(shapes, pump::mod::kNumLfos).c_str()); shapesDirty = false; lastShapeSend = t; }
+    // a change while dragging: sent at most every 50 ms (and when the drag ends)
+    void shapesChanged() { shapesDirty = true; if (t - lastShapeSend > 0.05) sendShapes(); repaint(); }
+    std::string serializeExtra() const override { return pump::mod::shapesToText(shapes, pump::mod::kNumLfos); }
+    void deserializeExtra(const std::string& s) override { pump::mod::shapesFromText(s.c_str(), shapes, pump::mod::kNumLfos); sendShapes(); }
+    void onExtraState(const char* key, const char* v) override
+    {
+        if (std::strcmp(key, "shapes") == 0) pump::mod::shapesFromText(v, shapes, pump::mod::kNumLfos);
+    }
+    // what is under the mouse: a point (0..n-1), a bend handle (100 + the line's end point), a loop end (200 / 201)
+    int shapeHit(int L, float x, float y) const
+    {
+        const pump::mod::DrawnShape& s = shapes[L];
+        for (int k = 0; k < s.n; ++k) if (std::fabs(x - shapeX(s.u[k])) <= 7 && std::fabs(y - shapeYv(s.v[k])) <= 7) return k;
+        for (int k = 1; k < s.n; ++k)
+        {
+            const float um = 0.5f * (s.u[k - 1] + s.u[k]);
+            if (shapeX(s.u[k]) - shapeX(s.u[k - 1]) < 14) continue;
+            if (std::fabs(x - shapeX(um)) <= 6 && std::fabs(y - shapeYv((float)s.at(um))) <= 6) return 100 + k;
+        }
+        if (s.loop && y >= shapePan.y && y <= shapePan.b())
+        {
+            const bool top = y < shapePan.y + 12;
+            if (std::fabs(x - shapeX(s.u[s.loopA])) <= (top ? 6 : 3)) return 200;
+            if (std::fabs(x - shapeX(s.u[s.loopB])) <= (top ? 6 : 3)) return 201;
+        }
+        return -1;
+    }
+    bool shapeMouseDown(float x, float y, bool dbl)
+    {
+        const int L = drawnLfo();
+        if (L < 0) return false;
+        pump::mod::DrawnShape& s = shapes[L];
+        if (loopKeyR.contains(x, y)) { beginGroup(); s.loop = !s.loop; endGroup(); sendShapes(); return true; }
+        if (rateBoxR.w > 0 && rateBoxR.contains(x, y))
+        {
+            const int p = lfoParam(L, kLfoRate);
+            if (dbl) { setParamGesture(p, params()[(size_t)p].def); return true; }
+            shapeDrag = kDragRate; shapeY0 = y; rateN0 = params()[(size_t)p].toNorm(value(p)); beginEdit(p);
+            return true;
+        }
+        if (!shapePan.contains(x, y)) return false;
+        const int h = shapeHit(L, x, y);
+        beginGroup();
+        if (h >= 0 && h < 100)
+        {
+            if (dbl && h > 0 && h < s.n - 1 && s.n > 2)
+            {
+                for (int k = h; k < s.n - 1; ++k) { s.u[k] = s.u[k + 1]; s.v[k] = s.v[k + 1]; s.c[k] = s.c[k + 1]; }
+                --s.n;
+                if (h < s.loopA) --s.loopA;
+                if (h <= s.loopB) --s.loopB;
+                if (s.loopA >= s.loopB) s.loopA = s.loopB - 1;
+                s.fix(); endGroup(); sendShapes();
+                setStatus("Point removed");
+                return true;
+            }
+            shapeDrag = kDragPoint; shapeK = h;
+            return true;
+        }
+        if (h >= 100 && h < 200) { shapeDrag = kDragBend; shapeK = h - 100; shapeY0 = y; shapeC0 = s.c[shapeK]; return true; }
+        if (h == 200 || h == 201) { shapeDrag = h == 200 ? kDragLoopA : kDragLoopB; return true; }
+        // a new point where the click is
+        const float u = shapeU(x);
+        if (s.n >= pump::mod::DrawnShape::kMaxPoints) { endGroup(); setStatus("32 points is the most a shape can have"); return true; }
+        if (u <= 0.0f || u >= 1.0f) { endGroup(); return true; }
+        int at = 1; while (at < s.n - 1 && s.u[at] < u) ++at;
+        for (int k = s.n; k > at; --k) { s.u[k] = s.u[k - 1]; s.v[k] = s.v[k - 1]; s.c[k] = s.c[k - 1]; }
+        s.u[at] = u; s.v[at] = shapeV(y); s.c[at] = 0.0f; ++s.n;
+        if (at <= s.loopA) ++s.loopA;
+        if (at <= s.loopB) ++s.loopB;
+        s.fix(); shapesChanged();
+        shapeDrag = kDragPoint; shapeK = at;
+        return true;
+    }
+    void shapeMouseDrag(float x, float y, uint mod)
+    {
+        const int L = pump::mod::lfoOf(selSrc);
+        if (L < 0) return;
+        pump::mod::DrawnShape& s = shapes[L];
+        const float fine = (mod & kModifierShift) ? 0.2f : 1.0f;
+        switch (shapeDrag)
+        {
+        case kDragPoint:
+        {
+            const int k = shapeK;
+            if (k < 0 || k >= s.n) return;
+            if (k > 0 && k < s.n - 1) s.u[k] = pump::clampv(shapeU(x), s.u[k - 1] + 0.002f, s.u[k + 1] - 0.002f);
+            s.v[k] = shapeV(y);
+            if (mod & kModifierShift) s.v[k] = std::round(s.v[k] * 8.0f) / 8.0f;   // Shift: eighths
+            break;
+        }
+        case kDragBend:
+        {
+            const int k = shapeK;
+            if (k < 1 || k >= s.n) return;
+            const float dir = s.v[k] >= s.v[k - 1] ? 1.0f : -1.0f;   // dragging up bows the line upward either way
+            s.c[k] = pump::clampv(shapeC0 + dir * (y - shapeY0) / 60.0f * fine, -1.0f, 1.0f);
+            break;
+        }
+        case kDragLoopA: case kDragLoopB:
+        {
+            // the loop's ends sit on points: the nearest one, keeping start before end
+            const float u = shapeU(x);
+            int best = 0; for (int k = 1; k < s.n; ++k) if (std::fabs(s.u[k] - u) < std::fabs(s.u[best] - u)) best = k;
+            if (shapeDrag == kDragLoopA) s.loopA = pump::clampv(best, 0, s.loopB - 1);
+            else s.loopB = pump::clampv(best, s.loopA + 1, s.n - 1);
+            break;
+        }
+        case kDragRate:
+        {
+            const int p = lfoParam(L, kLfoRate);
+            setParam(p, params()[(size_t)p].fromNorm(pump::clampv(rateN0 + (shapeY0 - y) / 200.0f * fine, 0.0f, 1.0f)));
+            return;
+        }
+        default: return;
+        }
+        shapesChanged();
+    }
+    void shapeMouseUp()
+    {
+        const int L = pump::mod::lfoOf(selSrc);
+        if (shapeDrag == kDragRate) { if (L >= 0) endEdit(lfoParam(L, kLfoRate)); }
+        else { endGroup(); sendShapes(); }
+        shapeDrag = kNoShapeDrag; shapeK = -1;
+    }
+    // the drawn shape: the line in its source's colour over a soft glow (brighter inside the loop), its points and
+    // bend handles, the loop's two ends, and where it is now
+    void drawShapeEditor()
+    {
+        const int L = pump::mod::lfoOf(selSrc);
+        const pump::mod::DrawnShape& s = shapes[L];
+        const Rect& r = editPanel;
+        const Color neon = srcColour(selSrc), ink = srcInk(selSrc);
+        screenBox(r);
+        caption(r.x + 10, r.y + 14, std::string(pump::mod::kSourceKeys[selSrc]) + "  ·  DRAWN");
+        const int nc = usedCount(selSrc);
+        char b[96];
+        std::snprintf(b, sizeof b, nc == 1 ? "IN 1 CONNECTION" : "IN %d CONNECTIONS", nc);
+        textAt(r.r() - 10, r.y + 14, b, kLabel, 9.0f, theme.ink2, ALIGN_RIGHT | ALIGN_MIDDLE, 0.6f);
+        shapePan = Rect(r.x + 12, r.y + 26, r.w - 140, r.h - 50);
+        shapePlot = Rect(shapePan.x + 10, shapePan.y + 9, shapePan.w - 20, shapePan.h - 18);
+        const Rect& pan = shapePan;
+        strokeRect(pan, theme.dim, 1.0f);
+        line(shapePlot.x, shapePlot.cy(), shapePlot.r(), shapePlot.cy(), withAlpha2(theme.ink, 0.15f), 1.0f);
+        if (s.loop)
+        {
+            const float lx0 = shapeX(s.u[s.loopA]), lx1 = shapeX(s.u[s.loopB]);
+            fillRect(Rect(lx0, pan.y + 1, lx1 - lx0, pan.h - 2), withAlpha2(neon, theme.dark ? 0.07f : 0.12f));
+            for (int e = 0; e < 2; ++e)
+            {
+                const float lx = e ? lx1 : lx0;
+                const bool hot = shapeDrag == (e ? kDragLoopB : kDragLoopA) || shapeHover == 200 + e;
+                line(lx, pan.y + 1, lx, pan.b() - 1, ink, hot ? 2.0f : 1.2f);
+                fillRect(Rect(lx - 3, pan.y + 1, 6, 5), ink);
+            }
+            textAt((lx0 + lx1) * 0.5f, pan.y + 7, "LOOP", kLabel, 8.0f, ink, ALIGN_CENTER | ALIGN_MIDDLE, 1.0f);
+        }
+        // the glow, then the line
+        auto path = [&](float u0, float u1) {
+            beginPath();
+            const int steps = std::max(2, (int)((u1 - u0) * 300.0f));
+            for (int i = 0; i <= steps; ++i) { const float u = u0 + (u1 - u0) * i / steps; if (i == 0) moveTo(shapeX(u), shapeYv((float)s.at(u))); else lineTo(shapeX(u), shapeYv((float)s.at(u))); }
+        };
+        const float la = s.loop ? s.u[s.loopA] : 0.0f, lb = s.loop ? s.u[s.loopB] : 1.0f;
+        const float glowIn = theme.dark ? 0.42f : 0.62f, glowOut = theme.dark ? 0.16f : 0.26f;
+        if (la > 0.0f) { path(0.0f, la); strokeColor(withAlpha2(neon, glowOut)); strokeWidth(9.0f); lineCap(ROUND); lineJoin(ROUND); stroke(); }
+        path(la, lb); strokeColor(withAlpha2(neon, s.loop ? glowIn : glowOut)); strokeWidth(9.0f); lineCap(ROUND); lineJoin(ROUND); stroke();
+        if (lb < 1.0f) { path(lb, 1.0f); strokeColor(withAlpha2(neon, glowOut)); strokeWidth(9.0f); stroke(); }
+        path(0.0f, 1.0f); strokeColor(ink); strokeWidth(2.0f); lineCap(ROUND); lineJoin(ROUND); stroke();
+        for (int k = 1; k < s.n; ++k)
+        {
+            if (shapeX(s.u[k]) - shapeX(s.u[k - 1]) < 14) continue;
+            const float um = 0.5f * (s.u[k - 1] + s.u[k]);
+            const bool hot = (shapeDrag == kDragBend && shapeK == k) || shapeHover == 100 + k;
+            beginPath(); circle(shapeX(um), shapeYv((float)s.at(um)), hot ? 4.2f : 3.2f); fillColor(hot ? neon : theme.bg); fill(); strokeColor(ink); strokeWidth(1.2f); stroke();
+        }
+        for (int k = 0; k < s.n; ++k)
+        {
+            const bool hot = (shapeDrag == kDragPoint && shapeK == k) || shapeHover == k;
+            const Rect q(shapeX(s.u[k]) - 4.5f, shapeYv(s.v[k]) - 4.5f, 9, 9);
+            fillRect(q, hot ? neon : theme.bg); strokeRect(q, theme.ink, 1.4f);
+        }
+        // where it is now (the newest note's, when it runs per note)
+        const bool live = plug && nc > 0;
+        const float ph = live ? plug->lfoPhaseNow[L].load() : (float)previewPhase[L];
+        const float px = shapeX(ph), py = shapeYv((float)s.at(ph));
+        line(px, pan.y + 1, px, pan.b() - 1, withAlpha2(theme.ink, 0.3f), 1.0f);
+        beginPath(); circle(px, py, 4.5f); fillColor(neon); fill(); strokeColor(theme.ink); strokeWidth(1.3f); stroke();
+        // under the pan
+        fillRect(Rect(r.x + 12, r.b() - 17, 8, 8), neon); strokeRect(Rect(r.x + 12, r.b() - 17, 8, 8), ink, 1.0f);
+        if (s.loop) std::snprintf(b, sizeof b, "%d POINTS  ·  LOOPS %d TO %d  ·  CLICK: ADD  ·  DOUBLE-CLICK: REMOVE  ·  DRAG A DOT: BEND", s.n, s.loopA + 1, s.loopB + 1);
+        else std::snprintf(b, sizeof b, "%d POINTS  ·  PLAYS ONCE  ·  CLICK: ADD  ·  DOUBLE-CLICK: REMOVE  ·  DRAG A DOT: BEND", s.n);
+        textAt(r.x + 26, r.b() - 13, b, kLabel, 8.0f, theme.ink2, ALIGN_LEFT | ALIGN_MIDDLE, 0.4f);
+        // the settings column: DRAW, the rate, SYNC, RETRIG (widgets), LOOP
+        const float cx = r.r() - 116, cw = 104;
+        const bool sync = value(lfoParam(L, kLfoSync)) >= 0.5f;
+        rateBoxR = sync ? Rect() : Rect(cx, r.y + 50, cw, 22);
+        if (!sync)
+        {
+            keyBox(rateBoxR, false, shapeDrag == kDragRate, nullptr, 3.0f);
+            const float hz = value(lfoParam(L, kLfoRate));
+            if (hz >= 1.0f) std::snprintf(b, sizeof b, "%.2f HZ", hz); else std::snprintf(b, sizeof b, "%.1f S / CYCLE", 1.0f / std::max(0.01f, hz));
+            textAt(rateBoxR.cx(), rateBoxR.cy(), b, kMono, 9.5f, theme.ink, ALIGN_CENTER | ALIGN_MIDDLE);
+        }
+        loopKeyR = Rect(cx, r.y + 124, cw, 20);
+        keyBox(loopKeyR, s.loop, false, nullptr, 3.0f);
+        textAt(loopKeyR.cx(), loopKeyR.cy(), "LOOP", kLabel, 9.0f, s.loop ? theme.on : theme.ink, ALIGN_CENTER | ALIGN_MIDDLE, 1.0f);
+    }
     void drawConnections()
     {
         const Rect& r = connPanel;
@@ -343,7 +586,7 @@ protected:
             aB = Rect(tB.r() + 10, y + 4, 128, rh - 10);
             xB = Rect(r.r() - 26, y + 1, 14, rh - 4);
             const bool sel = src == selSrc;
-            fillRect(sB, withAlpha2(c, theme.dark ? 0.30f : 0.55f)); strokeRect(sB, theme.ink, sel ? 1.6f : 1.0f);
+            beginPath(); roundedRect(sB.x, sB.y, sB.w, sB.h, sB.h * 0.5f); fillColor(withAlpha2(c, theme.dark ? 0.35f : 0.6f)); fill(); strokeColor(srcInk(src)); strokeWidth(sel ? 1.6f : 1.0f); stroke();
             textAt(sB.cx(), sB.cy(), pump::mod::kSourceKeys[src], kLabel, 8.5f, theme.ink, ALIGN_CENTER | ALIGN_MIDDLE, 0.6f);
             textAt(sB.r() + 8, sB.cy(), ">", kMono, 10.0f, theme.ink2, ALIGN_CENTER | ALIGN_MIDDLE);
             fillRect(tB, theme.bg); strokeRect(tB, theme.ink, 1.0f);
@@ -484,6 +727,7 @@ protected:
         if (button != kMouseButtonLeft) return false;
         if (keyboard.mouseDown(x, y)) { kbDown = true; return true; }
         if (kickR.contains(x, y)) { kickHeld = true; kick((mod & kModifierShift) ? 0.45f : 1.0f); return true; }
+        if (shapeMouseDown(x, y, dbl)) return true;
         // the sources: a grip starts a drag onto a dial (on the SOUND page, where the dials are), a tab selects
         for (int s = 1; s < pump::mod::kNumSources; ++s)
         {
@@ -541,6 +785,7 @@ protected:
     {
         if (kbDown) { keyboard.mouseDrag(x, y); return; }
         if (dragSrc > 0) { dragX = x; dragY = y; return; }
+        if (shapeDrag != kNoShapeDrag) { shapeMouseDrag(x, y, mod); return; }
         if (amtSlot >= 0)
         {
             const float v = pump::clampv((x - amtRow.cx()) / (amtRow.w * 0.5f), -1.0f, 1.0f) * 100.0f;
@@ -552,6 +797,7 @@ protected:
         kickHeld = false;
         if (kbDown) { keyboard.mouseUp(); kbDown = false; }
         if (amtSlot >= 0) { endEdit(slotParam(amtSlot, kSlotAmt)); amtSlot = -1; }
+        if (shapeDrag != kNoShapeDrag) shapeMouseUp();
         if (dragSrc > 0)
         {
             for (const auto& d : targetDials) if (d.second->visible && d.second->r.contains(x, y)) { connect(dragSrc, d.first); break; }
@@ -565,6 +811,19 @@ protected:
     }
     void bodyHover(float x, float y) override
     {
+        const int dl = drawnLfo();
+        const int hv = dl >= 0 && shapePan.contains(x, y) ? shapeHit(dl, x, y) : -1;
+        if (hv != shapeHover) { shapeHover = hv; repaint(); }
+        if (dl >= 0 && shapePan.contains(x, y))
+        {
+            setStatus(hv >= 0 && hv < 100 ? "A point: drag it (Shift: values in eighths); double-click removes it"
+                      : hv >= 100 && hv < 200 ? "Drag up or down to bend this line (Shift: finer)"
+                      : hv >= 200 ? "An end of the loop: drag it to another point"
+                      : "Click to add a point (and drag it)");
+            return;
+        }
+        if (dl >= 0 && rateBoxR.w > 0 && rateBoxR.contains(x, y)) { setStatus("How long one pass through the shape takes: drag up or down (double-click: default)"); return; }
+        if (dl >= 0 && loopKeyR.contains(x, y)) { setStatus("LOOP: after the start, go round the loop for as long as it runs (off: once through, then hold the end)"); return; }
         if (kickR.contains(x, y)) setStatus("KICK: every ringing spring (and the tank) gets a kick (Shift+click: a nudge; key K)");
         else if (springsR.contains(x, y)) setStatus("Every sounding voice as a coil: tighter for a higher note, shaking with its level");
         else if (keyboard.r.contains(x, y)) setStatus("Play: every note tunes the springs and kicks them; velocity = how hard");
@@ -608,6 +867,15 @@ private:
     Segmented* lShape[pump::mod::kNumLfos];
     Dial* lRate[pump::mod::kNumLfos];
     MenuButton* lDiv[pump::mod::kNumLfos];
+    Button* lDraw[pump::mod::kNumLfos];
+    // the drawn shapes (the window's copies: edited here, sent to the plugin as the "shapes" state)
+    pump::mod::DrawnShape shapes[pump::mod::kNumLfos];
+    Rect shapePan, shapePlot, loopKeyR, rateBoxR;
+    enum ShapeDrag { kNoShapeDrag, kDragPoint, kDragBend, kDragLoopA, kDragLoopB, kDragRate } shapeDrag = kNoShapeDrag;
+    int shapeK = -1, shapeHover = -1;
+    float shapeY0 = 0.0f, shapeC0 = 0.0f, rateN0 = 0.0f;
+    bool shapesDirty = false;
+    double lastShapeSend = 0.0;
     Rect tabR[pump::mod::kNumSources], gripR[pump::mod::kNumSources], editPanel, connPanel, lfoScreenR, addR, amtRow;
     Rect rowSrc[kRows], rowDst[kRows], rowAmt[kRows], rowX[kRows];
     int rowSlot[kRows] = {};

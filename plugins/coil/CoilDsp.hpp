@@ -13,6 +13,7 @@
 #include "CoilEngine.hpp"
 #include "dsp/Util.hpp"
 #include "dsp/Mod.hpp"
+#include "dsp/ModShape.hpp"
 #include "dsp/Tempo.hpp"
 #include <atomic>
 #include <utility>
@@ -36,6 +37,14 @@ public:
     // every source's value now (per-note sources: the newest note's), and the LFOs' phases
     std::atomic<float> sourceNow[pump::mod::kNumSources] {};
     std::atomic<float> lfoPhaseNow[pump::mod::kNumLfos] {};
+    // the drawn shapes (any thread writes; the audio thread picks them up)
+    pump::mod::DrawnShapes<pump::mod::kNumLfos> shapesIn;
+    void setShapesText(const char* text)
+    {
+        pump::mod::DrawnShape s[pump::mod::kNumLfos];
+        pump::mod::shapesFromText(text, s, pump::mod::kNumLfos);
+        for (int i = 0; i < pump::mod::kNumLfos; ++i) shapesIn.store(i, s[i]);
+    }
 
     // the parameters into the engine
     void syncSettings()
@@ -51,6 +60,7 @@ public:
         engine.prepare(this->getSampleRate(), (int)this->getBufferSize());
         outLimit.prepare(this->getSampleRate());
         for (auto& l : lfo) l.reset();
+        for (int L = 0; L < pump::mod::kNumLfos; ++L) { drawPh[L] = 0.0; for (int i = 0; i < kMaxVoices; ++i) voicePh[L][i] = 0.0; }
         notesSeen = engine.noteOns();
     }
     // one chunk (the caller splits blocks and their MIDI into chunks)
@@ -66,6 +76,14 @@ private:
     float base[kNumParams] = {};
     pump::mod::Lfo lfo[pump::mod::kNumLfos];
     double lfoOut[pump::mod::kNumLfos] = {};
+    // drawn shapes: the audio thread's copies, the position in each (global, and per voice when it restarts per note)
+    pump::mod::DrawnShape drawnShape[pump::mod::kNumLfos] = { pump::mod::DrawnShape::defaultShape(0), pump::mod::DrawnShape::defaultShape(1), pump::mod::DrawnShape::defaultShape(2) };
+    double drawPh[pump::mod::kNumLfos] = {}, voicePh[pump::mod::kNumLfos][kMaxVoices] = {};
+    uint32_t voiceSeen[kMaxVoices] = {};
+    bool drawn(int L) const { return base[lfoDrawParam(L)] >= 0.5f; }
+    // a drawn shape that restarts with every note runs per note (each voice its own)
+    bool drawnPerVoice(int L) const { return drawn(L) && base[lfoParam(L, kLfoRetrig)] >= 0.5f; }
+    bool srcPerVoice(int s) const { const int L = pump::mod::lfoOf(s); return pump::mod::perVoice(s) || (L >= 0 && drawnPerVoice(L)); }
     uint32_t notesSeen = 0;
     // the connections in use (scanned when parameters change)
     struct Conn { int src, target; float amt; };
@@ -82,7 +100,7 @@ private:
             const float amt = base[slotParam(k, kSlotAmt)] * 0.01f;
             if (src <= pump::mod::kSrcNone || src >= pump::mod::kNumSources || dst <= 0 || dst >= kNumTargets || amt == 0.0f) continue;
             conn[numConn++] = { src, dst, amt };
-            if (pump::mod::perVoice(src)) anyPerVoice = true;
+            if (srcPerVoice(src)) anyPerVoice = true;
         }
         anyActive = numConn > 0;
     }
@@ -104,9 +122,12 @@ private:
         using namespace pump::mod;
         switch (src)
         {
-        case kSrcLfo1: return lfoOut[0];
-        case kSrcLfo2: return lfoOut[1];
-        case kSrcLfo3: return lfoOut[2];
+        case kSrcLfo1: case kSrcLfo2: case kSrcLfo3:
+        {
+            const int L = lfoOf(src);
+            if (drawnPerVoice(L) && vi >= 0) return drawnShape[L].at(voicePh[L][vi]);
+            return lfoOut[L];
+        }
         case kSrcWheel: return engine.wheel();
         case kSrcAftertouch: return engine.aftertouch();
         case kSrcVelocity: return vi >= 0 ? engine.voiceVelocity(vi) : 0.0;
@@ -122,7 +143,7 @@ private:
         for (int k = 0; k < numConn; ++k)
         {
             const Conn& c = conn[k];
-            if (pump::mod::perVoice(c.src) && !perVoiceToo) continue;
+            if (srcPerVoice(c.src) && !perVoiceToo) continue;
             off[c.target] += c.amt * sourceValue(c.src, vi);
         }
     }
@@ -153,20 +174,37 @@ private:
             const int shape = (int)base[lfoParam(L, kLfoShape)];
             const bool sync = base[lfoParam(L, kLfoSync)] >= 0.5f, retrig = base[lfoParam(L, kLfoRetrig)] >= 0.5f;
             const double rateOff = off[lfoRateTarget(L)];
-            if (retrig && newNote) lfo[L].reset();
+            shapesIn.takeIfChanged(L, drawnShape[L]);
+            if (retrig && newNote) { lfo[L].reset(); drawPh[L] = 0.0; }
+            // how far it moves in this chunk (cycles), or where the song puts it
+            double dp = 0.0, locked = -1.0;
             if (sync)
             {
                 const double q = pump::noteQuarters((int)base[lfoParam(L, kLfoDiv)]) * std::exp2(-4.0 * rateOff);
-                if (hostTime.valid && hostTime.playing && !retrig && rateOff == 0.0) lfo[L].lockTo(hostTime.ppq / q);
-                else lfo[L].advance(n / (q * 60.0 / clampv(hostTime.bpm, 20.0, 999.0) * sr));
+                dp = n / (q * 60.0 / clampv(hostTime.bpm, 20.0, 999.0) * sr);
+                if (hostTime.valid && hostTime.playing && !retrig && rateOff == 0.0) locked = hostTime.ppq / q;
             }
             else
             {
                 const ParamSpec& s = params()[(size_t)lfoParam(L, kLfoRate)];
                 const double hz = s.fromNorm((float)clampv((double)s.toNorm(base[lfoParam(L, kLfoRate)]) + rateOff, 0.0, 1.0));
-                lfo[L].advance(hz * n / sr);
+                dp = hz * n / sr;
             }
-            lfoOut[L] = lfo[L].value(shape);
+            if (locked >= 0.0) lfo[L].lockTo(locked); else lfo[L].advance(dp);
+            if (drawn(L))
+            {
+                // the drawn shape: once through, then round its loop (locked to the song: the whole shape each cycle)
+                drawPh[L] = locked >= 0.0 ? locked - std::floor(locked) : drawnShape[L].wrap(drawPh[L] + dp);
+                lfoOut[L] = drawnShape[L].at(drawPh[L]);
+                if (drawnPerVoice(L))
+                    for (int i = 0; i < kMaxVoices; ++i)
+                    {
+                        if (!engine.voiceActive(i)) continue;
+                        if (engine.voiceStarts(i) != voiceSeen[i]) { voiceSeen[i] = engine.voiceStarts(i); for (int M = 0; M < pump::mod::kNumLfos; ++M) voicePh[M][i] = 0.0; }
+                        voicePh[L][i] = drawnShape[L].wrap(voicePh[L][i] + dp);
+                    }
+            }
+            else lfoOut[L] = lfo[L].value(shape);
         }
         // every voice: the global connections
         float v[kNumParams];
@@ -190,7 +228,11 @@ private:
     {
         const int vi = engine.lastVoice();
         for (int s = 1; s < pump::mod::kNumSources; ++s) sourceNow[s].store((float)sourceValue(s, vi), std::memory_order_relaxed);
-        for (int L = 0; L < pump::mod::kNumLfos; ++L) lfoPhaseNow[L].store((float)lfo[L].phase, std::memory_order_relaxed);
+        for (int L = 0; L < pump::mod::kNumLfos; ++L)
+        {
+            const double ph = !drawn(L) ? lfo[L].phase : drawnPerVoice(L) ? (vi >= 0 ? voicePh[L][vi] : 0.0) : drawPh[L];
+            lfoPhaseNow[L].store((float)ph, std::memory_order_relaxed);
+        }
     }
 };
 

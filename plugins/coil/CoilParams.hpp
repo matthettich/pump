@@ -5,6 +5,7 @@
 #include "PumpParams.hpp"
 #include "dsp/Mod.hpp"
 #include "dsp/Tempo.hpp"
+#include <deque>
 #include <string>
 #include <vector>
 
@@ -30,8 +31,11 @@ enum Param : int {
     kSlotBase = kLfoBase + 2 * 5,
     // appended 2026-10-28: LFO 3 (its five settings, as LFO 1 and 2)
     kLfo3Base = kSlotBase + 3 * pump::mod::kSlots,
-    kNumParams = kLfo3Base + 5
+    // appended 2026-10-28: each LFO plays its drawn shape instead (the shapes are saved as the "shapes" state)
+    kDrawBase = kLfo3Base + 5,
+    kNumParams = kDrawBase + 3
 };
+inline int lfoDrawParam(int lfo) { return kDrawBase + lfo; }
 enum LfoParam : int { kLfoShape = 0, kLfoRate, kLfoSync, kLfoDiv, kLfoRetrig, kPerLfo };
 inline int lfoParam(int lfo, int what) { return (lfo < 2 ? kLfoBase + lfo * kPerLfo : kLfo3Base) + what; }
 enum SlotParam : int { kSlotSrc = 0, kSlotDst, kSlotAmt, kPerSlot };
@@ -84,8 +88,7 @@ inline const std::vector<ParamSpec>& params()
     // appended 2026-10-27: polyphony (not automatable: changing it lets the ringing notes go)
     v.push_back({ "voices", "Voices", "Voices", 1, 16, 8, PUnit::None, PScale::Linear, kPInteger, nullptr, 1 });
     // appended 2026-10-27: modulation
-    static std::vector<std::string> keep;
-    keep.reserve(3 * 10 + pump::mod::kSlots * 6);
+    static std::deque<std::string> keep;   // a deque: adding never moves the strings already handed out
     auto str = [&](std::string x) { keep.push_back(std::move(x)); return keep.back().c_str(); };
     auto lfo = [&](int l, float rate) {
         const std::string sy = "lfo" + std::to_string(l + 1), nm = "LFO " + std::to_string(l + 1);
@@ -105,6 +108,9 @@ inline const std::vector<ParamSpec>& params()
     }
     // appended 2026-10-28
     lfo(2, 5.0f);
+    // appended 2026-10-28
+    for (int l = 0; l < 3; ++l)
+        v.push_back({ str("lfo" + std::to_string(l + 1) + "_draw"), str("LFO " + std::to_string(l + 1) + " Drawn"), "Draw", 0, 1, 0, PUnit::None, PScale::Linear, kPAutomatable | kPBoolean, nullptr, 1 });
     return v;
     }();
     return v;

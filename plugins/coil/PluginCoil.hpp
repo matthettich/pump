@@ -9,7 +9,7 @@ using namespace pump::coil;
 
 class PluginCoil : public pump::coil::CoilDsp<PumpPlugin> {
 public:
-    PluginCoil() : CoilDsp(params().data(), kNumParams, &presets())
+    PluginCoil() : CoilDsp(params().data(), kNumParams, &presets(), 1)   // one state of its own: "shapes"
     {
         prepareDsp();
         if (const char* n = pump::testEnv("PUMP_TEST_NOTES")) testNotes = n;   // headless screenshots: notes to hold (after 0.5 s)
@@ -26,6 +26,24 @@ protected:
     const char* getDescription() const override { return PUMP_PLUGIN_ABOUT; }
 
     void activate() override { prepareDsp(); }
+
+    // "shapes": the LFOs' drawn shapes (the window edits them; the DSP plays them)
+    void initState(uint32_t index, State& state) override
+    {
+        if (index < kPumpNumStates) { PumpPlugin::initState(index, state); return; }
+        state.key = "shapes"; state.defaultValue = ""; state.label = "Drawn shapes"; state.hints = 0;
+    }
+    void setState(const char* key, const char* value) override
+    {
+        if (std::strcmp(key, "shapes") == 0) { shapesText = value ? value : ""; setShapesText(shapesText.c_str()); return; }
+        PumpPlugin::setState(key, value);
+    }
+    String getState(const char* key) const override
+    {
+        if (std::strcmp(key, "shapes") == 0) return String(shapesText.c_str());
+        return PumpPlugin::getState(key);
+    }
+    std::string shapesText;
 
 
     void run(const float**, float** outputs, uint32_t frames, const MidiEvent* midiEvents, uint32_t midiEventCount) override
