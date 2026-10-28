@@ -1,5 +1,5 @@
 // pump COIL modulation (CoilDsp + common/dsp/Mod.hpp): with no connection the sound is exactly the unmodulated one;
-// an LFO on TENSION changes the sound over time; LFO shapes stay in range and DRIFT has no jumps; velocity per note
+// an LFO on TENSION (LFO 3 too) changes the sound over time; LFO shapes stay in range and DRIFT has no jumps; velocity per note
 // gives each note its own decay; the mod wheel moves its target; a removed connection puts everything back; two
 // sources on one target add up; LFO 2 can move LFO 1's rate; sync locks to the song. CPU with connections.
 #include "CoilDsp.hpp"
@@ -65,6 +65,29 @@ int main()
         double finite = 1; for (float v : y) if (!std::isfinite(v)) finite = 0;
         CHECK(finite && diff(x, y) > 1e-3, "the sound changes (max difference %.3f), stays finite", diff(x, y));
     }
+    printf("== LFO 3\n");
+    {
+        // saved connections keep their meaning: sources and targets that existed before LFO 3 kept their numbers
+        static_assert(mod::kSrcLfo1 == 1 && mod::kSrcLfo2 == 2 && mod::kSrcVelocity == 3 && mod::kSrcRandom == 7 && mod::kSrcLfo3 == 8, "source numbers are saved");
+        CHECK(lfoRateTarget(0) == 15 && lfoRateTarget(1) == 16 && lfoRateTarget(2) == 17 && kNumTargets == 18, "targets: LFO 1, 2, 3 rates are 15, 16, 17");
+        CHECK(lfoParam(2, kLfoShape) == kSlotBase + 3 * mod::kSlots && lfoParam(1, kLfoRetrig) == kSlotBase - 1, "LFO 3's settings come after the connections");
+        Dsp a; a.prepareDsp();
+        Dsp b; connect(b, 9, mod::kSrcLfo3, targetOfParam(kTension), 80.0f); b.values[lfoParam(2, kLfoRate)] = 3.0f; b.prepareDsp();
+        const auto x = render(a, 2.0, chord), y = render(b, 2.0, chord);
+        CHECK(diff(x, y) > 1e-3, "LFO 3 on TENSION changes the sound (max difference %.3f)", diff(x, y));
+        // LFO 3 moves LFO 1's rate (as LFO 2 can)
+        Dsp d; connect(d, 0, mod::kSrcLfo1, targetOfParam(kTone), 50.0f); connect(d, 1, mod::kSrcLfo3, lfoRateTarget(0), 100.0f);
+        d.values[lfoParam(2, kLfoShape)] = (float)mod::kSquare; d.values[lfoParam(2, kLfoRate)] = 0.5f; d.prepareDsp();
+        int fast = 0, slow = 0; float prev = 0.0f, L[256], R[256];
+        for (int k = 0; k < (int)(2.0 * 48000 / 256); ++k)
+        {
+            d.renderChunk(L, R, 256, nullptr, 0);
+            const float ph = d.lfoPhaseNow[0].load();
+            if (ph < prev) (k < (int)(48000 / 256) ? fast : slow)++;
+            prev = ph;
+        }
+        CHECK(fast > 2 * std::max(1, slow) || slow > 2 * std::max(1, fast), "LFO 3 moves LFO 1's rate: %d cycles, then %d", fast, slow);
+    }
     printf("== shapes\n");
     {
         bool inRange = true; double jump = 0.0;
@@ -119,7 +142,7 @@ int main()
     }
     printf("== LFO 2 moves LFO 1's rate; sync\n");
     {
-        Dsp d; connect(d, 0, mod::kSrcLfo1, targetOfParam(kTone), 50.0f); connect(d, 1, mod::kSrcLfo2, kNumTargets - 2, 100.0f);
+        Dsp d; connect(d, 0, mod::kSrcLfo1, targetOfParam(kTone), 50.0f); connect(d, 1, mod::kSrcLfo2, lfoRateTarget(0), 100.0f);
         d.values[lfoParam(1, kLfoShape)] = (float)mod::kSquare; d.values[lfoParam(1, kLfoRate)] = 0.5f; d.prepareDsp();
         // over one LFO 2 cycle LFO 1 runs fast for half and slow for half: count LFO 1's cycles in each half
         int fast = 0, slow = 0; float prev = 0.0f, L[256], R[256];

@@ -3,7 +3,7 @@
 // MIDI (the modulation, the engine, then the output safety limiter). Base supplies pv(), getSampleRate(),
 // getBufferSize().
 //
-// Modulation (common/dsp/Mod.hpp): two LFOs and per-note / MIDI sources move COIL's continuous controls through a pool
+// Modulation (common/dsp/Mod.hpp): three LFOs and per-note / MIDI sources move COIL's continuous controls through a pool
 // of connections (source, target, amount). Once per chunk (at most 256 samples) the sources are read, every target's
 // value is its control's position plus the connections' amounts times their sources (in the control's own 0..1 range,
 // so a log control moves evenly), and the engine gets those settings; per-note sources (velocity, note, random) give
@@ -23,7 +23,7 @@ template <class Base>
 class CoilDsp : public Base {
 public:
     template <class... A>
-    explicit CoilDsp(A&&... a) : Base(std::forward<A>(a)...) { lfo[0].seed(0x1F35A7u); lfo[1].seed(0x7C2B91u); }
+    explicit CoilDsp(A&&... a) : Base(std::forward<A>(a)...) { lfo[0].seed(0x1F35A7u); lfo[1].seed(0x7C2B91u); lfo[2].seed(0x4E6D13u); }
 
     // gain staging (the volume pass, 2026-10-26): VOLUME 0 dB is a typical voice at about -20 dBFS RMS
     static constexpr float kTrimDb = -2.0f;
@@ -35,7 +35,7 @@ public:
     // ---- feeds for the window ----
     // every source's value now (per-note sources: the newest note's), and the LFOs' phases
     std::atomic<float> sourceNow[pump::mod::kNumSources] {};
-    std::atomic<float> lfoPhaseNow[2] {};
+    std::atomic<float> lfoPhaseNow[pump::mod::kNumLfos] {};
 
     // the parameters into the engine
     void syncSettings()
@@ -50,7 +50,8 @@ public:
         syncSettings();
         engine.prepare(this->getSampleRate(), (int)this->getBufferSize());
         outLimit.prepare(this->getSampleRate());
-        lfo[0].reset(); lfo[1].reset(); notesSeen = engine.noteOns();
+        for (auto& l : lfo) l.reset();
+        notesSeen = engine.noteOns();
     }
     // one chunk (the caller splits blocks and their MIDI into chunks)
     void renderChunk(float* l, float* r, int n, const pump::synth::Midi* ev, int nev)
@@ -63,18 +64,18 @@ public:
 
 private:
     float base[kNumParams] = {};
-    pump::mod::Lfo lfo[2];
-    double lfoOut[2] = { 0.0, 0.0 };
+    pump::mod::Lfo lfo[pump::mod::kNumLfos];
+    double lfoOut[pump::mod::kNumLfos] = {};
     uint32_t notesSeen = 0;
     // the connections in use (scanned when parameters change)
     struct Conn { int src, target; float amt; };
     Conn conn[pump::mod::kSlots];
     int numConn = 0;
-    bool anyActive = false, anyPerVoice = false, lfoUsed[2] = { false, false };
+    bool anyActive = false, anyPerVoice = false;
 
     void scanSlots()
     {
-        numConn = 0; anyPerVoice = false; lfoUsed[0] = lfoUsed[1] = false;
+        numConn = 0; anyPerVoice = false;
         for (int k = 0; k < pump::mod::kSlots; ++k)
         {
             const int src = (int)base[slotParam(k, kSlotSrc)], dst = (int)base[slotParam(k, kSlotDst)];
@@ -82,8 +83,6 @@ private:
             if (src <= pump::mod::kSrcNone || src >= pump::mod::kNumSources || dst <= 0 || dst >= kNumTargets || amt == 0.0f) continue;
             conn[numConn++] = { src, dst, amt };
             if (pump::mod::perVoice(src)) anyPerVoice = true;
-            if (src == pump::mod::kSrcLfo1) lfoUsed[0] = true;
-            if (src == pump::mod::kSrcLfo2) lfoUsed[1] = true;
         }
         anyActive = numConn > 0;
     }
@@ -107,6 +106,7 @@ private:
         {
         case kSrcLfo1: return lfoOut[0];
         case kSrcLfo2: return lfoOut[1];
+        case kSrcLfo3: return lfoOut[2];
         case kSrcWheel: return engine.wheel();
         case kSrcAftertouch: return engine.aftertouch();
         case kSrcVelocity: return vi >= 0 ? engine.voiceVelocity(vi) : 0.0;
@@ -145,14 +145,14 @@ private:
         const uint32_t ons = engine.noteOns();
         const bool newNote = ons != notesSeen;
         notesSeen = ons;
-        // the LFOs (rate targets from the global sources, LFO 2 first so it can move LFO 1)
+        // the LFOs (rate targets from the global sources; the last first, so LFO 3 can move 2 and 1, and 2 can move 1)
         double off[kNumTargets];
-        for (int L = 1; L >= 0; --L)
+        for (int L = pump::mod::kNumLfos - 1; L >= 0; --L)
         {
             offsets(off, -1, false);
             const int shape = (int)base[lfoParam(L, kLfoShape)];
             const bool sync = base[lfoParam(L, kLfoSync)] >= 0.5f, retrig = base[lfoParam(L, kLfoRetrig)] >= 0.5f;
-            const double rateOff = off[kNumTargets - 2 + L];
+            const double rateOff = off[lfoRateTarget(L)];
             if (retrig && newNote) lfo[L].reset();
             if (sync)
             {
@@ -190,8 +190,7 @@ private:
     {
         const int vi = engine.lastVoice();
         for (int s = 1; s < pump::mod::kNumSources; ++s) sourceNow[s].store((float)sourceValue(s, vi), std::memory_order_relaxed);
-        lfoPhaseNow[0].store((float)lfo[0].phase, std::memory_order_relaxed);
-        lfoPhaseNow[1].store((float)lfo[1].phase, std::memory_order_relaxed);
+        for (int L = 0; L < pump::mod::kNumLfos; ++L) lfoPhaseNow[L].store((float)lfo[L].phase, std::memory_order_relaxed);
     }
 };
 

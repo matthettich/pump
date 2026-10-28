@@ -42,7 +42,7 @@ public:
         modB = addButton("MOD", [this] { setPage(1); }, [this] { return page == 1; });
         soundB->small = modB->small = true;
         soundB->tip = "The spring, envelope and tank"; modB->tip = "The selected source's settings, and every connection";
-        for (int L = 0; L < 2; ++L)
+        for (int L = 0; L < pump::mod::kNumLfos; ++L)
         {
             lShape[L] = addSegmented(lfoParam(L, kLfoShape), { "SINE", "TRI", "SAW", "SQR", "S&H", "DRIFT" });
             lRate[L] = dial(lfoParam(L, kLfoRate), "RATE", false, "How fast (Hz)");
@@ -59,7 +59,8 @@ public:
         const std::pair<int, Dial*> dl[] = { { kTension, tensionD }, { kDrip, dripD }, { kWobble, wobbleD }, { kGrit, gritD }, { kTone, toneD },
                                              { kHarmonic, harmD }, { kSpread, spreadD }, { kExcite, exciteD }, { kDecay, decayD }, { kRelease, relD },
                                              { kVelocity, velD }, { kTank, tankD }, { kWidth, widthD }, { kVolume, volD },
-                                             { lfoParam(0, kLfoRate), lRate[0] }, { lfoParam(1, kLfoRate), lRate[1] } };
+                                             { lfoParam(0, kLfoRate), lRate[0] }, { lfoParam(1, kLfoRate), lRate[1] },
+                                             { lfoParam(2, kLfoRate), lRate[2] } };
         for (const auto& d : dl) targetDials.push_back(d);
         applyPage();
         keyboard.lowNote = 36;
@@ -112,9 +113,9 @@ protected:
         soundB->r = Rect(modPanel.r() - 12 - 148, y2 + 6, 72, 20);
         modB->r = Rect(modPanel.r() - 12 - 72, y2 + 6, 72, 20);
         const float tw = (modPanel.w - 24 - 3 * 8) / 4.0f;
-        for (int s = 1; s < pump::mod::kNumSources; ++s)
+        for (int k = 0; k < pump::mod::kNumSources - 1; ++k)
         {
-            const int k = s - 1, row = k / 4, col = k % 4;
+            const int s = pump::mod::kSourceOrder[k], row = k / 4, col = k % 4;
             tabR[s] = Rect(modPanel.x + 12 + col * (tw + 8), y2 + 34 + row * 38, tw, 28);
             gripR[s] = Rect(tabR[s].r() - 22, tabR[s].y, 22, tabR[s].h);
         }
@@ -122,7 +123,7 @@ protected:
         editPanel = Rect(14, y1, 500, ph);
         connPanel = Rect(526, y1, 460, ph);
         lfoScreenR = Rect(26, y1 + 28, 140, 110);
-        for (int L = 0; L < 2; ++L)
+        for (int L = 0; L < pump::mod::kNumLfos; ++L)
         {
             lShape[L]->r = Rect(178, y1 + 28, 324, 22);
             lRate[L]->r = Rect(178, y1 + 58, 96, hm);
@@ -147,9 +148,9 @@ protected:
         const bool snd = page == 0;
         Control* sound[] = { modelSeg, tensionD, dripD, wobbleD, gritD, toneD, decayD, relD, velD, tankD, widthD };
         for (Control* c : sound) c->visible = snd;
-        for (int L = 0; L < 2; ++L)
+        for (int L = 0; L < pump::mod::kNumLfos; ++L)
         {
-            const bool on = !snd && selSrc == pump::mod::kSrcLfo1 + L, sync = value(lfoParam(L, kLfoSync)) >= 0.5f;
+            const bool on = !snd && pump::mod::lfoOf(selSrc) == L, sync = value(lfoParam(L, kLfoSync)) >= 0.5f;
             lShape[L]->visible = lSync[L]->visible = lRetrig[L]->visible = on;
             lRate[L]->visible = on && !sync;
             lDiv[L]->visible = on && sync;
@@ -157,7 +158,7 @@ protected:
     }
     Color srcColour(int s) const
     {
-        static const unsigned c[pump::mod::kNumSources] = { 0x888888, 0, 0xFFD04A, 0xB9A0FF, 0x4DF3FF, 0x5CFFB4, 0xFFB24F, 0xFF6FB5 };
+        static const unsigned c[pump::mod::kNumSources] = { 0x888888, 0, 0xFFD04A, 0xB9A0FF, 0x4DF3FF, 0x5CFFB4, 0xFFB24F, 0xFF6FB5, 0x7FA8FF };
         if (s == pump::mod::kSrcLfo1) return theme.second;
         return pump::mixColor(pump::hexColor(c[pump::clampv(s, 0, pump::mod::kNumSources - 1)]), theme.ink, theme.dark ? 0.0f : 0.3f);
     }
@@ -166,11 +167,11 @@ protected:
     float slotAmt(int k) const { return value(slotParam(k, kSlotAmt)); }
     int usedCount(int src) const { int n = 0; for (int k = 0; k < pump::mod::kSlots; ++k) if (slotSrc(k) == src) ++n; return n; }
     Dial* dialFor(int param) const { for (const auto& d : targetDials) if (d.first == param) return d.second; return nullptr; }
-    int targetParam(int t) const { if (t <= 0 || t >= kNumTargets) return -1; const int p = kTargetParams[t]; return p == -2 ? lfoParam(0, kLfoRate) : p == -3 ? lfoParam(1, kLfoRate) : p; }
+    int targetParam(int t) const { return paramOfTarget(t); }
     // a connection from src to the target of `param`: the one already there (selected), or the first free slot
     void connect(int src, int param, float amt = 25.0f)
     {
-        const int t = targetOfParam(param) ? targetOfParam(param) : (param == lfoParam(0, kLfoRate) ? kNumTargets - 2 : param == lfoParam(1, kLfoRate) ? kNumTargets - 1 : 0);
+        const int t = targetOfParam(param);
         if (t <= 0) return;
         for (int k = 0; k < pump::mod::kSlots; ++k)
             if (slotSrc(k) == src && slotDst(k) == t) { setStatus(std::string(pump::mod::kSourceKeys[src]) + " already moves " + kTargetNames[t] + ": change its amount under MOD"); return; }
@@ -201,7 +202,7 @@ protected:
         t += dt;
         gritD->enabled = value(kModel) >= 3.5f;
         applyPage();
-        for (int L = 0; L < 2; ++L)
+        for (int L = 0; L < pump::mod::kNumLfos; ++L)
         {
             const double hz = value(lfoParam(L, kLfoSync)) >= 0.5f ? 1.0 / pump::noteSeconds((int)value(lfoParam(L, kLfoDiv)), 120.0) : value(lfoParam(L, kLfoRate));
             previewPhase[L] = std::fmod(previewPhase[L] + hz * dt, 1.0);
@@ -270,9 +271,9 @@ protected:
         caption(r.x + 12, r.y + 16, pump::mod::kSourceKeys[selSrc]);
         std::snprintf(b, sizeof b, n == 1 ? "IN 1 CONNECTION" : "IN %d CONNECTIONS", n);
         textAt(r.r() - 12, r.y + 16, b, kLabel, 9.0f, theme.ink2, ALIGN_RIGHT | ALIGN_MIDDLE, 0.6f);
-        if (selSrc == pump::mod::kSrcLfo1 || selSrc == pump::mod::kSrcLfo2)
+        if (pump::mod::lfoOf(selSrc) >= 0)
         {
-            const int L = selSrc - pump::mod::kSrcLfo1, shape = (int)value(lfoParam(L, kLfoShape));
+            const int L = pump::mod::lfoOf(selSrc), shape = (int)value(lfoParam(L, kLfoShape));
             const Rect& w = lfoScreenR;
             screenBox(w);
             const Rect p(w.x + 6, w.y + 8, w.w - 12, w.h - 16);
@@ -499,8 +500,9 @@ protected:
                 if (rowX[i].contains(x, y)) { removeSlot(k); return true; }
                 if (rowSrc[i].contains(x, y))
                 {
-                    std::vector<std::string> it; for (int s = 1; s < pump::mod::kNumSources; ++s) it.push_back(pump::mod::kSourceNames[s]);
-                    openMenu(rowSrc[i], it, slotSrc(k) - 1, [this, k](int s) { setParamGesture(slotParam(k, kSlotSrc), (float)(s + 1)); });
+                    std::vector<std::string> it; int cur = 0;
+                    for (int j = 0; j < pump::mod::kNumSources - 1; ++j) { it.push_back(pump::mod::kSourceNames[pump::mod::kSourceOrder[j]]); if (pump::mod::kSourceOrder[j] == slotSrc(k)) cur = j; }
+                    openMenu(rowSrc[i], it, cur, [this, k](int j) { setParamGesture(slotParam(k, kSlotSrc), (float)pump::mod::kSourceOrder[j]); });
                     return true;
                 }
                 if (rowDst[i].contains(x, y))
@@ -601,11 +603,11 @@ private:
     static constexpr int kRows = 6;
     int page = 0, selSrc = pump::mod::kSrcLfo1, dragSrc = 0, amtSlot = -1, listScroll = 0, nRows = 0;
     float dragX = 0.0f, dragY = 0.0f;
-    double previewPhase[2] = { 0.0, 0.0 };
-    Button *soundB, *modB, *lSync[2], *lRetrig[2];
-    Segmented* lShape[2];
-    Dial* lRate[2];
-    MenuButton* lDiv[2];
+    double previewPhase[pump::mod::kNumLfos] = {};
+    Button *soundB, *modB, *lSync[pump::mod::kNumLfos], *lRetrig[pump::mod::kNumLfos];
+    Segmented* lShape[pump::mod::kNumLfos];
+    Dial* lRate[pump::mod::kNumLfos];
+    MenuButton* lDiv[pump::mod::kNumLfos];
     Rect tabR[pump::mod::kNumSources], gripR[pump::mod::kNumSources], editPanel, connPanel, lfoScreenR, addR, amtRow;
     Rect rowSrc[kRows], rowDst[kRows], rowAmt[kRows], rowX[kRows];
     int rowSlot[kRows] = {};

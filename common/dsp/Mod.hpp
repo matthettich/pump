@@ -1,4 +1,4 @@
-// pump's modulation: the sources (two LFOs, velocity, note, mod wheel, aftertouch, random per note) and the pieces a
+// pump's modulation: the sources (three LFOs, velocity, note, mod wheel, aftertouch, random per note) and the pieces a
 // plugin's connections are made of. A connection ("slot") is three parameters: a source, a target (one of the plugin's
 // own continuous parameters, or an LFO's rate) and an amount (-100..100 % of the target's range). An instrument has a
 // fixed pool of slots (sessions and automation keep their places); the window shows the ones in use and adds or
@@ -13,9 +13,16 @@ namespace pump { namespace mod {
 // an instrument's pool of connections (each three parameters; the window shows those in use)
 constexpr int kSlots = 32;
 
-enum Source : int { kSrcNone = 0, kSrcLfo1, kSrcLfo2, kSrcVelocity, kSrcNote, kSrcWheel, kSrcAftertouch, kSrcRandom, kNumSources };
-static const char* const kSourceNames[kNumSources] = { "None", "LFO 1", "LFO 2", "Velocity", "Note", "Mod wheel", "Aftertouch", "Random" };
-static const char* const kSourceKeys[kNumSources] = { "-", "LFO 1", "LFO 2", "VELOCITY", "NOTE", "WHEEL", "AFTERTOUCH", "RANDOM" };
+// (Append only: a connection saves its source as this number. LFO 3 came later, so it is last.)
+enum Source : int { kSrcNone = 0, kSrcLfo1, kSrcLfo2, kSrcVelocity, kSrcNote, kSrcWheel, kSrcAftertouch, kSrcRandom, kSrcLfo3, kNumSources };
+static const char* const kSourceNames[kNumSources] = { "None", "LFO 1", "LFO 2", "Velocity", "Note", "Mod wheel", "Aftertouch", "Random", "LFO 3" };
+static const char* const kSourceKeys[kNumSources] = { "-", "LFO 1", "LFO 2", "VELOCITY", "NOTE", "WHEEL", "AFTERTOUCH", "RANDOM", "LFO 3" };
+// the order a window shows them in (the LFOs together)
+static const int kSourceOrder[kNumSources - 1] = { kSrcLfo1, kSrcLfo2, kSrcLfo3, kSrcVelocity, kSrcNote, kSrcWheel, kSrcAftertouch, kSrcRandom };
+constexpr int kNumLfos = 3;
+// which LFO a source is (0..2), or -1
+inline int lfoOf(int s) { return s == kSrcLfo1 ? 0 : s == kSrcLfo2 ? 1 : s == kSrcLfo3 ? 2 : -1; }
+inline int lfoSource(int l) { return l == 0 ? kSrcLfo1 : l == 1 ? kSrcLfo2 : kSrcLfo3; }
 // what a source means, for the window
 static const char* const kSourceAbout[kNumSources] = {
     "", "", "",
@@ -23,7 +30,8 @@ static const char* const kSourceAbout[kNumSources] = {
     "Each note's pitch: C4 is 0, two octaves up or down is +-1, per note",
     "The mod wheel (MIDI CC 1), 0 .. 1",
     "Channel or key pressure, 0 .. 1",
-    "A new random value (-1 .. 1) for each note"
+    "A new random value (-1 .. 1) for each note",
+    ""
 };
 // sources that differ from note to note
 inline bool perVoice(int s) { return s == kSrcVelocity || s == kSrcNote || s == kSrcRandom; }

@@ -2253,3 +2253,8 @@ LIFE 90 t5_fx
 LIFE 91 t6_fx
 LIFE 92 t7_fx
 LIFE 93 t8_fx
+COIL 124 lfo3_shape
+COIL 125 lfo3_rate
+COIL 126 lfo3_sync
+COIL 127 lfo3_div
+COIL 128 lfo3_retrig
