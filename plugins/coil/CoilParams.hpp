@@ -3,6 +3,9 @@
 #pragma once
 
 #include "PumpParams.hpp"
+#include "dsp/Mod.hpp"
+#include "dsp/Tempo.hpp"
+#include <string>
 #include <vector>
 
 namespace pump { namespace coil {
@@ -21,8 +24,25 @@ enum Param : int {
     kModel = 0, kTension, kDrip, kDecay, kRelease, kHarmonic, kSpread, kWobble, kTone, kExcite, kTank, kGrit,
     kWidth, kOctave, kBend, kVelocity, kVolume,
     kVoices,
-    kNumParams
+    // appended 2026-10-27: modulation. Two LFOs (shape, rate, sync, note division, retrigger), then the connections:
+    // a pool of kModSlots slots of three (source, target, amount)
+    kLfoBase,
+    kSlotBase = kLfoBase + 2 * 5,
+    kNumParams = kSlotBase + 3 * pump::mod::kSlots
 };
+enum LfoParam : int { kLfoShape = 0, kLfoRate, kLfoSync, kLfoDiv, kLfoRetrig, kPerLfo };
+inline int lfoParam(int lfo, int what) { return kLfoBase + lfo * kPerLfo + what; }
+enum SlotParam : int { kSlotSrc = 0, kSlotDst, kSlotAmt, kPerSlot };
+inline int slotParam(int slot, int what) { return kSlotBase + slot * kPerSlot + what; }
+
+// What a connection can move: COIL's continuous controls and the LFOs' rates. Index 0 is "none". (Append only: a
+// slot's target is saved as this index.)
+static const int kTargetParams[] = { -1, kTension, kDrip, kDecay, kRelease, kHarmonic, kSpread, kWobble, kTone, kExcite, kTank, kGrit,
+                                     kWidth, kVelocity, kVolume, -2 /* LFO 1 rate */, -3 /* LFO 2 rate */ };
+static const char* const kTargetNames[] = { "None", "Tension", "Drip", "Decay", "Release", "Harmonic", "Spread", "Wobble", "Tone", "Excite",
+                                            "Tank", "Grit", "Width", "Velocity", "Volume", "LFO 1 rate", "LFO 2 rate" };
+constexpr int kNumTargets = (int)(sizeof(kTargetParams) / sizeof(kTargetParams[0]));
+inline int targetOfParam(int param) { for (int t = 1; t < kNumTargets; ++t) if (kTargetParams[t] == param) return t; return 0; }
 
 inline const std::vector<ParamSpec>& params()
 {
@@ -48,6 +68,26 @@ inline const std::vector<ParamSpec>& params()
     v.push_back({ "volume", "Volume", "Volume", -48, 12, 0, PUnit::dB, PScale::Linear, A, nullptr, 1 });
     // appended 2026-10-27: polyphony (not automatable: changing it lets the ringing notes go)
     v.push_back({ "voices", "Voices", "Voices", 1, 16, 8, PUnit::None, PScale::Linear, kPInteger, nullptr, 1 });
+    // appended 2026-10-27: modulation
+    static std::vector<std::string> keep;
+    keep.reserve(2 * 10 + pump::mod::kSlots * 6);
+    auto str = [&](std::string x) { keep.push_back(std::move(x)); return keep.back().c_str(); };
+    for (int l = 0; l < 2; ++l)
+    {
+        const std::string sy = "lfo" + std::to_string(l + 1), nm = "LFO " + std::to_string(l + 1);
+        v.push_back({ str(sy + "_shape"), str(nm + " Shape"), "Shape", 0, pump::mod::kNumShapes - 1, 0, PUnit::None, PScale::Linear, I, pump::mod::kShapeNames, 1 });
+        v.push_back({ str(sy + "_rate"), str(nm + " Rate"), "Rate", 0.02f, 40, l == 0 ? 1.0f : 0.3f, PUnit::Hz, PScale::Log, A, nullptr, 1 });
+        v.push_back({ str(sy + "_sync"), str(nm + " Sync"), "Sync", 0, 1, 0, PUnit::None, PScale::Linear, kPAutomatable | kPBoolean, nullptr, 1 });
+        v.push_back({ str(sy + "_div"), str(nm + " Sync Rate"), "Sync", 0, pump::kNumNotes - 1, 11, PUnit::None, PScale::Linear, I, pump::kNoteNames, 1 });
+        v.push_back({ str(sy + "_retrig"), str(nm + " Retrigger"), "Retrig", 0, 1, 0, PUnit::None, PScale::Linear, kPAutomatable | kPBoolean, nullptr, 1 });
+    }
+    for (int k = 0; k < pump::mod::kSlots; ++k)
+    {
+        const std::string sy = "mod" + std::to_string(k + 1), nm = "Mod " + std::to_string(k + 1);
+        v.push_back({ str(sy + "_src"), str(nm + " Source"), "Source", 0, pump::mod::kNumSources - 1, 0, PUnit::None, PScale::Linear, kPInteger, pump::mod::kSourceNames, 1 });
+        v.push_back({ str(sy + "_dst"), str(nm + " Target"), "Target", 0, kNumTargets - 1, 0, PUnit::None, PScale::Linear, kPInteger, kTargetNames, 1 });
+        v.push_back({ str(sy + "_amt"), str(nm + " Amount"), "Amount", -100, 100, 0, PUnit::Percent, PScale::Linear, A, nullptr, 1 });
+    }
     return v;
     }();
     return v;

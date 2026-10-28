@@ -145,6 +145,8 @@ public:
 
     bool isActive() const { return active; }
     bool isHeld() const { return held; }
+    // modulation: the note's velocity (0..1) and its random value (-1..1), set when it starts
+    double modVel = 0.8, modRnd = 0.0;
     int noteNumber() const { return note; }
     double level() const { return energy; }
 
@@ -468,6 +470,18 @@ public:
     // the KICK key: every ringing spring (and the tank) gets a kick
     void kick(double strength) { kickReq = clampv(strength, 0.2, 1.5); }
 
+    // ---- modulation (audio thread) ----
+    // one voice's own settings (per-note modulation), over what setSettings gave every voice
+    void setVoiceSettings(int i, const Settings& s) { if (i >= 0 && i < kMaxVoices) voices[(size_t)i].update(s); }
+    bool voiceActive(int i) const { return voices[(size_t)clampv(i, 0, kMaxVoices - 1)].isActive(); }
+    int voiceNoteNum(int i) const { const int n = voices[(size_t)clampv(i, 0, kMaxVoices - 1)].noteNumber(); return n >= 1000 ? n - 1000 : n; }
+    double voiceVelocity(int i) const { return voices[(size_t)clampv(i, 0, kMaxVoices - 1)].modVel; }
+    double voiceRandom(int i) const { return voices[(size_t)clampv(i, 0, kMaxVoices - 1)].modRnd; }
+    int lastVoice() const { return lastStarted; }
+    double wheel() const { return wheelV; }
+    double aftertouch() const { return touchV; }
+    uint32_t noteOns() const { return noteOnCount; }
+
     // ---- feeds (UI) ----
     ScopeRing outRing { 1 << 13 };
     int voicesNow() const { return activeFeed.load(std::memory_order_relaxed); }
@@ -637,6 +651,10 @@ private:
         const uint8_t st = m.status & 0xF0;
         if (set.resonator && set.tuning == kTuneChord && (st == 0x90 || st == 0x80)) return;   // the chord tunes; notes don't
         const bool on = st == 0x90 && m.d2 > 0, off = st == 0x80 || (st == 0x90 && m.d2 == 0);
+        if (st == 0xB0 && m.d1 == 1) wheelV = m.d2 / 127.0;
+        if (st == 0xD0) touchV = m.d1 / 127.0;
+        if (st == 0xA0) touchV = m.d2 / 127.0;   // key pressure: the latest key's
+        if (on) ++noteOnCount;
         // LATCH: a new chord (a key after all were up) replaces the ringing one
         if (on && set.resonator && set.tuning == kTuneLatch && keysDown == 0) for (auto& v : voices) if (v.isActive()) v.release(set);
         if (on) { ++keysDown; lastNote = m.d1 & 0x7F; } else if (off && keysDown > 0) --keysDown;
@@ -649,6 +667,9 @@ private:
             {
                 const double vel = c.velocity >= 0.0f ? c.velocity : 0.8;
                 const double strength = set.resonator ? 0.0 : (1.0 - set.velocity * (1.0 - vel)) * 1.2;
+                v.modVel = vel;
+                modRng = modRng * 1664525u + 1013904223u;
+                v.modRnd = (double)(modRng >> 8) * (2.0 / 16777216.0) - 1.0;
                 v.start(c.note, hzOf(c.note), strength, set);
                 if (!set.resonator && set.tank > 0.001) body.kick(0.4 * strength);
                 lastStarted = c.voice;
@@ -676,6 +697,8 @@ private:
     int lastNote = 48;   // what KICK strikes when nothing rings (C3 until a note is played)
     double envF = 0.0, envS = 0.0, envFk = 0.1, envFr = 0.01, envSk = 0.01, envSr = 0.001;
     int tickPos = 0, lastStarted = -1, keysDown = 0;
+    double wheelV = 0.0, touchV = 0.0;
+    uint32_t noteOnCount = 0, modRng = 0x9E3779B9u;
     bool prepared = false, bodyOn = false;
     int bodyTail = 0;
     LinearSmoother volS, tankS, mixS;

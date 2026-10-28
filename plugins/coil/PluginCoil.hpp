@@ -31,6 +31,7 @@ protected:
     void run(const float**, float** outputs, uint32_t frames, const MidiEvent* midiEvents, uint32_t midiEventCount) override
     {
         const pump::DenormalGuard dg;
+        hostTime = transport();
         if (takeAnyChanged())
         {
             for (uint32_t i = 0; i < (uint32_t)kNumParams; ++i) takeChanged(i);
