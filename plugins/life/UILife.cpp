@@ -46,6 +46,9 @@ public:
         seq[5] = dial(kColour, "COLOUR", false, "Turns every cell's colour");
         seq[6] = dial(kCols, "WIDTH"); seq[7] = dial(kRows, "HEIGHT");
         ruleMenu = addMenu(kRule, "RULE"); ruleMenu->arrows = true;
+        fmLoopB = addToggle(kFmLoop, "FM LOOP");
+        fmLoopB->small = true;
+        fmLoopB->tip = "Off: clean FM from each neighbour's oscillator. On: the eight voices modulate each other in a ring (rich, noisy)";
         reseedB = addToggle(kReseed, "RESEED");
         reseedB->tip = "Evolve / Free: back to the pattern when the board dies or stops changing";
         fx[0] = dial(kShift, "SHIFT", true, "Pitch shift in the delay's loop (each echo climbs or falls)");
@@ -91,6 +94,7 @@ protected:
         for (int t = 0; t < kTones; ++t) { padR[t] = Rect(556 + t * 52.5f + 2, 350, 48.5f, 26); muteB[t]->r = Rect(556 + t * 52.5f + 8, 382, 36.5f, 20); }
         soundR = Rect(486, 422, 500, 110);
         for (int k = 0; k < 8; ++k) snd[k]->r = Rect(492 + k * 61.5f, 446, 61.5f, hs);
+        fmLoopB->r = Rect(soundR.r() - 12 - 78, soundR.y + 6, 78, 18);
         seqR = Rect(14, 562, 560, 206);
         modeSeg->r = Rect(24, 590, 190, 22); rateSeg->r = Rect(224, 590, 190, 22); trigSeg->r = Rect(424, 590, 140, 22);
         for (int k = 0; k < 8; ++k) seq[k]->r = Rect(20 + k * 68.5f, 622, 68.5f, hs);
@@ -301,6 +305,7 @@ private:
     MenuButton *patternMenu, *ruleMenu;
     Button* muteB[kTones] = {};
     Button* reseedB;
+    Button* fmLoopB;
     Segmented *modeSeg, *rateSeg, *trigSeg;
     Dial *snd[8] = {}, *seq[8] = {}, *fx[7] = {};
     Board board {}, drawnB {};

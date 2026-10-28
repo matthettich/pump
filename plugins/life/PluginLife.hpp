@@ -79,6 +79,7 @@ protected:
         s.rule = (int)pv(kRule); s.trigger = (int)pv(kTrigger); s.pattern = (int)pv(kPattern); s.reseed = pv(kReseed) >= 0.5f;
         s.shift = pv(kShift); s.grain = pv(kGrain) * 0.001; s.time = pv(kTime) * 0.001; s.feedback = pv(kFeedback) * 0.01;
         s.filter = pv(kFilter) * 0.01; s.fxDecay = pv(kFxDecay) * 0.001; s.mix = pv(kMix) * 0.01;
+        s.fmLoop = pv(kFmLoop) >= 0.5f;
         if (testRun) s.mode = kModeFree;
         for (int t = 0; t < kTones; ++t)
         {

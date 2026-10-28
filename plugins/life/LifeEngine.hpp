@@ -3,7 +3,7 @@
 // Tones. A parabolic sine (two parabolas: a sine with a little odd-harmonic edge). KICK sweeps its pitch down from
 // up to four octaves above in about 12 ms (a tone becomes a drum); FM moves its phase by the NEXT voice's oscillator,
 // RING multiplies it by the PREVIOUS voice's (all eight oscillators run all the time, so the voices colour each other
-// even when silent); DECAY is the time to -60 dB; LEVEL; mute. Global FM and DECAY scale every voice's; the LFO moves
+// even when silent; FM and RING take the neighbours' own oscillators, or with FM LOOP their modulated sound); DECAY is the time to -60 dB; LEVEL; mute. Global FM and DECAY scale every voice's; the LFO moves
 // every pitch by up to PITCH RANGE semitones (and the FM a little). DRIVE saturates the mix.
 // The FX. Each hit also opens its own short envelope into the FX (FX DECAY: only the start of every hit goes in, which
 // keeps busy patterns tight). The FX is a delay (TIME) whose loop holds a two-grain pitch shifter (SHIFT, GRAIN) and a
@@ -30,6 +30,7 @@ namespace pump { namespace life {
 
 struct ToneSettings { double pitch = 60.0, kick = 0.0, fm = 0.0, ring = 0.0, decay = 0.2, level = 0.7; bool mute = false; };
 struct Settings {
+    bool fmLoop = false;   // FM from the neighbour's modulated sound (a feedback ring: noisy), or from its clean oscillator
     double volumeDb = -6.0, drive = 0.15, fmAll = 0.5, decayAll = 1.0, pitchRange = 2.0, lfoRate = 0.5, lfoDepth = 0.0, width = 0.6;
     int mode = kModeLoop, rate = 2, length = 16, offset = 0;
     double sens = 1.0;
@@ -318,8 +319,11 @@ private:
     }
     inline void renderSample(double& outL, double& outR)
     {
+        // the modulators: each voice's own oscillator (clean), or, with FM LOOP, the sound each voice makes after its own
+        // FM (the eight in a ring: feedback FM, rich and noisy)
         double raws[kTones];
-        for (int t = 0; t < kTones; ++t) raws[t] = tones[(size_t)t].raw;
+        if (set.fmLoop) for (int t = 0; t < kTones; ++t) raws[t] = tones[(size_t)t].raw;
+        else for (int t = 0; t < kTones; ++t) raws[t] = parabolic(tones[(size_t)t].ph);
         double l = 0.0, r = 0.0, send = 0.0;
         for (int t = 0; t < kTones; ++t)
         {

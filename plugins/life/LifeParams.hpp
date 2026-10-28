@@ -39,7 +39,11 @@ enum Param : int {
 };
 enum ToneField : int { kTPitch = 0, kTKick, kTFm, kTRing, kTDecay, kTLevel, kTMute, kToneFields };
 constexpr int tone(int t, int f) { return kToneBase + t * kToneFields + f; }
-static constexpr int kNumParams = kToneBase + kTones * kToneFields;
+// appended after the tones (2026-10-27): FM LOOP, the old FM where every voice is modulated by its neighbour's already
+// modulated sound, all eight in a ring (feedback FM: rich and noisy). Off: each voice is modulated by its neighbour's
+// own oscillator, clean (the default).
+static constexpr int kFmLoop = kToneBase + kTones * kToneFields;
+static constexpr int kNumParams = kFmLoop + 1;
 
 inline const std::vector<ParamSpec>& params()
 {
@@ -100,6 +104,7 @@ inline const std::vector<ParamSpec>& params()
         p = nm("level", "Level");      v.push_back({ p.first, p.second, "Level", 0, 100, level[t], PUnit::Percent, PScale::Linear, A, nullptr, 1 });
         p = nm("mute", "Mute");        v.push_back({ p.first, p.second, "Mute", 0, 1, 0, PUnit::None, PScale::Linear, B, kOnOff, 1 });
     }
+    v.push_back({ "fm_loop", "FM Loop (noisy)", "FM Loop", 0, 1, 0, PUnit::None, PScale::Linear, B, kOnOff, 1 });
     return v;
     }();
     return v;

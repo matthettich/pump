@@ -2244,3 +2244,4 @@ COIL 120 mod31_amt
 COIL 121 mod32_src
 COIL 122 mod32_dst
 COIL 123 mod32_amt
+LIFE 85 fm_loop
