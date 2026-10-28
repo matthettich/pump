@@ -40,6 +40,8 @@ public:
         chokeB->tip = "The closed hat cuts the open hat";
         followB = addToggle(kFollow, "FOLLOW"); followB->tip = "Show the pad you play: every hit (MIDI, keys, a click) selects it for editing";
         springsView.labels = kLabels;
+        springsView.tank = true;
+        springsView.idleText = "HIT A PAD";
         if (auto* p = static_cast<PluginBoing*>(pluginPtr())) plug = p;
         select(0);
     }
@@ -127,6 +129,7 @@ protected:
             if (hits >> p & 1) { glow[p] = 1.0f; if (p == 0) shakeAge = 0.0f; }
             else glow[p] = std::max(0.0f, glow[p] - dt * 4.0f);
             const bool on = plug->engine.padActive(p);
+            springsView.setRowModel(p, (int)value(pp(p, kTank)));
             springsView.updateRow(p, plug->engine.visV[(size_t)p], plug->engine.padLevel(p), on ? (int)std::lround(value(pp(p, kPitch))) : -1, plug->engine.visRate(), dt);
         }
         shakeAge += dt;
@@ -136,6 +139,7 @@ protected:
 
     void drawBody() override
     {
+        springsView.setModel((int)value(kTankModel), 35.0f);   // the transducers: the kit's shared tank
         springsView.draw(*this, springsR, shakeAge, "SPRINGS", "THE PADS' SPRINGS");
         screenBox(padsR);
         caption(padsR.x + 10, padsR.y + 14, "PADS");
@@ -169,7 +173,12 @@ protected:
         const Rect bar(r.x + 8, r.y + 62, r.w - 16, 4);
         fillRect(bar, withAlpha2(theme.ink, 0.15f));
         fillRect(Rect(bar.x, bar.y, bar.w * bl / 100.0f, bar.h), g > 0.45f ? theme.neonInk : theme.ink);
-        std::snprintf(b, sizeof b, "%d", kPadInfo[p].note);
+        // the note that plays it: name and number
+        static const char* const nn[12] = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
+        const int note = kPadInfo[p].note;
+        std::snprintf(b, sizeof b, "%s%d", nn[note % 12], note / 12 - 1);
+        textAt(r.x + 8, r.b() - 10, b, kMono, 10.0f, ink, ALIGN_LEFT | ALIGN_MIDDLE);
+        std::snprintf(b, sizeof b, "%d", note);
         textAt(r.r() - 8, r.b() - 10, b, kMono, 9.0f, g > 0.45f ? theme.neonInk : theme.ink2, ALIGN_RIGHT | ALIGN_MIDDLE);
     }
     void drawScope()
@@ -218,7 +227,7 @@ protected:
     }
     std::vector<std::pair<std::string, std::string>> helpLines() override
     {
-        return { { "Click a pad / keys 1-8", "play it and edit it (higher in the pad = harder)" }, { "MIDI", "General MIDI drum notes (35-51, 57)" },
+        return { { "Click a pad / keys 1-8", "play it and edit it (higher in the pad = harder)" }, { "MIDI", "C4 up in whole steps (C4 kick ... D5 cymbal); General MIDI drum notes too" },
                  { "BLEND", "0 = the analog voice, 100 = the spring" } };
     }
     std::string footerInfo() override

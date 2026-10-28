@@ -40,10 +40,13 @@ public:
         visRate = rate;
     }
     const char* const* labels = nullptr;   // a name per row (else the note it plays)
+    const char* idleText = "PLAY A NOTE (OR KICK)";   // the tank view's read-out while nothing rings
     bool tank = false;                     // COIL: drawn as SPRING's tank (transducers, fanned hooks), a colour per spring
     // the tank model the springs are drawn as (tank view): its length sets the turns, the digital ones are converters
     // with stepped, pixel-snapped coils (coarser as GRIT lowers their clock), as in SPRING
     void setModel(int m, float gritPct) { model = clampv(m, 0, spring::kNumModels - 1); grit = gritPct; }
+    // BOING: every pad has its own tank (-1: the one set by setModel)
+    void setRowModel(int i, int m) { if (i >= 0 && i < kMaxVoices) rowModel[i] = m < 0 ? -1 : clampv(m, 0, spring::kNumModels - 1); }
 
     void draw(DISTRHO::PumpUI& ui, const Rect& r, float kickAgeS, const char* title, const char* right)
     {
@@ -144,15 +147,20 @@ private:
         drawTransducer(ui, outT, clampv(eMax, 0.0f, 1.0f), digital ? "DAC" : "OUT", digital);
         // turns per tank: SPRING's spring lengths against the two-spring tank's (digital: fewer, chunkier turns)
         static const float kTurns[spring::kNumModels] = { 1.0f, 0.85f, 0.55f, 1.35f, 0.7f, 0.7f };
-        const float turns = kTurns[model];
-        const double clock = digital ? spring::clockHz(model, grit) : 0.0;
-        const float grid = digital ? (float)(2.0 + 5.0 * (1.0 - std::min(1.0, (clock - 6000.0) / 26000.0))) : 0.0f;
+        auto modelOf = [&](int i) { return rowModel[i] >= 0 ? rowModel[i] : model; };
+        auto gridOf = [&](int m) {
+            if (!spring::isDigital(m)) return 0.0f;
+            const double clock = spring::clockHz(m, grit);
+            return (float)(2.0 + 5.0 * (1.0 - std::min(1.0, (clock - 6000.0) / 26000.0)));
+        };
         const float x0 = inT.r() + 22.0f, x1 = outT.x - 22.0f;
         // only the voices sounding get a spring, highest note on top (a voice keeps its colour while it rings)
         int order[kMaxVoices], n = 0;
         auto pitch = [&](int i) { return note[i] >= 1000 ? note[i] - 1000 : note[i]; };
         for (int i = 0; i < kMaxVoices; ++i) if (note[i] >= 0) order[n++] = i;
-        std::sort(order, order + n, [&](int a, int b) { return pitch(a) != pitch(b) ? pitch(a) > pitch(b) : a < b; });
+        // named rows (BOING's pads) keep their order; notes stack highest on top
+        if (labels) std::sort(order, order + n);
+        else std::sort(order, order + n, [&](int a, int b) { return pitch(a) != pitch(b) ? pitch(a) > pitch(b) : a < b; });
         const float gap = std::min(78.0f, (pan.h - 20.0f) / std::max(1, n));
         const float R = std::min(11.0f, gap * 0.29f);
         for (int k = 0; k < n; ++k)
@@ -163,30 +171,33 @@ private:
             const int nv = pitch(i);
             const double f0 = 440.0 * std::exp2((nv - 69) / 12.0);
             const double travel = 0.5 / std::max(20.0, f0);
-            const int coils = clampv((int)std::lround((46.0 - 0.42 * (nv - 24)) * turns), 9, 60);   // SPRING's spacing of turns
+            const int mi = modelOf(i);
+            const int coils = clampv((int)std::lround((46.0 - 0.42 * (nv - 24)) * kTurns[mi]), 9, 60);   // SPRING's spacing of turns
             const float tS = (float)std::min((double)kWaveN / 2 - 4, travel * visRate);
             const Color hook = on ? th.ink2 : withAlpha(th.ink2, 0.5f);
             ui.line(inT.r(), inT.cy() + (yc - inT.cy()) * 0.35f, x0, yc, hook, 1.2f);
             ui.line(outT.x, outT.cy() + (yc - outT.cy()) * 0.35f, x1, yc, hook, 1.2f);
-            drawCoil(ui, i, x0, x1, yc, R, coils, tS, on, grid);
+            drawCoil(ui, i, x0, x1, yc, R, coils, tS, on, gridOf(mi));
         }
         ui.restore();
         // the read-out under the pan: the notes sounding, each in its spring's colour
         static const char* const nn[12] = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
         float x = r.x + 10;
         int shown = 0;
-        for (int k = n - 1; k >= 0; --k)
+        for (int kk = 0; kk < n; ++kk)
         {
-            const int i = order[k];
+            const int i = order[labels ? kk : n - 1 - kk];   // pads in order; notes lowest first
             const int nv = pitch(i);
-            char b[12]; std::snprintf(b, sizeof b, "%s%d", nn[((nv % 12) + 12) % 12], nv / 12 - 1);
+            char b[16];
+            if (labels) std::snprintf(b, sizeof b, "%s", labels[i]);
+            else std::snprintf(b, sizeof b, "%s%d", nn[((nv % 12) + 12) % 12], nv / 12 - 1);
             ui.fillRect(Rect(x, r.b() - 17, 8, 8), springColour(i, false));
             ui.strokeRect(Rect(x, r.b() - 17, 8, 8), strandColour(th, i), 1.0f);
             ui.textAt(x + 12, r.b() - 13, b, P::kMono, 10.0f, th.ink2, NanoVG::ALIGN_LEFT | NanoVG::ALIGN_MIDDLE);
             x += 16 + ui.textWidth(b, P::kMono, 10.0f, 0.0f) + 14;
             ++shown;
         }
-        if (!shown) ui.textAt(r.x + 10, r.b() - 13, "PLAY A NOTE (OR KICK)", P::kLabel, 9.5f, th.ink2, NanoVG::ALIGN_LEFT | NanoVG::ALIGN_MIDDLE, 1.0f);
+        if (!shown) ui.textAt(r.x + 10, r.b() - 13, idleText, P::kLabel, 9.5f, th.ink2, NanoVG::ALIGN_LEFT | NanoVG::ALIGN_MIDDLE, 1.0f);
         char t[32]; std::snprintf(t, sizeof t, shown == 1 ? "%d SPRING SOUNDING" : "%d SPRINGS SOUNDING", shown);
         ui.textAt(r.r() - 10, r.b() - 13, t, P::kMono, 10.0f, th.ink2, NanoVG::ALIGN_RIGHT | NanoVG::ALIGN_MIDDLE);
     }
@@ -291,6 +302,7 @@ private:
     double visRate = 12000.0;
     int model = 0;
     float grit = 35.0f;
+    int rowModel[kMaxVoices] = { -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1 };
 };
 
 }} // namespace pump::coil

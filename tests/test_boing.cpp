@@ -157,6 +157,27 @@ int main()
         const double secs = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
         printf("  cpu: all eight pads hit every 62 ms, with the tank: %.1f %% of one core\n", 100.0 * secs / 4.0);
     }
+    printf("== notes\n");
+    {
+        // the pads in order a whole step apart from C4 (60); the General MIDI drum notes still play the same pads
+        bool order = true;
+        for (int p = 0; p < kPads; ++p) order = order && kPadInfo[p].note == 60 + 2 * p;
+        CHECK(order, "pads on C4 D4 E4 F#4 G#4 A#4 C5 D5 (60-74 in whole steps)");
+        static const int gm[kPads] = { 36, 38, 39, 43, 48, 42, 46, 49 };
+        bool allNew = true, allGm = true;
+        for (int p = 0; p < kPads; ++p)
+            for (int pass = 0; pass < 2; ++pass)
+            {
+                Settings s = defaults();
+                Engine e; e.setSettings(s); e.prepare(kSr, 256);
+                run(e, 512, { { 0, 0x90, (uint8_t)(pass ? gm[p] : kPadInfo[p].note), 110 } });
+                bool only = e.padActive(p);
+                for (int q = 0; q < kPads; ++q) if (q != p && e.padActive(q)) only = false;
+                (pass ? allGm : allNew) &= only;
+            }
+        CHECK(allNew, "each new note plays its pad, and only that pad");
+        CHECK(allGm, "each General MIDI drum note (older patterns) still plays the same pad");
+    }
     std::printf(fails ? "test_boing: %d FAILED\n" : "test_boing: all passed\n", fails);
     return fails ? 1 : 0;
 }

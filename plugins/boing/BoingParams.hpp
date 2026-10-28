@@ -30,16 +30,17 @@ static const char* const kWaveKeys[] = { "SINE", "TRI", "FOLD", "SQUARE", "SAW",
 static const char* const kOnOff[] = { "Off", "On" };
 
 struct PadInfo { const char* sym; const char* name; const char* label; int note; float tank, wave, blend, pitch, decay, harm, spread, drip, bend, bendT, noise, ntone, click, hits, level, pan, send; };
-// The pads answer the General MIDI drum notes.
+// The pads play in order, a whole step apart from C4 (60): C4 D4 E4 F#4 G#4 A#4 C5 D5. The General MIDI drum notes
+// (36 kick, 38 snare...) still play them too.
 static const PadInfo kPadInfo[kPads] = {
-    { "kick",  "Kick",       "KICK",   36, 3, kSine,  45, 33, 450,  40,   0, 30, 24, 40,  0, 30, 40, 1,   0,   0,  5 },
-    { "snare", "Snare",      "SNARE",  38, 2, kTri,   70, 50, 260,   0,  30, 70,  7, 20, 70, 65, 50, 1,  -2,   0, 20 },
-    { "clap",  "Clap",       "CLAP",   39, 1, kTri,   45, 62, 240,   0,  60, 90,  0, 10, 90, 55, 40, 4,  -3,  10, 30 },
-    { "ltom",  "Low Tom",    "LO TOM", 43, 0, kSine,  60, 43, 380,  30,  10, 50, 12, 60, 10, 40, 30, 1,  -3, -25, 15 },
-    { "htom",  "High Tom",   "HI TOM", 48, 0, kSine,  60, 52, 320,  30,  10, 50, 12, 50, 10, 45, 30, 1,  -4,  25, 15 },
-    { "chat",  "Closed Hat", "C-HAT",  42, 4, kMetal, 55, 96,  55,   0, 100,  0,  0,  5, 60, 90, 20, 1,  -8, -15,  5 },
-    { "ohat",  "Open Hat",   "O-HAT",  46, 5, kMetal, 55, 94, 480,   0, 100,  0,  0,  5, 60, 85, 15, 1,  -9, -15, 10 },
-    { "cym",   "Cymbal",     "CYMBAL", 49, 4, kMetal, 60, 89, 1600,  0,  90, 20,  0,  5, 40, 80, 10, 1, -11,  30, 20 },
+    { "kick",  "Kick",       "KICK",   60, 3, kSine,  45, 33, 450,  40,   0, 30, 24, 40,  0, 30, 40, 1,   0,   0,  5 },
+    { "snare", "Snare",      "SNARE",  62, 2, kTri,   70, 50, 260,   0,  30, 70,  7, 20, 70, 65, 50, 1,  -2,   0, 20 },
+    { "clap",  "Clap",       "CLAP",   64, 1, kTri,   45, 62, 240,   0,  60, 90,  0, 10, 90, 55, 40, 4,  -3,  10, 30 },
+    { "ltom",  "Low Tom",    "LO TOM", 66, 0, kSine,  60, 43, 380,  30,  10, 50, 12, 60, 10, 40, 30, 1,  -3, -25, 15 },
+    { "htom",  "High Tom",   "HI TOM", 68, 0, kSine,  60, 52, 320,  30,  10, 50, 12, 50, 10, 45, 30, 1,  -4,  25, 15 },
+    { "chat",  "Closed Hat", "C-HAT",  70, 4, kMetal, 55, 96,  55,   0, 100,  0,  0,  5, 60, 90, 20, 1,  -8, -15,  5 },
+    { "ohat",  "Open Hat",   "O-HAT",  72, 5, kMetal, 55, 94, 480,   0, 100,  0,  0,  5, 60, 85, 15, 1,  -9, -15, 10 },
+    { "cym",   "Cymbal",     "CYMBAL", 74, 4, kMetal, 60, 89, 1600,  0,  90, 20,  0,  5, 40, 80, 10, 1, -11,  30, 20 },
 };
 
 inline const std::vector<ParamSpec>& params()
