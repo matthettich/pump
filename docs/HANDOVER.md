@@ -37,6 +37,10 @@ between the speakers; sessions save as JSON with the impulse responses.
 | Sweep, deconvolution (exact in band, zero outside), arrival between samples, windowed spectrum with fractional-octave smoothing, calibration files (many formats, locale-proof numbers) | `common/dsp/Room.hpp` | `tests/test_room.cpp`: loopback flat within 0.1 dB at 44.1/48/96 kHz; a simulated speaker + room within 0.1 dB 20 Hz..20 kHz; arrivals to 0.01 sample (fractional delays); L/R difference and polarity; a louder reflection doesn't win; a mic's +4 dB shelf removed by its file to 0.13 dB; 14 file formats; also under ASan+UBSan |
 | The page: devices, mic channel, level meter, pink-noise level check, calibration, L/R runs, graphs, list, save/open, TXT/WAV export | `room/app.html`, `app.css`, `app.js`, `worklet.js`, `wasm/room_wasm.cpp`, `room/build.sh` | `tools/room_e2e.mjs` (headless Chromium, `#sim` room): arrivals within 0.6 samples of the simulation, timing, calibration, save/reopen; the real-mic path with Chromium's fake devices (device lists, "not heard" message); screenshots light, dark, phone width |
 
+Also a desktop app (2026-10-28): `room/electron/` (Electron) packaged by CI for Mac and Windows and smoke-tested on
+the simulated room in the packaged app. It could not be built in the session that made it (no npm registry access
+there): the first CI run is its first build.
+
 **Not verified:** a real measurement (real speakers, a real mic, Chrome on Mac and Windows), Bluetooth or very high
 output latency (search window is 1 s), a 192 kHz context. The owner has a MEMS measurement mic from a room correction
 system and may get its calibration file (else a USB measurement mic).

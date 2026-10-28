@@ -3,3 +3,6 @@ build/
 *.o
 *.d
 .DS_Store
+room/electron/node_modules/
+room/electron/dist/
+room/electron/app/

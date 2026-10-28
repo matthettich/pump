@@ -1,0 +1,37 @@
+{
+  "name": "pump-room",
+  "productName": "pump ROOM",
+  "version": "0.1.0",
+  "description": "pump ROOM: room measurement by wake",
+  "author": "wake",
+  "private": true,
+  "main": "main.js",
+  "build": {
+    "appId": "com.wake.pump-room",
+    "productName": "pump ROOM",
+    "copyright": "(c) wake",
+    "directories": { "output": "dist" },
+    "files": ["main.js", "app/**"],
+    "mac": {
+      "icon": "icon.png",
+      "category": "public.app-category.music",
+      "identity": null,
+      "hardenedRuntime": false,
+      "minimumSystemVersion": "12.0",
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "pump ROOM records your measurement microphone to measure your speakers and room."
+      }
+    },
+    "win": {
+      "icon": "icon.png",
+      "target": [{ "target": "nsis", "arch": ["x64"] }, { "target": "zip", "arch": ["x64"] }]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "pump-room-windows-setup.${ext}"
+    },
+    "zip": { "artifactName": "pump-room-windows.${ext}" }
+  }
+}

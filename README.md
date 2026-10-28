@@ -88,9 +88,10 @@ window; `pump-macos.pkg` installs it in Applications, and `system-eq-macos.zip` 
 
 ## pump ROOM (room measurement, Mac and Windows)
 
-**pump ROOM** measures your speakers in your room with any measurement microphone. It's one page,
-`pump-room.html` on the [latest release](https://github.com/matthettich/pump/releases/tag/latest): open it in Chrome
-or Edge, nothing to install. This is the first stage of room correction; turning measurements into a correction
+**pump ROOM** measures your speakers in your room with any measurement microphone. On the
+[latest release](https://github.com/matthettich/pump/releases/tag/latest): `pump-room-macos.zip` (the Mac app: drag
+it to Applications; the first time, right-click > Open, since it isn't notarized), `pump-room-windows-setup.exe` or
+`pump-room-windows.zip` (Windows), or the same thing as one page, `pump-room.html`, to open in Chrome or Edge. This is the first stage of room correction; turning measurements into a correction
 (pump ROOM as a plugin, in System EQ, and on Windows as settings for a free system-wide equalizer) comes next. See
 [docs/ROOM.md](docs/ROOM.md).
 

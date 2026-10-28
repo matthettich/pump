@@ -52,6 +52,15 @@ The plan, what's built, and how the measurement works. Stage 1 (measurement) is 
 - **Exports:** TXT (frequency, dB, phase 0, every 1/48 octave, with the current smoothing, window and calibration:
   the usual text format other tools import) and WAV (the impulse response, 32-bit float).
 
+## The desktop app
+
+`room/electron/` wraps the same page in Electron (`main.js`): one window, only the microphone and output choice
+allowed, no network, Save / Open through the system's file dialogs. `sh room/electron/build.sh` (after `make room`)
+packages it on a Mac (universal `pump ROOM.app`, ad-hoc signed, zipped) or on Windows (installer + zip); CI's
+`room-app-mac` and `room-app-windows` jobs do that and run the packaged app once with `PUMP_ROOM_SMOKE=1`, which
+measures the simulated room and fails the build if the timing is off. Electron and its packager come from npm at
+build time (latest; the CI log prints the versions). Not notarized yet: the first open on a Mac is right-click > Open.
+
 ## Notes
 
 - The page runs from a file (`file://`). The worklet is loaded from a `data:` URL: a `blob:` module is refused as

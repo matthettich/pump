@@ -236,8 +236,49 @@ jobs:
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02   # v4
         with: { name: pump-room, path: dist/pump-room.html }
 
+  room-app-mac:
+    # pump ROOM as a desktop app (Electron), from the page the room job built; smoke-tested on its simulated room
+    needs: room
+    runs-on: macos-14
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09   # v5
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093   # v4
+        with: { name: pump-room, path: bin }
+      - name: Package
+        run: sh room/electron/build.sh
+      - name: Smoke test (measures the simulated room in the packaged app)
+        run: PUMP_ROOM_SMOKE=1 "$(ls -d room/electron/dist/mac-universal/*.app | head -1)/Contents/MacOS/pump ROOM"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02   # v4
+        with: { name: pump-room-macos, path: room/electron/dist/pump-room-macos.zip }
+
+  room-app-windows:
+    needs: room
+    runs-on: windows-2022
+    timeout-minutes: 30
+    defaults:
+      run: { shell: bash }
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09   # v5
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093   # v4
+        with: { name: pump-room, path: bin }
+      - name: Package
+        run: sh room/electron/build.sh
+      - name: Smoke test (measures the simulated room in the packaged app)
+        run: |
+          code=0
+          PUMP_ROOM_SMOKE=1 PUMP_ROOM_SMOKE_OUT="$PWD/smoke.txt" "room/electron/dist/win-unpacked/pump ROOM.exe" || code=$?
+          cat smoke.txt || echo "no result written"
+          exit $code
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02   # v4
+        with:
+          name: pump-room-windows
+          path: |
+            room/electron/dist/pump-room-windows-setup.exe
+            room/electron/dist/pump-room-windows.zip
+
   release:
-    needs: [tests, windows, macos, linux, room]
+    needs: [tests, windows, macos, linux, room, room-app-mac, room-app-windows]
     if: github.event_name == 'push'
     runs-on: ubuntu-24.04
     permissions:
@@ -254,11 +295,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          files=$(find artifacts -type f \( -name '*.zip' -o -name '*.tar.gz' -o -name '*.pkg' -o -name '*.html' \))
+          files=$(find artifacts -type f \( -name '*.zip' -o -name '*.tar.gz' -o -name '*.pkg' -o -name '*.html' -o -name '*.exe' \))
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             gh release create "$GITHUB_REF_NAME" $files --title "…pump $GITHUB_REF_NAME" --notes "Mastering plugins and creative effects by wake. See INSTALL.txt in each zip."
           else
             gh release delete latest --yes --cleanup-tag 2>/dev/null || true
             gh release create latest $files --prerelease --title "…pump (latest build)" \
-              --notes "Newest build from main ($GITHUB_SHA). pump MACHINE is GPL-3.0 (pump-MACHINE-NOTICE.md in each package; source: this commit). Mac: pump-macos.pkg (installer; if macOS blocks it, System Settings > Privacy & Security > Open Anyway) or pump-macos.zip. The .pkg also installs System EQ (pump EQ on everything the Mac plays) in Applications; system-eq-macos.zip has the app on its own. Windows: pump-windows.zip. pump-room.html is the room measurement app: open it in Chrome or Edge on either system. Install steps are in INSTALL.txt inside each zip."
+              --notes "Newest build from main ($GITHUB_SHA). pump MACHINE is GPL-3.0 (pump-MACHINE-NOTICE.md in each package; source: this commit). Mac: pump-macos.pkg (installer; if macOS blocks it, System Settings > Privacy & Security > Open Anyway) or pump-macos.zip. The .pkg also installs System EQ (pump EQ on everything the Mac plays) in Applications; system-eq-macos.zip has the app on its own. Windows: pump-windows.zip. pump ROOM, the room measurement app: pump-room-macos.zip (Mac app), pump-room-windows-setup.exe or pump-room-windows.zip (Windows), or pump-room.html in Chrome / Edge on either system. Install steps are in INSTALL.txt inside each zip."
           fi
