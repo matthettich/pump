@@ -2,6 +2,7 @@
 // latency, noise and a microphone with its own tilt) must come back as the response that was put in, with the
 // arrival times and polarities right; and calibration files in the formats people actually have must read.
 #include "../common/dsp/Room.hpp"
+#include "../common/dsp/RoomCorrect.hpp"
 #include <complex>
 #include <cstdio>
 #include <random>
@@ -323,6 +324,185 @@ static void testLevels()
     CHECK(rmsDb(nullptr, 0) < -200, "empty: silence");
 }
 
+// ---------------------------------------------------------------------------------------------------------------------
+// correction design
+
+// a measured response on the correction grid from a path's exact response (plus an offset)
+static std::vector<double> curveOf(const Path& p, double fs, double offset)
+{
+    const std::vector<double> g = correctionGrid();
+    std::vector<double> v(g.size());
+    for (size_t i = 0; i < g.size(); ++i) v[i] = p.dbAt(fs, g[i]) + offset;
+    return v;
+}
+
+static double at(const std::vector<double>& f, const std::vector<double>& v, double hz) { return curveAt(f, v, hz); }
+
+static void testCorrectionFlat()
+{
+    printf("correction: a flat speaker needs none\n");
+    const std::vector<double> g = correctionGrid();
+    std::vector<double> m(g.size(), -30.0);
+    const ChannelCorrection c = designCorrection(g, m, targetLevel(g, { &m }), CorrectionSpec());
+    double worst = 0; for (double v : c.correction) worst = std::max(worst, std::fabs(v));
+    CHECK(worst < 0.01, "largest correction %.3f dB", worst);
+    CHECK(preampFor({ &c.correction }) > -0.01, "no preamp cut");
+}
+
+static void testCorrectionRoom()
+{
+    printf("correction: a room mode, a broad dip and a narrow null\n");
+    const double fs = 48000;
+    Path p;
+    p.filters = { Bq::peak(fs, 120, 4, 8), Bq::peak(fs, 2500, 1, -5), Bq::peak(fs, 400, 12, -20) };
+    const std::vector<double> g = correctionGrid();
+    const std::vector<double> m = curveOf(p, fs, -40);
+    const ChannelCorrection c = designCorrection(g, m, targetLevel(g, { &m }), CorrectionSpec());
+    CHECK(at(g, c.correction, 120) < -6.0, "the 120 Hz mode cut by %.1f dB", at(g, c.correction, 120));
+    CHECK(at(g, c.correction, 2500) > 2.0 && std::fabs(at(g, c.result, 2500) - at(g, c.target, 2500)) < 1.0, "the 2.5 kHz dip lifted by %.1f dB, onto the target", at(g, c.correction, 2500));
+    CHECK(at(g, c.correction, 400) < 5.0 && at(g, c.target, 400) - (at(g, m, 400) + at(g, c.correction, 400)) > 10.0, "the 400 Hz null (-20 dB, narrow) only lifted %.1f dB, not filled", at(g, c.correction, 400));
+    double worst = 0, wf = 0;
+    for (size_t i = 0; i < g.size(); ++i)
+        if (g[i] > 30 && g[i] < 15000 && std::fabs(g[i] - 400) > 120)
+        {
+            const double e = std::fabs(c.result[i] - c.target[i]);
+            if (e > worst) { worst = e; wf = g[i]; }
+        }
+    CHECK(worst < 1.5, "after correction within %.2f dB of the target outside the null (worst at %.0f Hz)", worst, wf);
+}
+
+static void testCorrectionLowEnd()
+{
+    printf("correction: no boost below the speaker's roll-off\n");
+    const double fs = 48000;
+    Path p;
+    p.filters = { Bq::highpass(fs, 55, 0.7), Bq::highpass(fs, 55, 0.7) };
+    const std::vector<double> g = correctionGrid();
+    const std::vector<double> m = curveOf(p, fs, -30);
+    const ChannelCorrection c = designCorrection(g, m, targetLevel(g, { &m }), CorrectionSpec());
+    CHECK(c.lowGuardHz > 35 && c.lowGuardHz < 70, "roll-off found at %.0f Hz", c.lowGuardHz);
+    double mx = -99; for (size_t i = 0; i < g.size(); ++i) if (g[i] <= c.lowGuardHz) mx = std::max(mx, c.correction[i]);
+    CHECK(mx < 0.3, "largest boost below it %.2f dB", mx);
+    CorrectionSpec off; off.guardLowEnd = false;
+    const ChannelCorrection d = designCorrection(g, m, targetLevel(g, { &m }), off);
+    CHECK(at(g, d.correction, 40) > 5.5, "with the guard off the bass is boosted (%.1f dB at 40 Hz, limit 6)", at(g, d.correction, 40));
+}
+
+static void testCorrectionLimits()
+{
+    printf("correction: limits, band, amount, target\n");
+    const double fs = 48000;
+    Path p;
+    p.filters = { Bq::peak(fs, 200, 1, 14), Bq::peak(fs, 3000, 0.7, -12) };
+    const std::vector<double> g = correctionGrid();
+    const std::vector<double> m = curveOf(p, fs, -20);
+    CorrectionSpec s; s.maxBoostDb = 4; s.maxCutDb = 9;
+    const ChannelCorrection c = designCorrection(g, m, targetLevel(g, { &m }), s);
+    double mx = -99, mn = 99; for (double v : c.correction) { mx = std::max(mx, v); mn = std::min(mn, v); }
+    CHECK(mx <= 4.001 && mn >= -9.001, "within +4 / -9 dB (%.2f .. %.2f)", mn, mx);
+    CHECK(std::fabs(preampFor({ &c.correction }) + mx) < 1e-9, "preamp %.2f dB covers the largest boost", preampFor({ &c.correction }));
+    CorrectionSpec b; b.fHi = 500;
+    const ChannelCorrection cb = designCorrection(g, m, targetLevel(g, { &m }), b);
+    CHECK(std::fabs(at(g, cb.correction, 2000)) < 0.05 && at(g, cb.correction, 200) < -5, "band to 500 Hz: none at 2 kHz (%.2f), still at 200 Hz", at(g, cb.correction, 2000));
+    CorrectionSpec h; h.amount = 0.5;
+    const ChannelCorrection ch = designCorrection(g, m, targetLevel(g, { &m }), h), cf = designCorrection(g, m, targetLevel(g, { &m }), CorrectionSpec());
+    CHECK(std::fabs(at(g, ch.correction, 200) - 0.5 * at(g, cf.correction, 200)) < 1e-9, "half the amount, half the correction");
+    // a tilted target on a flat speaker: the result follows the tilt
+    std::vector<double> flat(g.size(), -25.0);
+    CorrectionSpec t; t.target.tiltDbPerOct = -0.8;
+    const ChannelCorrection ct = designCorrection(g, flat, targetLevel(g, { &flat }), t);
+    const double slope = (at(g, ct.result, 8000) - at(g, ct.result, 125)) / 6.0;
+    CHECK(std::fabs(slope + 0.8) < 0.05, "tilt -0.8 dB/oct: result slopes %.2f dB/oct", slope);
+}
+
+// the FIR's own response at the grid frequencies
+static std::vector<double> firDb(const std::vector<float>& h, double fs, const std::vector<double>& g)
+{
+    std::vector<double> out(g.size());
+    for (size_t i = 0; i < g.size(); ++i)
+    {
+        cd s = 0.0;
+        const cd step = std::exp(cd(0, -2 * kPi * g[i] / fs));
+        cd z = 1.0;
+        for (float v : h) { s += (double)v * z; z *= step; }
+        out[i] = 20 * std::log10(std::abs(s) + 1e-30);
+    }
+    return out;
+}
+
+static void testFir()
+{
+    printf("correction filters\n");
+    const double fs = 48000;
+    Path p;
+    p.filters = { Bq::peak(fs, 70, 5, 9), Bq::peak(fs, 900, 2, -4), Bq::peak(fs, 5000, 1, -6) };
+    const std::vector<double> g = correctionGrid();
+    const std::vector<double> m = curveOf(p, fs, -30);
+    const ChannelCorrection c = designCorrection(g, m, targetLevel(g, { &m }), CorrectionSpec());
+    const int taps = correctionTaps(fs);
+    CHECK(taps == 16384 && correctionTaps(96000) == 32768, "%d taps at 48 kHz, %d at 96 kHz", taps, correctionTaps(96000));
+    std::vector<double> sub; for (size_t i = 0; i < g.size(); i += 4) sub.push_back(g[i]);
+    for (int lin = 0; lin < 2; ++lin)
+    {
+        const double delay = 37.3;
+        const std::vector<float> h = designFir(g, c.correction, fs, taps, lin == 1, delay, -3.0);
+        const std::vector<double> r = firDb(h, fs, sub);
+        double worst = 0, wf = 0;
+        for (size_t i = 0; i < sub.size(); ++i)
+        {
+            if (sub[i] < 25 || sub[i] > 19000) continue;
+            const double e = std::fabs(r[i] - (curveAt(g, c.correction, sub[i]) - 3.0));
+            if (e > worst) { worst = e; wf = sub[i]; }
+        }
+        CHECK(worst < 0.3, "%s phase: matches the correction within %.3f dB 25 Hz..19 kHz (worst at %.0f Hz)", lin ? "linear" : "minimum", worst, wf);
+        // where the energy is: minimum phase at once (after the delay), linear phase around taps/2 + delay
+        double e = 0, tot = 0; int at90 = 0;
+        for (float v : h) tot += (double)v * v;
+        for (size_t i = 0; i < h.size(); ++i) { e += (double)h[i] * h[i]; if (e < 0.9 * tot) at90 = (int)i; }
+        int pk = 0; float pv = 0; for (size_t i = 0; i < h.size(); ++i) if (std::fabs(h[i]) > pv) { pv = std::fabs(h[i]); pk = (int)i; }
+        if (lin) CHECK(std::abs(pk - (taps / 2 + 37)) <= 1, "linear phase peaks at %d (taps/2 + delay = %d)", pk, taps / 2 + 37);
+        else CHECK(pk >= 36 && pk <= 39 && at90 < taps / 8, "minimum phase peaks at %d (delay 37.3), 90%% of the energy by sample %d", pk, at90);
+    }
+}
+
+static void testProfile()
+{
+    printf("profiles\n");
+    Profile p;
+    p.name = "Studio, desk";
+    p.preampDb = -4.25;
+    p.channels = 2;
+    const std::vector<double> g = correctionGrid();
+    for (int c = 0; c < 2; ++c)
+    {
+        p.ch[c].side = c ? 'R' : 'L';
+        p.ch[c].delayMs = c ? 0.0 : 0.583;
+        p.ch[c].f = g;
+        for (size_t i = 0; i < g.size(); ++i)
+        {
+            p.ch[c].correction.push_back(std::sin(i * 0.1) * 3);
+            p.ch[c].measured.push_back(-30 + std::cos(i * 0.07) * 5);
+            p.ch[c].target.push_back(-30);
+        }
+    }
+    const std::string text = writeProfile(p);
+    Profile q; std::string why;
+    const bool ok = parseProfile(text.data(), text.size(), q, why);
+    double worst = 0;
+    for (int c = 0; c < 2 && ok; ++c)
+        for (size_t i = 0; i < g.size(); ++i) worst = std::max(worst, std::fabs(q.ch[c].correction[i] - p.ch[c].correction[i]));
+    CHECK(ok && q.channels == 2 && q.name == p.name && std::fabs(q.preampDb + 4.25) < 1e-9 && std::fabs(q.side('L')->delayMs - 0.583) < 1e-9 && worst < 0.0006,
+          "written and read back (%zu bytes, %s)", text.size(), why.c_str());
+    const char* bad[] = { "", "hello\n", "pump-room-profile 1\nchannel X 0\n", "pump-room-profile 1\nchannel L 0\n20 1\n10 2\n30 0\nend\n",
+                          "pump-room-profile 1\nchannel L 0\n20 1\nend\n", "pump-room-profile 1\nname nothing\n" };
+    int refused = 0;
+    for (const char* b : bad) { Profile r; std::string w; if (!parseProfile(b, std::strlen(b), r, w)) ++refused; }
+    CHECK(refused == 6, "%d of 6 broken files refused", refused);
+    const char* one = "pump-room-profile 1\n# a comment\nname Left only\nchannel L 1.5\n20 0\n1000 -2\n20000 0\nend\n";
+    Profile r; std::string w;
+    CHECK(parseProfile(one, std::strlen(one), r, w) && r.channels == 1 && r.side('R') == nullptr && std::fabs(curveAt(r.ch[0].f, r.ch[0].correction, 1000) + 2) < 1e-9, "one channel, comments");
+}
+
 int main()
 {
     testSweep();
@@ -335,6 +515,12 @@ int main()
     testCalFormats();
     testReload();
     testLevels();
+    testCorrectionFlat();
+    testCorrectionRoom();
+    testCorrectionLowEnd();
+    testCorrectionLimits();
+    testFir();
+    testProfile();
     printf(fails ? "\n%d FAILED\n" : "\nall passed\n", fails);
     return fails ? 1 : 0;
 }

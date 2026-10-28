@@ -8,10 +8,16 @@ The plan, what's built, and how the measurement works. Stage 1 (measurement) is 
    sweeps out of each speaker, records any measurement mic with its calibration file, and shows the response, the
    impulse, and the timing and level differences between the speakers. The DSP is `common/dsp/Room.hpp` (tested in
    `tests/test_room.cpp`), compiled to wasm through `wasm/room_wasm.cpp`.
-2. **Averaging and correction design** — next. Several positions around the listening spot averaged (power
-   average, frequency-dependent window), a target curve (flat, tilt, drawn), and the correction: cuts first, limited
-   boost, no filling of deep nulls, correction faded out above a chosen frequency, per-channel delay and trim from
-   the arrival times. Saved as a profile (FIR kernels or filters + delays + trims).
+2. **Averaging and correction design** — built (2026-10-28). The app's CORRECTION view (`common/dsp/RoomCorrect.hpp`):
+   the measurements ticked IN CORRECTION are power-averaged per speaker; the target (TILT about 1 kHz, BASS and
+   TREBLE shelves) sits at the measured 200 Hz..2 kHz level, the same for both speakers; cuts follow the response
+   smoothed 1/12 octave in the bass widening to 1/3 above 5 kHz, boosts only fill the 1/3-octave (to 1 octave) deficit
+   (SKIP NULLS), none below the speaker's roll-off (PROTECT LOW END: the first point under 150 Hz where it stays more
+   than 6 dB under the target, faded back in over half an octave), MAX BOOST / MAX CUT, FROM / UP TO (faded over a
+   third of an octave), AMOUNT; TIME ALIGN delays the nearer speaker by the mean arrival difference; the preamp is
+   the largest boost. SAVE PROFILE writes a `.pumproom` file (below); EXPORT FOR WINDOWS writes a zip with stereo
+   minimum-phase filters at 44.1, 48, 88.2, 96 and 192 kHz (preamp and delays inside), a config file that picks the
+   one for the device's rate (`If: sampleRate == ...` / `Convolution:`) and a read-me.
 3. **Applying it** — pump ROOM as a plugin (VST3 / CLAP / AU) that loads a profile: minimum phase (no latency) or
    linear phase; in System EQ on the Mac (after the EQ, per output); on Windows, exported as an impulse response and
    a config for the free system-wide convolution equalizer the owner uses on Windows (named in the owner's
@@ -41,6 +47,12 @@ The plan, what's built, and how the measurement works. Stage 1 (measurement) is 
   (clipping above -1 dBFS) and dropouts are reported.
 
 ## Files
+
+- **Profiles** (`.pumproom`, text): `pump-room-profile 1`, then `name`, `preamp <dB>`, and per speaker
+  `channel L|R <delay ms>` followed by one line per point (`Hz correction measured target`, every 1/48 octave from
+  20 Hz to 20 kHz) and `end`. Whoever applies it designs the filter from the correction curve at its own sample rate
+  (`designFir`: minimum phase from the real cepstrum, or linear phase with a Tukey window; 16384 taps at 44.1/48 kHz,
+  more at higher rates; the delay is built into the filter). Numbers are written and read with '.' whatever the locale.
 
 - **Calibration files:** one point per line, frequency and dB (phase ignored), separated by spaces, tabs, commas or
   semicolons (with semicolons a decimal comma is fine). Headers, comments, a BOM and CRLF are skipped; a

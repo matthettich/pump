@@ -96,7 +96,20 @@ main { flex: 1; display: grid; grid-template-columns: 330px 1fr; gap: 16px; padd
 .status { height: 24px; line-height: 23px; padding: 0 14px; border-top: var(--line) solid var(--ink); background: var(--panel); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .status.err { color: var(--red); }
 
+.corr-cols { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px 22px; }
+.corr .row > span { width: 72px; }
+.corr .row .num { min-width: 88px; white-space: nowrap; }
+.toggles { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0 10px; }
+.readout { font-size: 12px; color: var(--ink2); line-height: 1.6; }
+.readout b { color: var(--ink); font-weight: normal; font-family: "JBM", monospace; }
+.corr-save { display: flex; align-items: center; gap: 10px; margin-top: 10px; border-top: 1px solid var(--grid); padding-top: 10px; flex-wrap: wrap; }
+.corr-save .row { flex: 1; min-width: 220px; margin: 0; }
+.corr-save .key { height: 30px; }
+.run-head .key.use.on { background: var(--ink); color: var(--on); }
+
+@media (max-width: 1100px) { .corr-cols { grid-template-columns: 1fr 1fr; } }
 @media (max-width: 860px) {
+  .corr-cols { grid-template-columns: 1fr; }
   main { grid-template-columns: 1fr; padding: 12px; }
   .screen { height: 320px; }
   .chan { grid-template-columns: 22px 44px 1fr 1fr auto; }

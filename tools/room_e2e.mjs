@@ -47,7 +47,41 @@ check(Math.abs(withCal - 2) < 1e-9, 'calibration curve read');
 await page.click('#view button[data-v="impulse"]');
 if (shots) await page.screenshot({ path: join(shots, 'room-impulse.png') });
 
+// the correction: designed from the run, a profile, the Windows export
+await page.click('#view button[data-v="correction"]');
+await page.waitForTimeout(200);
+const d = await page.evaluate(() => {
+  const x = window.pumpRoom.S.design;
+  if (!x) return null;
+  const s = x.sides.map((sd) => sd && { mode: Math.min(...sd.correction), delay: sd.delay });
+  return { preamp: x.preamp, s };
+});
+check(d && d.s[0] && d.s[1], 'a correction for both speakers');
+check(d && d.s[0].mode < -4 && d.s[1].mode < -4, `the 110 Hz room mode is cut (${d && d.s.map((x) => x.mode.toFixed(1)).join(' / ')} dB)`);
+check(d && d.preamp <= 0 && d.preamp > -7, `preamp ${d && d.preamp.toFixed(2)} dB`);
+check(d && Math.abs(d.s[0].delay - Math.abs(run.dt)) < 0.01 && d.s[1].delay === 0, `the nearer (left) speaker delayed ${d && d.s[0].delay.toFixed(3)} ms`);
+if (shots) await page.screenshot({ path: join(shots, 'room-correction.png') });
 const dir = mkdtempSync(join(tmpdir(), 'pump-room-'));
+{
+  const [p] = await Promise.all([page.waitForEvent('download'), page.click('#cSave')]);
+  const f = join(dir, 'profile.pumproom');
+  await p.saveAs(f);
+  const text = (await import('node:fs')).readFileSync(f, 'utf8');
+  check(text.startsWith('pump-room-profile 1') && /channel L /.test(text) && /channel R /.test(text), `profile saved (${p.suggestedFilename()}, ${text.length} bytes)`);
+  const [z] = await Promise.all([page.waitForEvent('download'), page.click('#cWin')]);
+  const zf = join(dir, 'win.zip');
+  await z.saveAs(zf);
+  const zb = (await import('node:fs')).readFileSync(zf);
+  const names = [];
+  for (let i = 0; i + 30 < zb.length;) {
+    if (zb.readUInt32LE(i) !== 0x04034b50) break;
+    const size = zb.readUInt32LE(i + 18), nl = zb.readUInt16LE(i + 26);
+    names.push(zb.toString('utf8', i + 30, i + 30 + nl));
+    i += 30 + nl + size;
+  }
+  check(names.length === 7 && names.includes('pump-room.txt') && names.includes('pump-room-48000.wav'), `Windows export: ${names.join(', ')}`);
+}
+
 const [dl] = await Promise.all([page.waitForEvent('download'), page.click('#save')]);
 const saved = join(dir, 'session.json');
 await dl.saveAs(saved);

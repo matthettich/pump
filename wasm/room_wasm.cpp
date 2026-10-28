@@ -1,7 +1,7 @@
 // pump ROOM: the measurement DSP (common/dsp/Room.hpp) behind a small C interface for the browser app (room/).
 // Built by room/build.sh into pump-room.wasm. No threads, no exceptions; the app passes audio and text through
 // buffers it allocates here (room_alloc / room_release_buf).
-#include "dsp/Room.hpp"
+#include "dsp/RoomCorrect.hpp"
 #include <cstdlib>
 
 using namespace pump;
@@ -124,6 +124,110 @@ double room_cal_info(int what)
     }
 }
 double room_cal_at(double f) { return cal.at(f); }
+
+// --- correction (stage 2): add each speaker's measurements, design, read the curves, write a profile, make filters
+
+namespace {
+std::vector<std::vector<double>> corrIn[2];   // per side: responses on the correction grid
+ChannelCorrection corrOut[2];
+bool corrHave[2] = { false, false };
+double corrPreamp = 0.0, corrDelay[2] = { 0.0, 0.0 };
+std::string text;
+std::vector<float> fir;
+}
+
+void room_corr_begin() { corrIn[0].clear(); corrIn[1].clear(); corrHave[0] = corrHave[1] = false; }
+
+// one measurement's response (window in ms, the mic's calibration if useCal) into a side's average (0 L, 1 R)
+int room_corr_add(int side, int id, double windowMs, int useCal)
+{
+    Measurement* m = slot(id);
+    if (m == nullptr || side < 0 || side > 1 || !m->ensureSpectrum(windowMs)) return 0;
+    const std::vector<double> g = correctionGrid();
+    std::vector<float> r;
+    m->response(g, 1.0 / 48.0, useCal ? &cal : nullptr, r);
+    corrIn[side].emplace_back(r.begin(), r.end());
+    return (int)corrIn[side].size();
+}
+
+// p: tilt, bass dB, treble dB, fLo, fHi, max boost, max cut, protect nulls, guard low end, amount, delay L ms, delay R ms
+int room_corr_design(const double* p)
+{
+    CorrectionSpec spec;
+    spec.target.tiltDbPerOct = p[0]; spec.target.bassDb = p[1]; spec.target.trebleDb = p[2];
+    spec.fLo = p[3]; spec.fHi = p[4]; spec.maxBoostDb = p[5]; spec.maxCutDb = p[6];
+    spec.protectNulls = p[7] != 0.0; spec.guardLowEnd = p[8] != 0.0; spec.amount = p[9];
+    const std::vector<double> g = correctionGrid();
+    std::vector<double> avg[2];
+    std::vector<const std::vector<double>*> all;
+    for (int s = 0; s < 2; ++s)
+    {
+        corrHave[s] = !corrIn[s].empty();
+        if (corrHave[s]) { avg[s] = powerAverage(corrIn[s]); all.push_back(&avg[s]); }
+    }
+    const double level = targetLevel(g, all);
+    std::vector<const std::vector<double>*> corrs;
+    for (int s = 0; s < 2; ++s)
+    {
+        corrOut[s] = corrHave[s] ? designCorrection(g, avg[s], level, spec) : ChannelCorrection();
+        if (corrHave[s]) corrs.push_back(&corrOut[s].correction);
+        corrDelay[s] = std::max(0.0, p[10 + s]);
+        corrOut[s].delayMs = corrDelay[s];
+    }
+    corrPreamp = preampFor(corrs);
+    return (int)g.size();
+}
+
+// 0 measured, 1 target, 2 correction, 3 result (doubles on the correction grid; null if the side has none)
+const double* room_corr_curve(int side, int which)
+{
+    if (side < 0 || side > 1 || !corrHave[side]) return nullptr;
+    const ChannelCorrection& c = corrOut[side];
+    switch (which) { case 0: return c.measured.data(); case 1: return c.target.data(); case 2: return c.correction.data(); case 3: return c.result.data(); default: return nullptr; }
+}
+int room_corr_grid_size() { return (int)correctionGrid().size(); }
+double room_corr_info(int side, int what)
+{
+    if (what == 0) return corrPreamp;
+    if (side < 0 || side > 1 || !corrHave[side]) return 0.0;
+    if (what == 1) return corrOut[side].lowGuardHz;
+    if (what == 2) return corrDelay[side];
+    return 0.0;
+}
+
+// the profile text for the current design (read it with room_text_ptr / room_text_len)
+int room_corr_profile(const char* name, int len)
+{
+    Profile p;
+    p.name.assign(name, (size_t)std::max(0, len));
+    p.preampDb = corrPreamp;
+    for (int s = 0; s < 2; ++s)
+    {
+        if (!corrHave[s]) continue;
+        ProfileChannel& c = p.ch[p.channels++];
+        c.side = s ? 'R' : 'L';
+        c.delayMs = corrDelay[s];
+        c.f = corrOut[s].f;
+        c.correction = corrOut[s].correction;
+        c.measured = corrOut[s].measured;
+        c.target = corrOut[s].target;
+    }
+    text = writeProfile(p);
+    return (int)text.size();
+}
+const char* room_text_ptr() { return text.data(); }
+int room_text_len() { return (int)text.size(); }
+
+// a side's correction filter at fs, the preamp and its delay in it (read with room_fir_ptr); returns its length
+int room_corr_fir(int side, double fs, int linear)
+{
+    fir.clear();
+    if (side < 0 || side > 1 || !corrHave[side]) return 0;
+    fir = designFir(corrOut[side].f, corrOut[side].correction, fs, correctionTaps(fs), linear != 0,
+                    corrDelay[side] * 0.001 * fs, corrPreamp);
+    return (int)fir.size();
+}
+const float* room_fir_ptr() { return fir.data(); }
 
 double room_rms_db(const float* x, int n) { return rmsDb(x, n); }
 double room_peak_db(const float* x, int n) { return peakDb(x, n); }
