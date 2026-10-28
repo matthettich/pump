@@ -1,26 +1,20 @@
 // pump COIL: plugin (DSP side). Declared in a header so the UI can read its feeds and play its keyboard directly.
 #pragma once
 #include "PumpPlugin.hpp"
-#include "CoilParams.hpp"
-#include "CoilEngine.hpp"
+#include "CoilDsp.hpp"   // the DSP itself (shared with the web build)
 
 START_NAMESPACE_DISTRHO
 
 using namespace pump::coil;
 
-class PluginCoil : public PumpPlugin {
+class PluginCoil : public pump::coil::CoilDsp<PumpPlugin> {
 public:
-    PluginCoil() : PumpPlugin(params().data(), kNumParams, &presets())
+    PluginCoil() : CoilDsp(params().data(), kNumParams, &presets())
     {
-        sync();
-        engine.prepare(getSampleRate(), (int)getBufferSize()); outLimit.prepare(getSampleRate());
+        prepareDsp();
         if (const char* n = pump::testEnv("PUMP_TEST_NOTES")) testNotes = n;   // headless screenshots: notes to hold (after 0.5 s)
     }
 
-    // gain staging (the volume pass, 2026-10-26): VOLUME 0 dB is a typical voice at about -20 dBFS RMS
-    static constexpr float kTrimDb = -2.0f;
-    Engine engine;
-    pump::SafetyLimiter outLimit;
     pump::synth::NoteQueue keys;
     pump::MeterValue outPeak[2];
     // the KICK key (UI): every ringing spring and the tank get a kick
@@ -31,18 +25,8 @@ protected:
     const char* getLabel() const override { return "pump_coil"; }
     const char* getDescription() const override { return PUMP_PLUGIN_ABOUT; }
 
-    void activate() override { sync(); engine.prepare(getSampleRate(), (int)getBufferSize()); outLimit.prepare(getSampleRate()); }
+    void activate() override { prepareDsp(); }
 
-    void sync()
-    {
-        Settings s;
-        s.model = (int)pv(kModel); s.tension = pv(kTension); s.drip = pv(kDrip); s.decay = pv(kDecay); s.release = pv(kRelease);
-        s.harmonic = pv(kHarmonic) * 0.01; s.spread = pv(kSpread) * 0.01; s.wobble = pv(kWobble) * 0.01; s.tone = pv(kTone) * 0.01;
-        s.excite = pv(kExcite) * 0.01; s.tank = pv(kTank) * 0.01; s.grit = pv(kGrit); s.width = pv(kWidth) * 0.01;
-        s.octave = (int)pv(kOctave); s.bend = pv(kBend); s.velocity = pv(kVelocity) * 0.01; s.volumeDb = pv(kVolume) + kTrimDb;
-        s.voices = (int)pv(kVoices);
-        engine.setSettings(s);
-    }
 
     void run(const float**, float** outputs, uint32_t frames, const MidiEvent* midiEvents, uint32_t midiEventCount) override
     {
@@ -50,7 +34,7 @@ protected:
         if (takeAnyChanged())
         {
             for (uint32_t i = 0; i < (uint32_t)kNumParams; ++i) takeChanged(i);
-            sync();
+            syncSettings();
         }
         const uint32_t req = kickRequest.load(std::memory_order_acquire);
         if (req != kickSeen) { kickSeen = req; engine.kick(kickStrength.load(std::memory_order_relaxed)); }
@@ -75,8 +59,7 @@ protected:
             }
             float* l = outputs[0] + done;
             float* r = outputs[1] + done;
-            engine.process(nullptr, nullptr, l, r, (int)n, midi, nm);
-            outLimit.process(l, r, (int)n);
+            renderChunk(l, r, (int)n, midi, nm);
             float pl = 0.0f, pr = 0.0f;
             for (uint32_t i = 0; i < n; ++i) { pl = std::max(pl, std::fabs(l[i])); pr = std::max(pr, std::fabs(r[i])); }
             outPeak[0].setMax(pl); outPeak[1].setMax(pr);

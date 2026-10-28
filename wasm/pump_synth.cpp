@@ -1,9 +1,9 @@
 // pump's instruments in WebAssembly: MONO, POLY and COIL behind one C interface, for Thunder Plus's synth engines.
 //
-// Each Synth<Name> below is its plugin's DSP side (plugins/<name>/Plugin<Name>.hpp) without DPF: the same sync() from
-// the parameter values to the engine's Settings, the same prepare / activate, and the same 256-sample chunks with the
-// MIDI messages that fall in each. Keep these in step with the plugins: when a Plugin<Name>.hpp's sync() or run()
-// changes, change its Synth here the same way (docs/DEVELOPING.md, "WebAssembly").
+// Each Synth<Name> below runs its plugin's own DSP side, plugins/<name>/<Name>Dsp.hpp (the settings from the
+// parameters, the output trim, the engine and the safety limiter: the code the plugin runs, not a copy), on SynthBase,
+// which does what the plugin's run() does around it: 256-sample chunks with the MIDI messages that fall in each.
+// tests/parity_synth.cpp checks each against its plugin.
 //
 // Thunder Plus renders a note at a time today (the note's audio becomes the pad's sound, re-pitched for the others),
 // but nothing here assumes that: an instance plays any MIDI it is given, so the same build can run live in a worklet.
@@ -27,9 +27,9 @@
 //   psyn_latency(h)                      the latency the plugin reports (samples): MONO's half-band decimator
 #include <limits>
 #include "Handles.hpp"
-#include "../plugins/mono/MonoEngine.hpp"
-#include "../plugins/poly/PolyEngine.hpp"
-#include "../plugins/coil/CoilEngine.hpp"
+#include "../plugins/mono/MonoDsp.hpp"
+#include "../plugins/poly/PolyDsp.hpp"
+#include "../plugins/coil/CoilDsp.hpp"
 #include <algorithm>
 #include <memory>
 
@@ -129,80 +129,35 @@ protected:
     int nq = 0;
 };
 
-// ---------------------------------------------------------------- MONO (PluginMono.hpp)
-class SynthMono : public SynthBase {
+// Each instrument below runs its plugin's own DSP side (plugins/<name>/<Name>Dsp.hpp: the settings, the trim, the
+// engine and the output limiter), on SynthBase instead of PumpPlugin. tests/parity_synth.cpp checks each against its
+// plugin.
+// ---------------------------------------------------------------- MONO
+class SynthMono : public pump::mono::MonoDsp<SynthBase> {
 public:
-    SynthMono(double rate) : SynthBase(kMono, rate) {}
-    pump::mono::Engine engine;
-    void activate() override { sync(); engine.prepare(getSampleRate(), getBufferSize()); anyChanged = false; }
+    explicit SynthMono(double rate) : MonoDsp(kMono, rate) {}
+    void activate() override { prepareDsp(); anyChanged = false; }
     int latency() const override { return engine.latency(); }
-    void sync() override
-    {
-        using namespace pump::mono;
-        Settings s;
-        const int wv[3] = { kOsc1Wave, kOsc2Wave, kOsc3Wave }, oc[3] = { kOsc1Oct, kOsc2Oct, kOsc3Oct }, lv[3] = { kOsc1Level, kOsc2Level, kOsc3Level };
-        for (int o = 0; o < 3; ++o) { s.wave[o] = (int)pv(wv[o]); s.oct[o] = (int)pv(oc[o]); s.level[o] = pv(lv[o]) * 0.01; }
-        s.pitch[0] = 0.0; s.pitch[1] = pv(kOsc2Pitch); s.pitch[2] = pv(kOsc3Pitch);
-        s.sync = pv(kSync) >= 0.5f; s.fm = pv(kFm) * 0.01; s.pw = pv(kPw) * 0.01; s.noise = pv(kNoise) * 0.01; s.overdriveDb = pv(kOverdrive);
-        s.filterType = (int)pv(kFilterType); s.cutoff = pv(kCutoff); s.res = pv(kRes) * 0.01; s.filterEnv = pv(kFilterEnv) * 0.01;
-        s.keyTrack = pv(kKeyTrack) * 0.01; s.mode = pv(kFilterMode) * 0.01; s.velFilter = pv(kVelFilter) * 0.01;
-        s.fA = pv(kFA) * 0.001; s.fD = pv(kFD) * 0.001; s.fS = pv(kFS) * 0.01; s.fR = pv(kFR) * 0.001;
-        s.aA = pv(kAA) * 0.001; s.aD = pv(kAD) * 0.001; s.aS = pv(kAS) * 0.01; s.aR = pv(kAR) * 0.001; s.velAmp = pv(kVelAmp) * 0.01;
-        s.lfoShape = (int)pv(kLfoShape); s.lfoRate = pv(kLfoRate); s.lfoPitch = pv(kLfoPitch) * 0.01; s.lfoFilter = pv(kLfoFilter) * 0.01;
-        s.lfoPw = pv(kLfoPw) * 0.01; s.wheelVib = pv(kWheelVib) * 0.01;
-        s.glide = pv(kGlide); s.glideMode = (int)pv(kGlideMode); s.priority = (int)pv(kPriority); s.legato = pv(kLegato) >= 0.5f;
-        s.drift = pv(kDrift) * 0.01; s.bendRange = pv(kBendRange); s.volumeDb = pv(kVolume);
-        engine.setSettings(s);
-    }
-    void render(float* l, float* r, int n, const pump::synth::Midi* ev, int nev) override { engine.process(l, r, n, ev, nev); }
+    void sync() override { syncSettings(); }
+    void render(float* l, float* r, int n, const pump::synth::Midi* ev, int nev) override { renderChunk(l, r, n, ev, nev); }
 };
 
-// ---------------------------------------------------------------- POLY (PluginPoly.hpp)
-class SynthPoly : public SynthBase {
+// ---------------------------------------------------------------- POLY
+class SynthPoly : public pump::poly::PolyDsp<SynthBase> {
 public:
-    SynthPoly(double rate) : SynthBase(kPoly, rate) {}
-    pump::poly::Engine engine;
-    void activate() override { sync(); engine.prepare(getSampleRate(), getBufferSize()); anyChanged = false; }
-    void sync() override
-    {
-        using namespace pump::poly;
-        Settings s;
-        s.aSaw = pv(kASaw) >= 0.5f; s.aPulse = pv(kAPulse) >= 0.5f; s.aFreq = pv(kAFreq); s.aPw = pv(kAPw) * 0.01; s.sync = pv(kSync) >= 0.5f;
-        s.bSaw = pv(kBSaw) >= 0.5f; s.bTri = pv(kBTri) >= 0.5f; s.bPulse = pv(kBPulse) >= 0.5f; s.bFreq = pv(kBFreq); s.bFine = pv(kBFine);
-        s.bPw = pv(kBPw) * 0.01; s.bLow = pv(kBLow) >= 0.5f;
-        s.levelA = pv(kLevelA) * 0.01; s.levelB = pv(kLevelB) * 0.01; s.noise = pv(kNoise) * 0.01; s.sub = pv(kSub) * 0.01;
-        s.filterType = (int)pv(kFilterType); s.cutoff = pv(kCutoff); s.res = pv(kRes) * 0.01; s.filterEnv = pv(kFilterEnv) * 0.01;
-        s.keyTrack = pv(kKeyTrack) * 0.01; s.hpf = pv(kHpf); s.velFilter = pv(kVelFilter) * 0.01;
-        s.fA = pv(kFA) * 0.001; s.fD = pv(kFD) * 0.001; s.fS = pv(kFS) * 0.01; s.fR = pv(kFR) * 0.001;
-        s.aA = pv(kAA) * 0.001; s.aD = pv(kAD) * 0.001; s.aS = pv(kAS) * 0.01; s.aR = pv(kAR) * 0.001; s.velAmp = pv(kVelAmp) * 0.01;
-        s.pmEnv = pv(kPmEnv) * 0.01; s.pmOscB = pv(kPmOscB) * 0.01; s.pmFreqA = pv(kPmFreqA) >= 0.5f; s.pmPwA = pv(kPmPwA) >= 0.5f; s.pmFilter = pv(kPmFilter) >= 0.5f;
-        s.lfoShape = (int)pv(kLfoShape); s.lfoRate = pv(kLfoRate); s.lfoDelay = pv(kLfoDelay); s.lfoPitch = pv(kLfoPitch) * 0.01;
-        s.lfoPw = pv(kLfoPw) * 0.01; s.lfoFilter = pv(kLfoFilter) * 0.01; s.wheelMod = pv(kWheelMod) * 0.01;
-        s.voiceMode = (int)pv(kVoiceMode); s.voices = (int)pv(kVoices); s.unisonDetune = pv(kUnisonDetune) * 0.01; s.glide = pv(kGlide);
-        s.slop = pv(kSlop) * 0.01; s.bendRange = pv(kBendRange); s.chorus = (int)pv(kChorus); s.volumeDb = pv(kVolume);
-        engine.setSettings(s);
-    }
-    void render(float* l, float* r, int n, const pump::synth::Midi* ev, int nev) override { engine.process(l, r, n, ev, nev); }
+    explicit SynthPoly(double rate) : PolyDsp(kPoly, rate) {}
+    void activate() override { prepareDsp(); anyChanged = false; }
+    void sync() override { syncSettings(); }
+    void render(float* l, float* r, int n, const pump::synth::Midi* ev, int nev) override { renderChunk(l, r, n, ev, nev); }
 };
 
-// ---------------------------------------------------------------- COIL (PluginCoil.hpp; no KICK key, no test notes)
-class SynthCoil : public SynthBase {
+// ---------------------------------------------------------------- COIL (no KICK key, no test notes)
+class SynthCoil : public pump::coil::CoilDsp<SynthBase> {
 public:
-    SynthCoil(double rate) : SynthBase(kCoil, rate) {}
-    pump::coil::Engine engine;
-    void activate() override { sync(); engine.prepare(getSampleRate(), getBufferSize()); anyChanged = false; }
-    void sync() override
-    {
-        using namespace pump::coil;
-        Settings s;
-        s.model = (int)pv(kModel); s.tension = pv(kTension); s.drip = pv(kDrip); s.decay = pv(kDecay); s.release = pv(kRelease);
-        s.harmonic = pv(kHarmonic) * 0.01; s.spread = pv(kSpread) * 0.01; s.wobble = pv(kWobble) * 0.01; s.tone = pv(kTone) * 0.01;
-        s.excite = pv(kExcite) * 0.01; s.tank = pv(kTank) * 0.01; s.grit = pv(kGrit); s.width = pv(kWidth) * 0.01;
-        s.octave = (int)pv(kOctave); s.bend = pv(kBend); s.velocity = pv(kVelocity) * 0.01; s.volumeDb = pv(kVolume);
-        s.voices = (int)pv(kVoices);
-        engine.setSettings(s);
-    }
-    void render(float* l, float* r, int n, const pump::synth::Midi* ev, int nev) override { engine.process(nullptr, nullptr, l, r, n, ev, nev); }
+    explicit SynthCoil(double rate) : CoilDsp(kCoil, rate) {}
+    void activate() override { prepareDsp(); anyChanged = false; }
+    void sync() override { syncSettings(); }
+    void render(float* l, float* r, int n, const pump::synth::Midi* ev, int nev) override { renderChunk(l, r, n, ev, nev); }
 };
 
 inline SynthBase* make(int type, double sr)

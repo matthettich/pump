@@ -69,6 +69,15 @@ build/tests/parity_$(1): tests/parity.cpp wasm/pump_wasm.cpp wasm/Handles.hpp pl
 	$$(CXX) $$(PARITY_FLAGS) -Iplugins/$(1) -DPTYPE=$(3) -DPNS=$(1) tests/parity.cpp plugins/$(1)/Plugin$(2).cpp build/tests/pffft.o -lpthread -o $$@
 endef
 $(foreach p,$(PARITY),$(eval $(call PARITY_RULE,$(word 1,$(subst :, ,$(p))),$(word 2,$(subst :, ,$(p))),$(word 3,$(subst :, ,$(p))))))
+# and the instruments in wasm/pump_synth.cpp (tests/parity_synth.cpp: a MIDI phrase, every factory preset)
+PARITY_SYNTH := mono:Mono:kMono poly:Poly:kPoly coil:Coil:kCoil
+PARITY_TESTS += $(foreach p,$(PARITY_SYNTH),build/tests/parity_$(word 1,$(subst :, ,$(p))))
+define PARITY_SYNTH_RULE
+build/tests/parity_$(1): tests/parity_synth.cpp wasm/pump_synth.cpp wasm/Handles.hpp plugins/$(1)/Plugin$(2).cpp build/tests/pffft.o $$(wildcard common/*.hpp common/dsp/*.hpp plugins/*/*.hpp) | dpf-patches
+	@mkdir -p build/tests
+	$$(CXX) $$(PARITY_FLAGS) -Iplugins/$(1) -DPTYPE=$(3) -DPNS=$(1) tests/parity_synth.cpp plugins/$(1)/Plugin$(2).cpp build/tests/pffft.o -lpthread -o $$@
+endef
+$(foreach p,$(PARITY_SYNTH),$(eval $(call PARITY_SYNTH_RULE,$(word 1,$(subst :, ,$(p))),$(word 2,$(subst :, ,$(p))),$(word 3,$(subst :, ,$(p))))))
 
 # AMP's test links the NAM core (float samples, Eigen from the NAM submodule; EIGEN_PATH= to use another copy)
 NAM_DIR := third_party/NeuralAmpModelerCore

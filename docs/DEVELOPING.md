@@ -167,7 +167,8 @@ the list is at the top of the file). Each `Host<Name>` there runs the plugin's o
 (a template on its host base: `PumpPlugin` in the plugin, `HostBase` here), so a change to the plugin's processing is
 a change to the web build too: rebuild `pump.wasm` and vendor it into Thunder Plus. `Plugin<Name>.hpp` keeps only what
 DPF needs (label, description, audio ports). `make tests` runs `tests/parity.cpp`, which checks every effect's web
-build against its plugin, sample for sample, over every factory preset.
+build against its plugin, sample for sample, over every factory preset. The instruments in `wasm/pump_synth.cpp` (MONO, POLY,
+COIL) work the same way (`plugins/<name>/<Name>Dsp.hpp`, checked by `tests/parity_synth.cpp`).
 Handles from `pump_new` / `psyn_new` are opaque (slot and generation, wasm/Handles.hpp): JavaScript must not treat
 them as small array indices, and a handle used after `pump_free` is ignored. Staged values that aren't written before
 `pump_new` take the parameter's default.
