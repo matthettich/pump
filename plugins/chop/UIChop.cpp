@@ -114,6 +114,8 @@ protected:
             outMeter.tickDb(c, pk, dt);
         }
         plug->engine.overview(wave, kWave);
+        plug->engine.liveOverview(live, kWave);
+        ls = plug->engine.liveStartNow(); ll = plug->engine.liveLenNow(); wNow = (double)plug->engine.writtenNow();
         rs = plug->engine.regionStartNow(); rl = plug->engine.regionLenNow(); ph = plug->engine.playheadNow();
         padNow = plug->engine.padNow(); heldNow = plug->engine.heldNow(); pendNow = plug->engine.pendingNow();
         for (int p = 0; p < kPads; ++p) glow[p] = (heldNow >> p & 1) ? 1.0f : std::max(0.0f, glow[p] - dt * 5.0f);
@@ -145,7 +147,7 @@ protected:
                 fillRect(Rect(p.x + p.w * s / slices, p.y, p.w / slices, p.h), withAlpha2(theme.neon, (heldNow >> q & 1) ? 0.35f : 0.15f));
             }
         const float cy = p.cy();
-        float mx = 0.05f; for (int i = 0; i < kWave; ++i) mx = std::max(mx, wave[i]);
+        float mx = 0.05f; for (int i = 0; i < kWave; ++i) mx = std::max(mx, std::max(wave[i], live[i]));
         beginPath();
         for (int i = 0; i < kWave; ++i) { const float h = std::min(1.0f, wave[i] / mx) * p.h * 0.46f; rect(p.x + p.w * i / kWave, cy - h, std::max(1.0f, p.w / kWave), 2 * h); }
         fillColor(withAlpha2(theme.ink, 0.7f)); fill();
@@ -154,6 +156,34 @@ protected:
             const float x = p.x + p.w * s / slices;
             line(x, p.y, x, p.b(), s % 4 == 0 ? theme.dim : withAlpha2(theme.dim, 0.5f), 1.0f);
             if (s < slices) { char b[4]; std::snprintf(b, sizeof b, "%d", s + 1); textAt(x + 4, p.y + 8, b, kMono, 8.0f, theme.ink2, ALIGN_LEFT | ALIGN_MIDDLE); }
+        }
+        // the bar coming in now, over the captured one: its outline in pink, growing as it is heard, and the write head
+        // in green (the captured bar is the last whole one; at the end of this bar it becomes the region)
+        {
+            const Color pink = pump::mixColor(pump::hexColor(0xFF4FA0), theme.ink, theme.dark ? 0.0f : 0.15f);
+            const Color green = theme.dark ? theme.neon : pump::mixColor(theme.neon, theme.ink, 0.35f);
+            int last = -1; for (int i = 0; i < kWave; ++i) if (live[i] >= 0.0f) last = i;
+            if (last > 0)
+            {
+                for (int side = 0; side < 2; ++side)
+                {
+                    beginPath();
+                    for (int i = 0; i <= last; ++i)
+                    {
+                        const float h = std::min(1.0f, live[i] / mx) * p.h * 0.46f, x = p.x + p.w * (i + 0.5f) / kWave;
+                        const float y = side ? cy + h : cy - h;
+                        if (i == 0) moveTo(x, y); else lineTo(x, y);
+                    }
+                    strokeColor(withAlpha2(pink, 0.9f)); strokeWidth(1.4f); lineJoin(ROUND); stroke();
+                }
+            }
+            if (ll > 0.0)
+            {
+                const float x = p.x + p.w * (float)pump::clampv((wNow - ls) / ll, 0.0, 1.0);
+                line(x, p.y, x, p.b(), withAlpha2(green, 0.95f), 1.5f);
+                beginPath(); circle(x, p.y + 3, 3.0f); fillColor(green); fill();
+            }
+            textAt(p.x + 4, p.b() - 8, "IN NOW", kLabel, 8.0f, pink, ALIGN_LEFT | ALIGN_MIDDLE, 0.8f);
         }
         if (ph >= 0.0 && rl > 0.0)
         {
@@ -292,8 +322,8 @@ private:
     MenuButton *lenMenu, *quantMenu;
     int sel = 0, learn = -1, mousePad = -1, padNow = -1;
     uint32_t heldBits = 0, heldNow = 0, pendNow = 0, noteSeen = 0;
-    double rs = 0.0, rl = 1.0, ph = -1.0;
-    float wave[kWave] = {}, glow[kPads] = {};
+    double rs = 0.0, rl = 1.0, ph = -1.0, ls = 0.0, ll = 1.0, wNow = 0.0;
+    float wave[kWave] = {}, live[kWave] = {}, glow[kPads] = {};
     OutMeter outMeter;
 
     DISTRHO_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(UIChop)

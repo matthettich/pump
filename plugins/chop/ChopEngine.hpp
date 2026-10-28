@@ -66,6 +66,23 @@ public:
     int padNow() const { return padFeed.load(std::memory_order_relaxed); }           // the pad playing, or -1
     uint32_t heldNow() const { return heldFeed.load(std::memory_order_relaxed); }
     uint32_t pendingNow() const { return pendFeed.load(std::memory_order_relaxed); }
+    // the bar coming in now (it becomes the region at its end while nothing holds it): where it starts, how long
+    double liveStartNow() const { return lsFeed.load(std::memory_order_relaxed); }
+    double liveLenNow() const { return llFeed.load(std::memory_order_relaxed); }
+    // its waveform so far, n peaks over the whole bar (-1 where it hasn't been heard yet)
+    void liveOverview(float* dst, int n) const
+    {
+        const double ls = lsFeed.load(), ll = llFeed.load();
+        const long long w = wFeed.load();
+        for (int i = 0; i < n; ++i)
+        {
+            const long long a = (long long)(ls + ll * i / n), b = std::min((long long)(ls + ll * (i + 1) / n), w);
+            if (a >= w || ll <= 0.0) { dst[i] = -1.0f; continue; }
+            float pk = 0.0f;
+            for (long long k = a; k < b; k += std::max(1LL, (b - a) / 32)) if (k >= 0) pk = std::max(pk, std::max(std::fabs(buf[0][(size_t)(k & mask)]), std::fabs(buf[1][(size_t)(k & mask)])));
+            dst[i] = pk;
+        }
+    }
     // the region's waveform, n peaks (the UI thread reads the ring while it is written: a glimpse, not exact)
     void overview(float* dst, int n) const
     {
@@ -135,6 +152,10 @@ public:
             pos += qps;
         }
         if (!std::isfinite(env + head[0].f.ic1 + head[1].f.ic1)) { head[0] = head[1] = Head(); env = 0.0; held = pending = 0; order.clear(); sanitizeBlock(L, n); sanitizeBlock(R, n); }
+        {
+            const double since = (pos - lenQ * std::floor(pos / lenQ)) / qps;   // samples into the bar coming in
+            llFeed.store(std::max(64.0, lenQ / qps)); lsFeed.store((double)written - since);
+        }
         rsFeed.store(regionStart); rlFeed.store(regionLen); wFeed.store(written);
         phFeed.store(head[0].active && env > 0.0 ? head[0].pos : -1.0);
         padFeed.store(head[0].active && held ? head[0].pad : -1);
@@ -270,7 +291,7 @@ private:
     double env = 0.0, xf = 1.0, fadeInc = 0.007, regionStart = 0.0, regionLen = 1.0;
     unsigned ctl = 0;
     LinearSmoother mixS, outS;
-    std::atomic<double> rsFeed { 0.0 }, rlFeed { 1.0 }, phFeed { -1.0 };
+    std::atomic<double> rsFeed { 0.0 }, rlFeed { 1.0 }, phFeed { -1.0 }, lsFeed { 0.0 }, llFeed { 1.0 };
     std::atomic<long long> wFeed { 0 };
     std::atomic<int> padFeed { -1 };
     std::atomic<uint32_t> heldFeed { 0 }, pendFeed { 0 };
