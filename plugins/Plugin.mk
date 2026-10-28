@@ -18,7 +18,18 @@ ifeq ($(shell sh ../../tools/apply-dpf-patches.sh $(DPF_PATH) >&2 && echo ok),)
 $(error DPF patches could not be applied, see above)
 endif
 
+# macOS: the text-box keyboard grab (common/ui/KeyGrab.hpp) is Objective-C++, so it can't ride along in fonts.cpp
+# like the Windows half. Listed before the DPF include (it builds the object lists), compiled by the rule below.
+ifneq (,$(filter true,$(MACOS))$(findstring apple,$(shell $(CC) -dumpmachine 2>/dev/null)))
+FILES_UI += pump_keygrab.mm
+endif
+
 include $(DPF_PATH)/Makefile.plugins.mk
+
+$(BUILD_DIR)/pump_keygrab.mm.o: ../../common/ui/MacKeyGrab.mm ../../common/ui/KeyGrab.hpp
+	-@mkdir -p "$(shell dirname $@)"
+	@echo "Compiling MacKeyGrab.mm"
+	$(SILENT)$(CC) $< $(BUILD_CXX_FLAGS) -ObjC++ -c -o $@
 
 # C++17, our headers, and fast math without assuming finite values (meters use -inf as "silence").
 # Windows: the editor redraws on a WM_TIMER, which only fires on the system's ~15.6 ms tick. Asked for every 16 ms

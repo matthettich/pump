@@ -96,3 +96,6 @@ void* winFrameClockStart(uintptr_t, void (*)(void*), void*) { return nullptr; }
 void winFrameClockStop(void*) {}
 }
 #endif
+
+// the text-box keyboard grab rides along, so every plugin's fonts.cpp picks it up without a Makefile change
+#include "WinKeyGrab.cpp"

@@ -16,6 +16,7 @@
 #include "FontData.hpp"
 #include "Theme.hpp"
 #include "WinFrameClock.hpp"
+#include "KeyGrab.hpp"
 #include <cctype>
 #include <chrono>
 #include <filesystem>
@@ -301,7 +302,7 @@ public:
         buildHeader();
     }
 
-    ~PumpUI() override { pump::winFrameClockStop(fFrameClock); fFrameClock = nullptr; }
+    ~PumpUI() override { pump::keyGrabStop(fKeyGrab); fKeyGrab = nullptr; pump::winFrameClockStop(fFrameClock); fFrameClock = nullptr; }
 
     // ---- for subclasses ------------------------------------------------------------------------------------------
     Theme theme;
@@ -664,8 +665,47 @@ public:
         repaint();
     }
     // Typing goes to whichever view has the keyboard: a host (or System EQ) may have given it to the view around
-    // ours, so take it before asking for text.
-    void takeKeyboardFocus() { getWindow().focus(); }
+    // ours, so take it before asking for text. Some hosts keep the keyboard anyway (Renoise, with or without plug-in
+    // sandboxing): on Windows and macOS the box then holds on to it until it closes (KeyGrab.hpp).
+    void takeKeyboardFocus()
+    {
+        getWindow().focus();
+        if (fKeyGrab == nullptr) fKeyGrab = pump::keyGrabStart(getWindow().getNativeWindowHandle(), &PumpUI::keyFromGrab, this);
+    }
+    void releaseKeyboard() { if (fKeyGrab) { pump::keyGrabStop(fKeyGrab); fKeyGrab = nullptr; } }
+    // A key the grab kept from the host: the same path as a key the window delivers (Windows virtual-key codes).
+    static bool keyFromGrab(void* self, unsigned vk, unsigned ch, bool press, bool ctrl, bool shift)
+    {
+        PumpUI* ui = static_cast<PumpUI*>(self);
+        if (!ui->fEdit.active) return false;
+        uint key = 0;
+        switch (vk)
+        {
+        case 0x0D: key = kKeyEnter; break;       // VK_RETURN
+        case 0x1B: key = kKeyEscape; break;      // VK_ESCAPE
+        case 0x08: key = kKeyBackspace; break;   // VK_BACK
+        case 0x09: key = kKeyTab; break;         // VK_TAB
+        case 0x2E: key = kKeyDelete; break;      // VK_DELETE
+        default:
+            if (vk >= 'A' && vk <= 'Z') key = vk + 32;
+            else if (vk >= '0' && vk <= '9') key = vk;
+            else if (ch >= 32 && ch < 127) key = ch;
+        }
+        KeyboardEvent ev;
+        ev.press = press;
+        ev.key = key;
+        ev.mod = (ctrl ? kModifierControl : 0u) | (shift ? kModifierShift : 0u);
+        ui->onKeyboard(ev);
+        if (press && !ctrl && ui->fEdit.active && ch >= 32)
+        {
+            CharacterInputEvent cev;
+            cev.mod = ev.mod;
+            cev.character = ch;
+            ui->onCharacterInput(cev);
+        }
+        if (!ui->fEdit.active) { ui->repaint(); return false; }   // Enter / Esc: the box is closed
+        return true;
+    }
     // a control is being dragged
     bool dragging() const { return fActive != nullptr; }
 
@@ -753,6 +793,7 @@ protected:
     static void frameFromClock(void* self) { static_cast<PumpUI*>(self)->frame(); }
     void frame()
     {
+        if (fKeyGrab && !fEdit.active) releaseKeyboard();   // the box closed (Enter, Esc, a click elsewhere)
         const double now = nowSeconds();
         float dt = (float)(now - fLastTick);
         if (dt <= 0.0f || dt > 0.25f) dt = 1.0f / 30.0f;
@@ -847,8 +888,8 @@ protected:
                 const bool reset = cmdKey(mod) || (mod & kModifierAlt) != 0;
                 if (c->param >= 0 && c->wantsTextEntry())
                 {
-                    // double-click: back to the default (a host that keeps the keyboard, like Renoise, can't type
-                    // into the box; right-click still opens it)
+                    // double-click: back to the default (right-click opens the box; KeyGrab.hpp lets it type even
+                    // in a host that keeps the keyboard, like Renoise)
                     if (dbl && button == kMouseButtonLeft)
                     {
                         if (fActive) { fActive->mouseUp(*this, x, y); fActive = nullptr; }
@@ -1720,6 +1761,7 @@ protected:
     bool fResizing = false;
     float fResizeStartX = 0, fResizeStartW = 0;
     double fLastTick = 0.0;
+    void* fKeyGrab = nullptr;      // Windows / macOS: the keyboard held for an open text box (KeyGrab.hpp)
     void* fFrameClock = nullptr;   // Windows: the steady frame clock (WinFrameClock.hpp)
     MenuButton* fPresetMenu = nullptr;
     std::vector<PresetRow> fPresetRows;              // what each row of the preset menu is
