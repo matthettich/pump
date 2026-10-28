@@ -162,7 +162,7 @@ protected:
         }
         // what is sung now, along the bottom of the LYRICS screen
         textAt(lyrR.x + 10, lyrR.b() - 14, "SINGING", kLabel, 9.0f, theme.ink2, ALIGN_LEFT | ALIGN_MIDDLE, 0.8f);
-        textAt(lyrR.x + 76, lyrR.b() - 14, now, kMono, 10.5f, theme.ink, ALIGN_LEFT | ALIGN_MIDDLE);
+        textAt(lyrR.x + 76, lyrR.b() - 14, now, kBold, 12.0f, sungColour >= 0 ? pump::wheelInk(sungColour, theme.dark) : theme.ink, ALIGN_LEFT | ALIGN_MIDDLE);
         char b[64];
         std::snprintf(b, sizeof b, "SYLLABLE %d OF %d", cur >= 0 ? cur + 1 : 0, (int)syl.size());
         textAt(lyrR.r() - 10, lyrR.b() - 14, b, kLabel, 8.5f, theme.ink2, ALIGN_RIGHT | ALIGN_MIDDLE, 0.4f);
@@ -170,16 +170,20 @@ protected:
         keyboard.draw(*this);
     }
 
-    // the words in a flow; a dot per syllable under each, the sung one lit, the next one ringed
+    // the words in a flow, each in its own colour from the suite's wheel (as COIL's springs are); a dot per syllable
+    // under each, the sung one lit, the next one ringed; the word being sung lights up and turns bold
+    static constexpr float kLyricSize = 17.0f;
     void drawLyrics()
     {
         const Rect& r = lyrR;
         screenBox(r);
         caption(r.x + 10, r.y + 14, "LYRICS");
-        const Rect p(r.x + 10, r.y + 30, r.w - 20, r.h - 56);
+        const Rect p(r.x + 10, r.y + 26, r.w - 20, r.h - 50);
         save(); scissor(p.x, p.y, p.w, p.h);
-        float x = p.x, y = p.y + 12;
-        const float lineH = 30.0f;
+        float x = p.x, y = p.y + 16;
+        const float lineH = 38.0f;
+        int colour = 0;
+        sungColour = -1;
         size_t i = 0;
         if (syl.empty()) textAt(p.x, y, "(no lyrics: EDIT to type some)", kMono, 11.0f, theme.dim, ALIGN_LEFT | ALIGN_MIDDLE);
         // keep the line with the next syllable in view
@@ -189,9 +193,9 @@ protected:
             for (size_t j = 0; j < syl.size(); )
             {
                 size_t k = j; while (k < syl.size() && syl[k].word == syl[j].word && !syl[k].rest && !syl[k].extend) ++k; if (k == j) ++k;
-                const float w = textWidth(syl[j].text, kMono, 12.0f) + 12.0f;
+                const float w = textWidth(syl[j].text, kMono, kLyricSize) + 16.0f;
                 if (sx + w > p.r() && sx > p.x) { sx = p.x; sy += lineH; }
-                if ((int)j <= next && next < (int)k) scrollY = std::max(0.0f, sy - lineH * 2.0f);
+                if ((int)j <= next && next < (int)k) scrollY = std::max(0.0f, sy - lineH);
                 sx += w; j = k;
             }
         }
@@ -200,20 +204,29 @@ protected:
         {
             size_t k = i; while (k < syl.size() && syl[k].word == syl[i].word && !syl[k].rest && !syl[k].extend) ++k; if (k == i) ++k;
             const std::string& word = syl[i].text;
-            const float w = textWidth(word, kMono, 12.0f) + 12.0f;
+            const float w = textWidth(word, kMono, kLyricSize) + 16.0f;
             if (x + w > p.r() && x > p.x) { x = p.x; y += lineH; }
-            const bool sung = cur >= (int)i && cur < (int)k;
-            if (sung && level > 0.02f) fillRect(Rect(x - 2, y - 10, w - 6, 20), withAlpha2(theme.neon, 0.35f + 0.65f * std::min(1.0f, level * 3.0f)));
-            const Color c = syl[i].rest || syl[i].extend ? theme.dim : theme.ink;
-            textAt(x + 2, y, word, kMono, 12.0f, sung && level > 0.02f ? theme.neonInk : c, ALIGN_LEFT | ALIGN_MIDDLE);
+            const bool sung = cur >= (int)i && cur < (int)k, lit = sung && level > 0.02f;
+            const bool plain = syl[i].rest || syl[i].extend;
+            const int col = plain ? -1 : colour++;
+            if (sung && col >= 0) sungColour = col;
+            const Color neon = col >= 0 ? pump::wheelColour(col, false) : theme.dim;
+            const Color ink = col >= 0 ? pump::wheelInk(col, theme.dark) : theme.dim;
+            const bool done = !plain && (int)k <= cur;
+            if (col >= 0)
+            {
+                const float base = theme.dark ? 0.12f : 0.22f, sungA = (theme.dark ? 0.28f : 0.35f) + (theme.dark ? 0.45f : 0.6f) * std::min(1.0f, level * 3.0f);
+                fillRect(Rect(x - 3, y - 13, w - 6, 26), withAlpha2(neon, lit ? sungA : done ? base * 0.5f : base));
+            }
+            textAt(x + 3, y, word, lit ? kBold : kMono, kLyricSize, ink, ALIGN_LEFT | ALIGN_MIDDLE);
             const int n = (int)(k - i);
             for (int d = 0; d < n; ++d)
             {
                 const int idx = (int)i + d;
-                const float dx = x + 4 + d * 7.0f, dy = y + 13;
-                beginPath(); circle(dx, dy, 2.3f);
-                if (idx == cur) { fillColor(theme.neon); fill(); }
-                else { strokeColor(idx == next ? theme.ink : theme.dim); strokeWidth(idx == next ? 1.4f : 0.8f); stroke(); }
+                const float dx = x + 6 + d * 9.0f, dy = y + 18;
+                beginPath(); circle(dx, dy, 2.6f);
+                if (idx == cur) { fillColor(col >= 0 ? neon : theme.neon); fill(); strokeColor(ink); strokeWidth(0.8f); stroke(); }
+                else { strokeColor(idx == next ? ink : theme.dim); strokeWidth(idx == next ? 1.4f : 0.8f); stroke(); }
             }
             x += w; i = k;
         }
@@ -245,10 +258,10 @@ protected:
                 const float x = X(trail[idx][1]), y = Y(trail[idx][0]);
                 if (j == 0) moveTo(x, y); else lineTo(x, y);
             }
-            strokeColor(withAlpha2(theme.neon, 0.6f)); strokeWidth(1.4f); lineJoin(ROUND); stroke();
+            strokeColor(withAlpha2(sungNeon(), 0.7f)); strokeWidth(1.6f); lineJoin(ROUND); stroke();
             const uint32_t last = (trailW - 1) % kTrail;
             beginPath(); circle(X(trail[last][1]), Y(trail[last][0]), 3.0f + 3.0f * std::min(1.0f, level * 3.0f));
-            fillColor(theme.neon); fill();
+            fillColor(sungNeon()); fill();
         }
     }
     void drawScope()
@@ -323,6 +336,8 @@ private:
     KeyboardUI keyboard;
     bool kbDown = false;
     std::string text;
+    int sungColour = -1;   // the wheel colour of the word being sung (-1: none): the vowel chart and SINGING follow it
+    Color sungNeon() const { return sungColour >= 0 ? pump::wheelColour(sungColour, false) : theme.neon; }
     std::vector<Syllable> syl;
     int cur = -1, next = 0;
     float scope[kScopeN] = {}, scale = 1.0f, level = 0.0f, trail[kTrail][2] = {};

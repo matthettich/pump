@@ -26,6 +26,19 @@ inline Color mixColor(const Color& a, const Color& b, float t)   // t = amount o
 }
 inline Color withAlpha(const Color& c, float a) { Color o = c; o.alpha = a; return o; }
 
+// A wheel of 16 colours (the suite's accents, around the hue circle) for things that must be told apart: COIL's
+// springs, SING's words. deep = the colour's dark shade (text and strands in light mode); wheelInk picks per theme.
+inline Color wheelColour(int i, bool deep)
+{
+    static const unsigned neon[16] = { 0xFF7466, 0xFFD04A, 0xC8FF4D, 0x5CFFB4, 0x4DF3FF, 0x73B4FF, 0xB9A0FF, 0xFF6FB5,
+                                       0xFFB24F, 0xDCEB5A, 0x8CFF5A, 0x3DF5D0, 0x5CCBFF, 0x949FFF, 0xDD77FF, 0xFF92C2 };
+    static const unsigned ink[16]  = { 0x8C2318, 0x6B4700, 0x3B5C00, 0x006E44, 0x00636D, 0x1443AC, 0x4528B5, 0x8C1257,
+                                       0x934000, 0x4E5700, 0x235C00, 0x006652, 0x00527A, 0x262C99, 0x650C8A, 0x8A1450 };
+    const int k = ((i % 16) + 16) % 16;
+    return hexColor(deep ? ink[k] : neon[k]);
+}
+inline Color wheelInk(int i, bool dark) { return dark ? mixColor(wheelColour(i, false), hexColor(0xFFFFFF), 0.18f) : wheelColour(i, true); }
+
 // The suite's accents (one per plugin).
 namespace accents {
     inline Accent eq()    { return { "eq",    hexColor(0x4DF3FF), hexColor(0x00636D), hexColor(0xFF4FA0) }; }   // aqua

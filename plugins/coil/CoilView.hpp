@@ -104,18 +104,8 @@ public:
 
 public:
     // a colour per spring, around the wheel: [0] the light neon (sleeve), [1] its deep shade (strands in light mode)
-    static Color springColour(int i, bool deep)
-    {
-        static const unsigned neon[16] = { 0xFF7466, 0xFFD04A, 0xC8FF4D, 0x5CFFB4, 0x4DF3FF, 0x73B4FF, 0xB9A0FF, 0xFF6FB5,
-                                           0xFFB24F, 0xDCEB5A, 0x8CFF5A, 0x3DF5D0, 0x5CCBFF, 0x949FFF, 0xDD77FF, 0xFF92C2 };
-        static const unsigned ink[16]  = { 0x8C2318, 0x6B4700, 0x3B5C00, 0x006E44, 0x00636D, 0x1443AC, 0x4528B5, 0x8C1257,
-                                           0x934000, 0x4E5700, 0x235C00, 0x006652, 0x00527A, 0x262C99, 0x650C8A, 0x8A1450 };
-        return hexColor(deep ? ink[i % 16] : neon[i % 16]);
-    }
-    Color strandColour(const Theme& th, int i) const
-    {
-        return th.dark ? mixColor(springColour(i, false), hexColor(0xFFFFFF), 0.18f) : springColour(i, true);
-    }
+    static Color springColour(int i, bool deep) { return wheelColour(i, deep); }   // the suite's colour wheel (Theme.hpp)
+    Color strandColour(const Theme& th, int i) const { return wheelInk(i, th.dark); }
 
 private:
 

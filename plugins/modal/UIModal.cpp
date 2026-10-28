@@ -84,6 +84,7 @@ protected:
         glideD->enabled = (int)value(kVoiceMode) != 0 || value(kGlide) > 0.5f;
         anim += dt;
         if (!plug) return;
+        overlay.capture(plug->engine.outRing, dt);   // the output over the object in light coral
         for (int c = 0; c < 2; ++c)
         {
             const float pk = pump::gainToDbF(plug->outPeak[c].exchange(0.0f));
@@ -283,6 +284,7 @@ protected:
     void drawBody() override
     {
         drawObject();
+        drawWaveOverlay(overlay, Rect(objR.x + 10, objR.y + objR.h * 0.55f - objR.h * 0.38f, objR.w - 20, objR.h * 0.76f), pump::hexColor(0xF0806F), pump::hexColor(0xFF9D8F));
         drawModes();
         drawOutMeter(outMeter, meterL, meterR);
         auto panel = [&](const Rect& r, const char* c) { strokeRect(r, theme.dim, 1.0f); caption(r.x + 12, r.y + 13, c); };
@@ -340,6 +342,7 @@ protected:
 
 private:
     PluginModal* plug = nullptr;
+    WaveOverlay overlay;   // the output over the object in light coral
     Rect objR, modesR, meterL, meterR, objPanel, exPanel, voicePanel;
     Segmented *modelSeg, *exSeg, *vmodeSeg;
     Dial *modesD, *matD, *decayD, *dampD, *brightD, *stretchD, *posD, *hardD, *noiseD, *pressD, *vibD, *rateD;

@@ -99,6 +99,7 @@ protected:
         voicesD->enabled = (int)value(kVoiceMode) == 0;
         rootD->enabled = (int)value(kSource) == 0;
         if (!plug) return;
+        overlay.capture(plug->engine.outRing, dt);   // the output over the sound in light pink
         for (int c = 0; c < 2; ++c)
         {
             const float pk = pump::gainToDbF(plug->outPeak[c].exchange(0.0f));
@@ -190,7 +191,7 @@ protected:
 
     void drawBody() override
     {
-        drawSound(); drawNow();
+        drawSound(); drawWaveOverlay(overlay, Rect(soundR.x + 10, soundR.y + 24, soundR.w - 20, soundR.h - 64), pump::hexColor(0xEC86B3), pump::hexColor(0xFF9FCB)); drawNow();
         drawOutMeter(outMeter, meterL, meterR);
         auto panel = [&](const Rect& r, const char* c) { strokeRect(r, theme.dim, 1.0f); caption(r.x + 12, r.y + 16, c); };
         panel(srcPanel, "SOURCE · GRAINS"); panel(envPanel, "ENVELOPE"); panel(specPanel, "SPECTRUM"); panel(voicePanel, "VOICE");
@@ -235,6 +236,7 @@ protected:
 private:
     static constexpr int kImgW = 512, kImgH = 128;
     PluginFreeze* plug = nullptr;
+    WaveOverlay overlay;   // the output over the sound in light pink
     Rect soundR, nowR, meterL, meterR, srcPanel, envPanel, specPanel, voicePanel;
     MenuButton* srcM;
     Button* loadB;

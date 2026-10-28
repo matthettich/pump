@@ -8,6 +8,9 @@ if ! xdpyinfo -display $DISPLAY_NUM >/dev/null 2>&1 && ! pgrep -f "Xvfb $DISPLAY
   sleep 1
 fi
 export DISPLAY=$DISPLAY_NUM LIBGL_ALWAYS_SOFTWARE=1
+# no JACK server here: the stand-in in tools/headless_jack.c runs the plugin and plays PUMP_TEST_NOTES into it
+JACKSHIM="$(cd "$(dirname "$0")/.." && pwd)/build/headless-jack"
+[ -f "$JACKSHIM/libjack.so.0" ] && export LD_LIBRARY_PATH="$JACKSHIM${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 export PUMP_TEST_AUDIO="${PUMP_TEST_AUDIO:-$(cd "$(dirname "$0")/.." && pwd)/tests/data/mix.f32}"
 [ -n "$PRESET" ] && export PUMP_TEST_PRESET="$PRESET"
 export PUMP_TEST_DARK="$DARK"

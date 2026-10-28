@@ -1,9 +1,11 @@
-// pump STRIKE: interface. HITS: every pad's level over the last few seconds, a lane each, newest on the right; PADS
-// (click or keys 1-8; higher in the pad = harder; the pad you play is the one you edit). Below: the selected pad (its
+// pump STRIKE: interface. PADS across the top (click or keys 1-8; higher in the pad = harder; the pad you play is the
+// one you edit), each drawing its engine as it rings: a membrane's modes, a string's standing waves, a circuit's
+// ring-down, FM's index, folds, partials, an attractor. Below: the selected pad (its
 // engine; pitch, decay, the engine's TONE and two characters, named for what they do in that engine; bend, noise,
 // level, pan), then the kit (choke, velocity, drive, volume) and a scope.
 #include "ui/PumpUI.hpp"
 #include "PluginStrike.hpp"
+#include <array>
 
 START_NAMESPACE_DISTRHO
 
@@ -73,11 +75,11 @@ protected:
 
     void layout() override
     {
-        // top: hits beside the pads
+        // top: the pads, the whole width, each with its engine moving in it
         const float top = 58, sh = 216, hm = Dial::heightFor(Dial::Medium);
-        hitsR = Rect(14, top, 560, sh);
-        padsR = Rect(586, top, 400, sh);
-        for (int p = 0; p < kPads; ++p) padR[p] = Rect(596 + (p % 4) * 96, top + 28 + (p / 4) * 92, 90, 86);
+        padsR = Rect(14, top, 972, sh);
+        const float pw = (padsR.w - 20 - 3 * 8) / 4, ph = (sh - 28 - 10 - 8) / 2;
+        for (int p = 0; p < kPads; ++p) padR[p] = Rect(padsR.x + 10 + (p % 4) * (pw + 8), top + 28 + (p / 4) * (ph + 8), pw, ph);
         // the selected pad: engine, then its ten dials in one row
         const float ey = top + sh + 12, eh = 150;
         editR = Rect(14, ey, 972, eh);
@@ -118,47 +120,181 @@ protected:
             if (lh != lastHitSeen) { lastHitSeen = lh; if (lh >> 8 && value(kFollow) >= 0.5f && !dragging()) select((int)(lh & 0xFF)); }
         }
         const uint32_t hits = plug->engine.takeHits();
-        lanePos = (lanePos + 1) % kLane;
+        anim += dt;
         for (int p = 0; p < kPads; ++p)
         {
             if (hits >> p & 1) glow[p] = 1.0f; else glow[p] = std::max(0.0f, glow[p] - dt * 4.0f);
-            lane[p][lanePos] = plug->engine.padLevel(p);
-            hit[p][lanePos] = (hits >> p & 1) != 0;
+            // how hard the pad is ringing, 0..1 over 42 dB: what the motion in the pad follows
+            const float db = pump::gainToDbF(plug->engine.padLevel(p));
+            const float e = pump::clampv((db + 42.0f) / 42.0f, 0.0f, 1.0f);
+            ring[p] = e > ring[p] ? e : ring[p] + (e - ring[p]) * std::min(1.0f, dt * 12.0f);
         }
         const uint32_t end = plug->engine.outRing.smoothPosition();
         for (int i = 0; i < kScopeN; ++i) scope[i] = plug->engine.outRing.at(end - (uint32_t)kScopeN + (uint32_t)i);
     }
 
-    void drawHits()
+    // the pad's engine, moving as it rings (e: 0 quiet .. 1 just hit). Each engine draws what it does physically.
+    void drawMotion(int p, const Rect& a, float e)
     {
-        const Rect& r = hitsR;
-        screenBox(r);
-        caption(r.x + 10, r.y + 14, "HITS");
-        textAt(r.r() - 10, r.y + 14, "EVERY PAD, THE LAST FEW SECONDS", kLabel, 9.0f, theme.ink2, ALIGN_RIGHT | ALIGN_MIDDLE, 0.6f);
-        const float x0 = r.x + 76, w = r.w - 86, lh = (r.h - 34) / kPads;
-        const Color c = pump::mixColor(theme.neon, theme.ink, theme.dark ? 0.0f : 0.45f);
-        for (int p = 0; p < kPads; ++p)
+        const int eng = pump::clampv((int)value(pp(p, kEngine)), 0, kNumEngines - 1);
+        const float ca = value(pp(p, kCharA)) * 0.01f, t = anim, seed = p * 1.3f;
+        const float cx = a.cx(), cy = a.cy(), R = std::min(a.w, a.h) * 0.42f;
+        const Color hot = pump::mixColor(theme.neon, theme.ink, theme.dark ? 0.0f : 0.45f);
+        const Color main = pump::mixColor(hot, theme.ink, std::min(1.0f, e * 1.5f)), faint = theme.dim;
+        const float pi = 3.14159265f;
+        save(); scissor(a.x, a.y, a.w, a.h);
+        lineJoin(ROUND); lineCap(ROUND);
+        auto finish = [&](float w) { strokeColor(main); strokeWidth(w); stroke(); };
+        if (eng == kModal)
         {
-            const float y0 = r.y + 28 + p * lh, cy = y0 + lh * 0.5f;
-            textAt(r.x + 10, cy, kPadInfo[p].key, kLabel, 8.5f, p == sel ? theme.ink : theme.ink2, ALIGN_LEFT | ALIGN_MIDDLE, 0.6f);
-            line(x0, cy, x0 + w, cy, theme.grid, 1.0f);
-            beginPath();
-            for (int i = 0; i < kLane; ++i)
+            // the object (CHAR A): membrane, plate, bar or bell; three rings of it flexing in its first modes
+            const int obj = std::min(3, (int)(ca * 4.0f));
+            const float sx = obj == 1 ? 1.0f : obj == 3 ? 1.35f : 1.3f, sy = obj == 3 ? 0.62f : 0.8f;
+            if (obj == 2)
             {
-                const int k = (lanePos + 1 + i) % kLane;
-                const float db = 20.0f * std::log10(lane[p][k] + 1e-6f), h = pump::clampv((db + 48.0f) / 48.0f, 0.0f, 1.0f) * lh * 0.45f;
-                const float x = x0 + w * i / (kLane - 1.0f);
-                if (!i) moveTo(x, cy - h); else lineTo(x, cy - h);
+                // a bar: bending modes along it
+                beginPath();
+                for (int i = 0; i <= 64; ++i)
+                {
+                    const float u = i / 64.0f;
+                    float d = 0.0f;
+                    for (int m = 0; m < 3; ++m) d += 0.8f * std::cos(pi * (m + 1.5f) * u) * std::cos(t * (5.0f + 6.0f * std::sqrt(1.0f + m * 2.0f)) + m * 1.7f) / (1.0f + 0.35f * m);
+                    const float x = a.x + 6 + u * (a.w - 12), y = cy - e * d * a.h * 0.3f;
+                    if (!i) moveTo(x, y - 5); else lineTo(x, y - 5);
+                }
+                for (int i = 64; i >= 0; --i)
+                {
+                    const float u = i / 64.0f;
+                    float d = 0.0f;
+                    for (int m = 0; m < 3; ++m) d += 0.8f * std::cos(pi * (m + 1.5f) * u) * std::cos(t * (5.0f + 6.0f * std::sqrt(1.0f + m * 2.0f)) + m * 1.7f) / (1.0f + 0.35f * m);
+                    lineTo(a.x + 6 + u * (a.w - 12), cy - e * d * a.h * 0.3f + 5);
+                }
+                closePath(); fillColor(withAlpha2(main, 0.18f)); fill(); finish(1.5f);
             }
-            for (int i = kLane - 1; i >= 0; --i)
+            else
             {
-                const int k = (lanePos + 1 + i) % kLane;
-                const float db = 20.0f * std::log10(lane[p][k] + 1e-6f), h = pump::clampv((db + 48.0f) / 48.0f, 0.0f, 1.0f) * lh * 0.45f;
-                lineTo(x0 + w * i / (kLane - 1.0f), cy + h);
+                for (int ri = 0; ri < 3; ++ri)
+                {
+                    const float s = ri == 0 ? 1.0f : ri == 1 ? 0.68f : 0.38f;
+                    beginPath();
+                    for (int i = 0; i <= 64; ++i)
+                    {
+                        const float th = i / 64.0f * 2.0f * pi;
+                        const float d = e * (0.22f * std::cos(2 * th + seed) * std::cos(t * 11 + ri) + 0.12f * std::cos(3 * th) * std::cos(t * 17 + seed));
+                        float rr = R * s * (1.0f + d * (1.2f - ri * 0.3f));
+                        if (obj == 1) rr /= std::max(std::fabs(std::cos(th)), std::fabs(std::sin(th)));   // a plate: square
+                        const float x = cx + rr * std::cos(th) * sx, y = cy + rr * std::sin(th) * sy;
+                        if (!i) moveTo(x, y); else lineTo(x, y);
+                    }
+                    closePath();
+                    if (ri == 0) { fillColor(withAlpha2(main, 0.10f + 0.12f * e)); fill(); }
+                    finish(ri == 0 ? 1.8f : 1.2f);
+                }
             }
-            closePath(); fillColor(withAlpha2(c, p == sel ? 0.9f : 0.55f)); fill();
-            for (int i = 0; i < kLane; ++i) if (hit[p][(lanePos + 1 + i) % kLane]) { const float x = x0 + w * i / (kLane - 1.0f); line(x, y0 + 2, x, y0 + lh - 2, theme.ink, 1.0f); }
         }
+        else if (eng == kString)
+        {
+            // a standing wave between two bridges, its first three harmonics
+            line(a.x + 4, cy - 10, a.x + 4, cy + 10, faint, 1.5f); line(a.r() - 4, cy - 10, a.r() - 4, cy + 10, faint, 1.5f);
+            beginPath();
+            for (int i = 0; i <= 64; ++i)
+            {
+                const float u = i / 64.0f;
+                const float d = e * (std::sin(pi * u) * std::cos(t * 9) + 0.45f * std::sin(2 * pi * u) * std::cos(t * 15 + 1) + 0.25f * std::sin(3 * pi * u) * std::cos(t * 21 + 2));
+                const float x = a.x + 4 + u * (a.w - 8), y = cy - d * a.h * 0.34f;
+                if (!i) moveTo(x, y); else lineTo(x, y);
+            }
+            finish(1.8f);
+        }
+        else if (eng == kCircuit)
+        {
+            // the ring-down as a spiral: the resonator's phase portrait, wide while it rings, a dot when quiet
+            beginPath(); circle(cx, cy, R); strokeColor(faint); strokeWidth(1.0f); stroke();
+            const float amp = 0.06f + 0.94f * e;
+            beginPath();
+            for (int k = 0; k <= 110; ++k)
+            {
+                const float th = k * 0.32f - t * 7.0f - seed, rr = R * amp * std::exp(-k * 0.028f);
+                const float x = cx + rr * std::cos(th) * 1.25f, y = cy + rr * std::sin(th);
+                if (!k) moveTo(x, y); else lineTo(x, y);
+            }
+            finish(1.6f);
+        }
+        else if (eng == kFm)
+        {
+            // carrier against modulator: the figure tangles as the index opens; RATIO (CHAR A) sets its lobes
+            const float amp = 0.2f + 0.8f * e, ix = 0.4f + 3.0f * e, ratio = 1.0f + std::round(ca * 4.0f);
+            beginPath();
+            for (int i = 0; i <= 180; ++i)
+            {
+                const float s = i / 180.0f * 2.0f * pi;
+                const float x = cx + R * 1.3f * amp * std::sin(s), y = cy + R * amp * std::sin(ratio * s + ix * std::sin(3 * s + t * 2));
+                if (!i) moveTo(x, y); else lineTo(x, y);
+            }
+            finish(1.4f);
+        }
+        else if (eng == kWest)
+        {
+            // a sine through the folder: FOLD (CHAR A) and the level multiply the folds
+            line(a.x + 4, cy, a.r() - 4, cy, faint, 1.0f);
+            const float drive = 0.8f + (1.5f + 4.0f * ca) * e;
+            beginPath();
+            for (int i = 0; i <= 80; ++i)
+            {
+                const float u = i / 80.0f;
+                float v = std::sin(2 * pi * u * 1.5f + t * 3) * drive;
+                for (int k = 0; k < 8 && (v > 1.0f || v < -1.0f); ++k) v = v > 1.0f ? 2.0f - v : -2.0f - v;
+                const float x = a.x + 4 + u * (a.w - 8), y = cy - a.h * 0.34f * (0.25f + 0.75f * e) * v;
+                if (!i) moveTo(x, y); else lineTo(x, y);
+            }
+            finish(1.6f);
+        }
+        else if (eng == kAdditive)
+        {
+            // the partials: DENSITY (CHAR A) sets how many; they shimmer and fall with the level
+            const int n = 10 + (int)(ca * 20.0f);
+            const float bw = (a.w - 10) / n, base = a.b() - 4;
+            line(a.x + 5, base, a.r() - 5, base, faint, 1.0f);
+            beginPath();
+            const int fr = (int)(t * 18.0f);
+            for (int i = 0; i < n; ++i)
+            {
+                const float amp = (1.0f - i / (n * 1.4f)) * (0.45f + 0.55f * hash01(i + p * 7)) * (0.65f + 0.35f * hash01(i * 31 + fr));
+                const float x = a.x + 5 + (i + 0.5f) * bw, h = (a.h - 8) * (0.04f + 0.96f * e * amp);
+                moveTo(x, base); lineTo(x, base - h);
+            }
+            strokeColor(main); strokeWidth(std::max(1.5f, std::min(3.0f, bw * 0.55f))); stroke();
+        }
+        else
+        {
+            // the attractor, turning, growing with the level
+            const float amp = (0.3f + 0.7f * e) * R * 1.1f, rot = t * 0.4f + seed, cs = std::cos(rot), sn = std::sin(rot);
+            const auto& L = lorenz();
+            beginPath();
+            for (size_t i = 0; i < L.size(); ++i)
+            {
+                const float x = cx + amp * 1.3f * (L[i][0] * cs - L[i][2] * sn), y = cy + amp * L[i][1];
+                if (!i) moveTo(x, y); else lineTo(x, y);
+            }
+            finish(1.1f);
+        }
+        restore();
+    }
+    static float hash01(int n) { const float x = std::sin(n * 12.9898f) * 43758.5453f; return x - std::floor(x); }
+    static const std::vector<std::array<float, 3>>& lorenz()
+    {
+        static const std::vector<std::array<float, 3>> pts = [] {
+            std::vector<std::array<float, 3>> v;
+            double x = 0.1, y = 0.0, z = 0.0;
+            for (int i = 0; i < 1600; ++i)
+            {
+                const double dx = 10 * (y - x), dy = x * (28 - z) - y, dz = x * y - 8.0 / 3.0 * z;
+                x += dx * 0.006; y += dy * 0.006; z += dz * 0.006;
+                if (i > 300 && i % 3 == 0) v.push_back({ (float)(x / 22.0), (float)((z - 25.0) / 22.0), (float)(y / 22.0) });
+            }
+            return v;
+        }();
+        return pts;
     }
     void drawPad(int p)
     {
@@ -178,7 +314,8 @@ protected:
         std::snprintf(b, sizeof b, "%s%d", nn[note % 12], note / 12 - 1);
         textAt(r.x + 8, r.b() - 10, b, kMono, 10.0f, ink, ALIGN_LEFT | ALIGN_MIDDLE);
         std::snprintf(b, sizeof b, "%d", note);
-        textAt(r.r() - 8, r.b() - 10, b, kMono, 9.0f, g > 0.45f ? theme.neonInk : theme.ink2, ALIGN_RIGHT | ALIGN_MIDDLE);
+        textAt(r.x + 38, r.b() - 10, b, kMono, 9.0f, g > 0.45f ? theme.neonInk : theme.ink2, ALIGN_LEFT | ALIGN_MIDDLE);
+        drawMotion(p, Rect(r.x + 96, r.y + 6, r.w - 104, r.h - 12), ring[p]);
     }
     void drawScope()
     {
@@ -203,10 +340,9 @@ protected:
 
     void drawBody() override
     {
-        drawHits();
         screenBox(padsR);
         caption(padsR.x + 10, padsR.y + 14, "PADS");
-        textAt(padsR.r() - 10, padsR.y + 14, "CLICK OR 1-8 · HIGHER = HARDER", kLabel, 9.0f, theme.ink2, ALIGN_RIGHT | ALIGN_MIDDLE, 0.6f);
+        textAt(padsR.r() - 10, padsR.y + 14, "CLICK OR 1-8 · HIGHER = HARDER · EACH PAD MOVES AS IT RINGS", kLabel, 9.0f, theme.ink2, ALIGN_RIGHT | ALIGN_MIDDLE, 0.6f);
         for (int p = 0; p < kPads; ++p) drawPad(p);
         strokeRect(editR, theme.dim, 1.0f);
         char b[64];
@@ -227,15 +363,11 @@ protected:
         if (button != kMouseButtonLeft) return false;
         for (int p = 0; p < kPads; ++p)
             if (padR[p].contains(x, y)) { play(p, pump::clampv(1.0f - (y - padR[p].y) / padR[p].h * 0.75f, 0.2f, 1.0f)); return true; }
-        // a lane in HITS selects its pad
-        const float lh = (hitsR.h - 34) / kPads;
-        if (hitsR.contains(x, y) && y > hitsR.y + 28) { select((int)((y - hitsR.y - 28) / lh)); return true; }
         return false;
     }
     void bodyHover(float x, float y) override
     {
         for (int p = 0; p < kPads; ++p) if (padR[p].contains(x, y)) { setStatus(std::string("Play and edit ") + kPadInfo[p].name + " (higher in the pad = harder)"); return; }
-        if (hitsR.contains(x, y)) setStatus("Every pad's level over the last few seconds (click a lane to edit that pad)");
     }
     bool keyPress(uint key, uint mod) override
     {
@@ -255,17 +387,16 @@ protected:
     }
 
 private:
-    static constexpr int kScopeN = 4096, kLane = 180;
+    static constexpr int kScopeN = 4096;
     PluginStrike* plug = nullptr;
-    Rect hitsR, padsR, padR[kPads], editR, kitR, scopeR, meterL, meterR;
+    Rect padsR, padR[kPads], editR, kitR, scopeR, meterL, meterR;
     Segmented* engSeg[kPads];
     Dial* edit[kPads][kPerPad] = {};
     Dial *velD, *driveD, *volD;
     Button *chokeB, *followB;
     uint32_t lastHitSeen = 0;
-    int sel = 0, lanePos = 0;
-    float glow[kPads] = {}, scope[kScopeN] = {}, scale = 1.0f, lane[kPads][kLane] = {};
-    bool hit[kPads][kLane] = {};
+    int sel = 0;
+    float glow[kPads] = {}, ring[kPads] = {}, scope[kScopeN] = {}, scale = 1.0f, anim = 0.0f;
     OutMeter outMeter;
 
     DISTRHO_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(UIStrike)

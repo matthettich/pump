@@ -193,7 +193,11 @@ protected:
         {
             const float want = vn > 0 ? plug->engine.posNow(o) : value(kPosA + o * kOscStride) * 0.01f;
             posShow[o] += (want - posShow[o]) * std::min(1.0f, dt * 20.0f);
+            // where the position was a moment ago, for the trail (sampled every 90 ms)
+            trailT[o] += dt;
+            if (trailT[o] >= 0.09f) { trailT[o] = 0.0f; for (int j = kTrail - 1; j > 0; --j) posTrail[o][j] = posTrail[o][j - 1]; posTrail[o][0] = posShow[o]; }
         }
+        phaseShow += dt;
         const float c = vn > 0 ? plug->engine.cutoffNow() : value(kCutoff);
         cutShow += (std::log2(std::max(20.0f, c)) - cutShow) * std::min(1.0f, dt * 20.0f);
         voicesShow = vn;
@@ -245,13 +249,16 @@ protected:
         const float dx = 46.0f / std::max(1, show - 1), dy = 50.0f / std::max(1, show - 1);
         const float w = p.w - 46.0f, h = p.h - 50.0f;
         const float pos = pump::clampv(posShow[o], 0.0f, 1.0f);
-        const int cur = (int)std::lround(pos * (show - 1));
+        const float kp = pos * (show - 1);   // the position in the stack, between frames
+        auto frameOf = [&](int k) { return show == 1 ? 0 : (int)std::lround((double)k * (F - 1) / (show - 1)); };
+        const Color hot = pump::mixColor(theme.neon, theme.ink, theme.dark ? 0.0f : 0.35f);
         save();
         scissor(p.x, p.y, p.w, p.h);
+        lineJoin(ROUND);
+        // the stack, back to front; the frames near the position come forward
         for (int k = show - 1; k >= 0; --k)
         {
-            const int f = show == 1 ? 0 : (int)std::lround((double)k * (F - 1) / (show - 1));
-            const std::vector<float>& wv = t->preview[(size_t)f];
+            const std::vector<float>& wv = t->preview[(size_t)frameOf(k)];
             const float ox = p.x + k * dx, oy = p.b() - h * 0.5f - k * dy;
             beginPath();
             for (int i = 0; i < (int)wv.size(); ++i)
@@ -259,11 +266,64 @@ protected:
                 const float x = ox + w * i / (wv.size() - 1), y = oy - wv[(size_t)i] * h * 0.45f;
                 if (i == 0) moveTo(x, y); else lineTo(x, y);
             }
-            const bool here = k == cur;
-            strokeColor(here ? (off ? theme.ink2 : pump::mixColor(theme.neon, theme.ink, theme.dark ? 0.0f : 0.35f)) : withAlpha2(theme.ink, 0.10f + 0.10f * (1.0f - (float)k / show)));
-            strokeWidth(here ? 2.4f : 1.0f);
-            lineJoin(ROUND);
+            const float near = off ? 0.0f : std::exp(-((k - kp) / 2.2f) * ((k - kp) / 2.2f));
+            strokeColor(withAlpha2(theme.ink, 0.08f + 0.08f * (1.0f - (float)k / show) + 0.22f * near));
+            strokeWidth(1.0f + 0.4f * near);
             stroke();
+        }
+        // the frame being played: blended between its neighbours, so it glides as the position moves
+        const int fa = (int)std::floor(kp), fb = std::min(show - 1, fa + 1);
+        const float m = kp - fa;
+        const std::vector<float>& wa = t->preview[(size_t)frameOf(fa)];
+        const std::vector<float>& wb = t->preview[(size_t)frameOf(fb)];
+        const int n = (int)std::min(wa.size(), wb.size());
+        auto curveAt = [&](float kk, const std::vector<float>& A, const std::vector<float>& B, float mm) {
+            const float ox = p.x + kk * dx, oy = p.b() - h * 0.5f - kk * dy;
+            beginPath();
+            for (int i = 0; i < n; ++i)
+            {
+                const float v = A[(size_t)i] + (B[(size_t)i] - A[(size_t)i]) * mm;
+                const float x = ox + w * i / (n - 1), y = oy - v * h * 0.45f;
+                if (i == 0) moveTo(x, y); else lineTo(x, y);
+            }
+            return std::make_pair(ox, oy);
+        };
+        if (n > 1)
+        {
+            // a short trail behind it, only while the position moves (an LFO or envelope on POS, a drag)
+            if (!off)
+                for (int j = kTrail - 1; j >= 0; --j)
+                {
+                    const float pj = pump::clampv(posTrail[o][j], 0.0f, 1.0f);
+                    if (std::fabs(pj - pos) < 0.004f) continue;
+                    const float kj = pj * (show - 1);
+                    const int ja = (int)std::floor(kj), jb = std::min(show - 1, ja + 1);
+                    curveAt(kj, t->preview[(size_t)frameOf(ja)], t->preview[(size_t)frameOf(jb)], kj - ja);
+                    strokeColor(withAlpha2(hot, 0.42f - 0.09f * j)); strokeWidth(1.6f); stroke();
+                }
+            const auto o0 = curveAt(kp, wa, wb, m);
+            if (!off)
+            {
+                // a soft fill under it
+                lineTo(o0.first + w, o0.second); lineTo(o0.first, o0.second); closePath();
+                fillColor(withAlpha2(theme.neon, theme.dark ? 0.16f : 0.28f)); fill();
+                curveAt(kp, wa, wb, m);
+            }
+            strokeColor(off ? theme.ink2 : hot); strokeWidth(2.6f); stroke();
+            // a dot per voice playing, running along the wave: slowed far below the pitch, it shows the voices sound
+            if (!off && voicesShow > 0)
+            {
+                const int dots = std::min(voicesShow, 4);
+                for (int d = 0; d < dots; ++d)
+                {
+                    float u = phaseShow * 0.5f + d * 0.37f; u -= std::floor(u);
+                    const int i = pump::clampv((int)std::lround(u * (n - 1)), 0, n - 1);
+                    const float v = wa[(size_t)i] + (wb[(size_t)i] - wa[(size_t)i]) * m;
+                    const float x = o0.first + w * i / (n - 1), y = o0.second - v * h * 0.45f;
+                    beginPath(); circle(x, y, 7.0f); fillColor(withAlpha2(theme.neon, 0.35f)); fill();
+                    beginPath(); circle(x, y, 3.5f); fillColor(theme.neon); fill(); strokeColor(theme.ink); strokeWidth(1.2f); stroke();
+                }
+            }
         }
         restore();
         char b[32]; std::snprintf(b, sizeof b, "POS %.0f%%   %d FRAMES", 100.0f * pos, t->frames);
@@ -451,7 +511,9 @@ private:
     KeyboardUI keyboard;
     bool kbDown = false;
     int which = 0, dragOsc = -1, voicesShow = 0;
+    static constexpr int kTrail = 4;
     float dragY = 0, dragV = 0, posShow[2] = { 0.4f, 0.3f }, cutShow = 12.5f;
+    float posTrail[2][kTrail] = { { 0.4f, 0.4f, 0.4f, 0.4f }, { 0.3f, 0.3f, 0.3f, 0.3f } }, trailT[2] = {}, phaseShow = 0.0f;   // the trail; the dots' run
     OutMeter outMeter;
 
     DISTRHO_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(UITable)

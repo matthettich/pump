@@ -135,13 +135,16 @@ docs/ROADMAP.md          planned work and known issues deferred from audits
 ## Build and test locally
 
 ```
-export PKG_CONFIG_PATH=/home/claude/sysroot/pkgconfig        # local GL headers for the Linux UI build
-make -C plugins/eq DPF_PATH=/home/claude/dpf jack vst3 clap  # /home/claude/dpf = DPF + a headless test audio backend
+export PKG_CONFIG_PATH=/home/claude/sysroot/pkgconfig        # local GL headers for the Linux UI build (without them
+                                                             # the plugins build with no UI, silently)
+cc -shared -fPIC -O2 -o build/headless-jack/libjack.so.0 tools/headless_jack.c -lpthread   # a stand-in JACK (below)
+make -C plugins/eq jack vst3 clap
 make -j8        # every plugin (the shared DPF graphics library is built once first)
 make tests                # DSP tests (also runs the licence-boundary check)
 make tests-asan           # the self-contained tests under ASan+UBSan
 make tests-tsan           # and under ThreadSanitizer (slow: heat takes several minutes)
 DISPLAY_NUM=:101 tools/shot.sh bin/pump-eq /tmp/eq.png 1 0 4  # preset 1, light, after 4 s of the test mix
+PUMP_TEST_NOTES="60+64+67,62,64" PUMP_TEST_STEP=0.5 tools/shot.sh bin/pump-table /tmp/t.png 8   # an instrument, playing
 ```
 
 Before and after a refactor that shouldn't change the sound, render every plugin's defaults and factory presets and
@@ -153,6 +156,10 @@ sh tools/render_golden.sh /tmp/before        # on the old code
 sh tools/render_golden.sh /tmp/after         # on the new code
 python3 tools/compare_renders.py /tmp/before /tmp/after
 ```
+
+With no JACK server, `tools/headless_jack.c` stands in for libjack (shot.sh uses it once it's built in
+build/headless-jack): it runs the plugin at 48 kHz, plays `PUMP_TEST_AUDIO` into its inputs and `PUMP_TEST_NOTES`
+(steps of notes, chords as 60+64+67, rests as -; `PUMP_TEST_STEP` seconds each) into its MIDI input.
 
 Only the standalone (`jack`) builds read the `PUMP_TEST_*` variables (through `pump::testEnv`; `make jack` builds them
 with `PUMP_TEST_HOOKS=1` in a build folder of their own), so the released plugins never do. The standalone build runs headless with `PUMP_TEST_AUDIO=tests/data/mix.f32` (made by tools/make_mix.py; 8 bars of drums,

@@ -551,6 +551,50 @@ public:
         drawLevelMeter(l, m.lvl[0], m.hold[0], dbMin, dbMax);
         drawLevelMeter(r, m.lvl[1], m.hold[1], dbMin, dbMax);
     }
+
+    // The output drawn over a display (TRACT's tract, PRISM's and FREEZE's sound, MODAL's object): a triggered
+    // waveform with a soft glow, in a colour of its own. It fades in as the plugin sounds and out when it falls
+    // silent, so a quiet display stays as it was. capture() once per frame (tick), draw in drawBody.
+    struct WaveOverlay {
+        static constexpr int kN = 4096;
+        float buf[kN] = {};
+        float scale = 1.0f, show = 0.0f;
+        void capture(const pump::ScopeRing& ring, float dt)
+        {
+            const uint32_t end = ring.smoothPosition();
+            float pk = 0.0f;
+            for (int i = 0; i < kN; ++i) { buf[i] = ring.at(end - (uint32_t)kN + (uint32_t)i); pk = std::max(pk, std::fabs(buf[i])); }
+            // visible from -60 dBFS, full from -36
+            const float target = pump::clampv((20.0f * std::log10(pk + 1e-9f) + 60.0f) / 24.0f, 0.0f, 1.0f);
+            show += (target - show) * std::min(1.0f, dt * (target > show ? 20.0f : 4.0f));
+        }
+    };
+    // win: samples across the width (1024 ≈ 5 cycles at 220 Hz); height: the peak as a fraction of the rect's height
+    void drawWaveOverlay(WaveOverlay& w, const Rect& p, const Color& light, const Color& dark, int win = 1024, float height = 0.42f)
+    {
+        if (w.show < 0.01f) return;
+        win = pump::clampv(win, 64, WaveOverlay::kN / 2);
+        // hold the picture still: start at a rising zero crossing near the newest end
+        int start = WaveOverlay::kN - win - 1;
+        for (int i = start; i > start - win && i > 1; --i) if (w.buf[i - 1] < 0.0f && w.buf[i] >= 0.0f) { start = i; break; }
+        float mx = 1e-4f;
+        for (int i = 0; i < win; ++i) mx = std::max(mx, std::fabs(w.buf[start + i]));
+        const float want = 1.0f / mx;
+        w.scale = want < w.scale ? want : w.scale + (want - w.scale) * 0.05f;
+        const Color c = theme.dark ? dark : light;
+        const int step = std::max(1, win / std::max(64, (int)p.w));
+        save(); scissor(p.x, p.y, p.w, p.h);
+        beginPath();
+        for (int i = 0; i < win; i += step)
+        {
+            const float x = p.x + p.w * i / (win - 1), y = p.cy() - pump::clampv(w.buf[start + i] * w.scale, -1.2f, 1.2f) * p.h * height;
+            if (i == 0) moveTo(x, y); else lineTo(x, y);
+        }
+        lineJoin(ROUND); lineCap(ROUND);
+        strokeColor(withAlpha2(c, 0.28f * w.show)); strokeWidth(6.0f); stroke();
+        strokeColor(withAlpha2(c, w.show)); strokeWidth(2.0f); stroke();
+        restore();
+    }
     void drawLevelMeter(const Rect& r, float levelDb, float peakDb, float dbMin = -60.0f, float dbMax = 6.0f)
     {
         fillRect(r, theme.panel2);
@@ -694,7 +738,7 @@ public:
         KeyboardEvent ev;
         ev.press = press;
         ev.key = key;
-        ev.mod = (ctrl ? kModifierControl : 0u) | (shift ? kModifierShift : 0u);
+        ev.mod = (ctrl ? (uint)kModifierControl : 0u) | (shift ? (uint)kModifierShift : 0u);
         ui->onKeyboard(ev);
         if (press && !ctrl && ui->fEdit.active && ch >= 32)
         {
