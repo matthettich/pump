@@ -287,7 +287,9 @@ public:
         for (uint32_t i = 0; i < numParams; ++i) fValues[i] = specs[i].def;
         const double sf = getScaleFactor();
         fScaleSeen = sf;
-        if (sf != 1.0) setSize((uint)(W * sf), (uint)(H * sf));
+        // the size this plugin was last left at (the corner grip), as a fraction of its logical size
+        const double zoom = readZoom(fTag.c_str());
+        if (sf != 1.0 || zoom != 1.0) setSize((uint)std::lround(W * sf * zoom), (uint)std::lround(H * sf * zoom));
         setGeometryConstraints((uint)(W * 0.6 * sf), (uint)(H * 0.6 * sf), true, false);
         fFontLabel = createFontFromMemory("label", pump::fonts::kFontLabel, pump::fonts::kFontLabelSize, false);
         fFontMono = createFontFromMemory("mono", pump::fonts::kFontMono, pump::fonts::kFontMonoSize, false);
@@ -874,7 +876,7 @@ protected:
             return false;
         }
         // release
-        if (fResizing) { fResizing = false; return true; }
+        if (fResizing) { fResizing = false; rememberZoom(); return true; }
         if (fActive) { fActive->mouseUp(*this, x, y); fActive = nullptr; repaint(); return true; }
         if (fBodyActive) { fBodyActive = false; bodyMouseUp(x, y); repaint(); return true; }
         return false;
@@ -885,7 +887,7 @@ protected:
     {
         if (fActive) { Control* c = fActive; fActive = nullptr; c->mouseUp(*this, x, y); }
         if (fBodyActive) { fBodyActive = false; bodyMouseUp(x, y); }
-        fResizing = false;
+        if (fResizing) { fResizing = false; rememberZoom(); }
     }
     void uiFocus(bool focus, DGL_NAMESPACE::CrossingMode mode) override
     {
@@ -1613,22 +1615,70 @@ protected:
         return home ? std::string(home) + "/.config/wake-pump.cfg" : std::string();
        #endif
     }
-    static bool readGlobalTheme()
+    // The file: the theme ("dark" / "light") on the first line (all older builds read only that), then key=value
+    // lines: zoom.<TAG> = the window's size as a fraction of its logical size, per plugin.
+    static std::vector<std::string> readConfigLines()
     {
+        std::vector<std::string> lines;
         const std::string p = configPath();
-        if (p.empty()) return false;
+        if (p.empty()) return lines;
         FILE* f = std::fopen(p.c_str(), "rb");
-        if (!f) return false;
-        char buf[16] = {};
-        const size_t n = std::fread(buf, 1, sizeof buf - 1, f);
+        if (!f) return lines;
+        std::string all; char buf[512]; size_t n;
+        while ((n = std::fread(buf, 1, sizeof buf, f)) > 0 && all.size() < 65536) all.append(buf, n);
         std::fclose(f);
-        return n >= 4 && std::strncmp(buf, "dark", 4) == 0;
+        size_t a = 0;
+        while (a < all.size()) { size_t e = all.find('\n', a); if (e == std::string::npos) e = all.size(); std::string l = all.substr(a, e - a); if (!l.empty() && l.back() == '\r') l.pop_back(); lines.push_back(l); a = e + 1; }
+        return lines;
     }
-    static void writeGlobalTheme(bool dark)
+    static void writeConfigLines(const std::vector<std::string>& lines)
     {
         const std::string p = configPath();
         if (p.empty()) return;
-        if (FILE* f = std::fopen(p.c_str(), "wb")) { std::fputs(dark ? "dark" : "light", f); std::fclose(f); }
+        if (FILE* f = std::fopen(p.c_str(), "wb")) { for (size_t i = 0; i < lines.size(); ++i) { std::fputs(lines[i].c_str(), f); std::fputs("\n", f); } std::fclose(f); }
+    }
+    static std::string configGet(const std::string& key)
+    {
+        const auto lines = readConfigLines();
+        for (size_t i = 1; i < lines.size(); ++i) if (lines[i].rfind(key + "=", 0) == 0) return lines[i].substr(key.size() + 1);
+        return std::string();
+    }
+    static void configSet(const std::string& key, const std::string& value)
+    {
+        auto lines = readConfigLines();
+        if (lines.empty()) lines.push_back("light");
+        bool found = false;
+        for (size_t i = 1; i < lines.size(); ++i) if (lines[i].rfind(key + "=", 0) == 0) { lines[i] = key + "=" + value; found = true; }
+        if (!found) lines.push_back(key + "=" + value);
+        writeConfigLines(lines);
+    }
+    static bool readGlobalTheme()
+    {
+        const auto lines = readConfigLines();
+        return !lines.empty() && lines[0].rfind("dark", 0) == 0;
+    }
+    static void writeGlobalTheme(bool dark)
+    {
+        auto lines = readConfigLines();
+        if (lines.empty()) lines.push_back("");
+        lines[0] = dark ? "dark" : "light";
+        writeConfigLines(lines);
+    }
+    // the window size a plugin was last left at (1 = its logical size); new windows of it open at that size
+    static double readZoom(const char* tag)
+    {
+        if (!tag || !*tag) return 1.0;
+        const std::string v = configGet(std::string("zoom.") + tag);
+        const double z = v.empty() ? 1.0 : std::atof(v.c_str());
+        return (z >= 0.6 && z <= 3.0) ? z : 1.0;
+    }
+    void rememberZoom()
+    {
+        if (fTag.empty()) return;
+        const double sf = getScaleFactor() > 0.0 ? getScaleFactor() : 1.0;
+        const double z = pump::clampv((double)getWidth() / (W * sf), 0.6, 3.0);
+        char b[32]; std::snprintf(b, sizeof b, "%.3f", z);
+        configSet("zoom." + fTag, b);
     }
     static double nowSeconds()
     {
