@@ -43,7 +43,10 @@ constexpr int tone(int t, int f) { return kToneBase + t * kToneFields + f; }
 // modulated sound, all eight in a ring (feedback FM: rich and noisy). Off: each voice is modulated by its neighbour's
 // own oscillator, clean (the default).
 static constexpr int kFmLoop = kToneBase + kTones * kToneFields;
-static constexpr int kNumParams = kFmLoop + 1;
+// appended 2026-10-27: each voice's send into the FX (its own bar row, FX)
+static constexpr int kFxSendBase = kFmLoop + 1;
+constexpr int fxSend(int t) { return kFxSendBase + t; }
+static constexpr int kNumParams = kFxSendBase + kTones;
 
 inline const std::vector<ParamSpec>& params()
 {
@@ -87,7 +90,7 @@ inline const std::vector<ParamSpec>& params()
     static const float ring[kTones] = { 0, 50, 0, 0, 30, 40, 70, 80 };
     static const float decay[kTones] = { 320, 140, 260, 220, 180, 120, 60, 40 };
     static const float level[kTones] = { 90, 70, 70, 65, 60, 55, 50, 45 };
-    names.reserve(kTones * kToneFields * 2);
+    names.reserve(kTones * kToneFields * 2 + kTones * 2);
     for (int t = 0; t < kTones; ++t)
     {
         auto nm = [&](const char* sym, const char* full) -> std::pair<const char*, const char*> {
@@ -105,6 +108,12 @@ inline const std::vector<ParamSpec>& params()
         p = nm("mute", "Mute");        v.push_back({ p.first, p.second, "Mute", 0, 1, 0, PUnit::None, PScale::Linear, B, kOnOff, 1 });
     }
     v.push_back({ "fm_loop", "FM Loop (noisy)", "FM Loop", 0, 1, 0, PUnit::None, PScale::Linear, B, kOnOff, 1 });
+    for (int t = 0; t < kTones; ++t)
+    {
+        names.push_back("t" + std::to_string(t + 1) + "_fx"); const char* sy = names.back().c_str();
+        names.push_back("Tone " + std::to_string(t + 1) + " FX Send"); const char* nm = names.back().c_str();
+        v.push_back({ sy, nm, "FX", 0, 100, 100, PUnit::Percent, PScale::Linear, A, nullptr, 1 });
+    }
     return v;
     }();
     return v;

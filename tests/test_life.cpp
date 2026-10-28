@@ -165,6 +165,35 @@ int main()
         float pk = 0; for (float x : L) pk = std::max(pk, std::fabs(x));
         CHECK(pk > 0.05f && pk < 1.2f, "the default kit, free running: peak %.2f", pk);
     }
+    printf("== FX sends and feedback\n");
+    {
+        // a voice with its FX send at 0 sends nothing: the wet signal is the same as with that voice muted
+        Settings a = quiet(); a.mix = 1.0; a.feedback = 0.3; a.time = 0.05;
+        Settings b = a; b.tone[0].fxSend = 0.0;
+        Engine e1; e1.prepare(kSr, 256); e1.setSettings(a);
+        Engine e2; e2.prepare(kSr, 256); e2.setSettings(b);
+        float L1[256], R1[256], L2[256], R2[256]; double late1 = 0, late2 = 0;
+        for (int k = 0; k < 200; ++k)
+        {
+            synth::Midi m { 0, 0x90, 36, 120 };
+            for (int i = 0; i < 256; ++i) L1[i] = R1[i] = L2[i] = R2[i] = 0.0f;
+            e1.process(L1, R1, 256, k == 0 ? &m : nullptr, k == 0 ? 1 : 0); e2.process(L2, R2, 256, k == 0 ? &m : nullptr, k == 0 ? 1 : 0);
+            if (k > 60) for (int i = 0; i < 256; ++i) { late1 += L1[i] * L1[i]; late2 += L2[i] * L2[i]; }
+        }
+        CHECK(late1 > 1e-4 && late2 < late1 * 1e-3, "FX send 0: no echoes (%.2g vs %.2g after the hit)", late2, late1);
+        // FEEDBACK 100 %: the echoes build into a wash but stay bounded
+        Settings c = quiet(); c.mix = 1.0; c.feedback = 1.0; c.time = 0.12; c.mode = kModeFree;
+        Engine e3; e3.prepare(kSr, 256); e3.setSettings(c);
+        float pk = 0; bool fin = true; double tail = 0;
+        for (int k = 0; k < (int)(20 * kSr / 256); ++k)
+        {
+            synth::Midi m { 0, 0x90, 40, 120 };
+            for (int i = 0; i < 256; ++i) L1[i] = R1[i] = 0.0f;
+            e3.process(L1, R1, 256, k == 0 ? &m : nullptr, k == 0 ? 1 : 0);
+            for (int i = 0; i < 256; ++i) { pk = std::max(pk, std::fabs(L1[i])); fin = fin && std::isfinite(L1[i]); if (k > (int)(15 * kSr / 256)) tail += L1[i] * L1[i]; }
+        }
+        CHECK(fin && pk < 1.5f && tail > 1e-3, "FEEDBACK 100 %%: still ringing after 15 s (a wash), peak %.2f, finite", pk);
+    }
     std::printf(fails ? "test_life: %d FAILED\n" : "test_life: all passed\n", fails);
     return fails ? 1 : 0;
 }

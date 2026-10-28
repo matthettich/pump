@@ -2245,3 +2245,11 @@ COIL 121 mod32_src
 COIL 122 mod32_dst
 COIL 123 mod32_amt
 LIFE 85 fm_loop
+LIFE 86 t1_fx
+LIFE 87 t2_fx
+LIFE 88 t3_fx
+LIFE 89 t4_fx
+LIFE 90 t5_fx
+LIFE 91 t6_fx
+LIFE 92 t7_fx
+LIFE 93 t8_fx

@@ -28,7 +28,7 @@
 
 namespace pump { namespace life {
 
-struct ToneSettings { double pitch = 60.0, kick = 0.0, fm = 0.0, ring = 0.0, decay = 0.2, level = 0.7; bool mute = false; };
+struct ToneSettings { double pitch = 60.0, kick = 0.0, fm = 0.0, ring = 0.0, decay = 0.2, level = 0.7, fxSend = 1.0; bool mute = false; };
 struct Settings {
     bool fmLoop = false;   // FM from the neighbour's modulated sound (a feedback ring: noisy), or from its clean oscillator
     double volumeDb = -6.0, drive = 0.15, fmAll = 0.5, decayAll = 1.0, pitchRange = 2.0, lfoRate = 0.5, lfoDepth = 0.0, width = 0.6;
@@ -190,7 +190,7 @@ public:
 private:
     struct Tone {
         double ph = 0.0, raw = 0.0, env = 0.0, att = 1.0, kickEnv = 0.0, fxEnv = 0.0, vel = 1.0;
-        double inc = 0.0, decK = 0.999, fmAmt = 0.0, kickSemis = 0.0, level = 0.7, ring = 0.0, panL = 0.707, panR = 0.707;
+        double inc = 0.0, decK = 0.999, fmAmt = 0.0, kickSemis = 0.0, level = 0.7, ring = 0.0, panL = 0.707, panR = 0.707, fxSend = 1.0;
     };
 
     int W() const { return clampv(set.cols, 4, kMaxGrid); }
@@ -294,7 +294,7 @@ private:
             o.fmAmt = p.fm * s.fmAll * 1.5 * (1.0 + 0.5 * lfo);
             o.kickSemis = p.kick * 48.0;
             o.decK = std::exp(std::log(1e-3) / std::max(1.0, p.decay * s.decayAll * sr));
-            o.level = p.level; o.ring = p.ring;
+            o.level = p.level; o.ring = p.ring; o.fxSend = p.fxSend;
             const double pan = s.width * (2.0 * t / (kTones - 1) - 1.0) * (t % 2 ? 1.0 : -1.0) * 0.8;
             o.panL = std::cos(0.25 * kPi * (pan + 1.0)); o.panR = std::sin(0.25 * kPi * (pan + 1.0));
         }
@@ -338,11 +338,14 @@ private:
             else o.env *= o.decK;
             const double y = y0 * (1.0 - o.ring + o.ring * raws[(t + kTones - 1) % kTones]) * o.env * o.level * o.vel;
             l += y * o.panL; r += y * o.panR;
-            send += y * o.fxEnv;
+            send += y * o.fxEnv * o.fxSend;
             o.fxEnv *= fxK;
         }
         // the FX: delay -> pitch shifter -> filter, fed back
-        const double x = send + set.feedback * 0.95 * fbState;
+        // FEEDBACK: up to 80 % the loop stays below unity (0.76); above, it climbs past it (1.3 at 100 %), held by the
+        // soft clip, so the echoes build into a saturated wash
+        const double fbG = set.feedback <= 0.8 ? set.feedback * 0.95 : 0.76 + (set.feedback - 0.8) * 2.7;
+        const double x = send + fbG * fbState;
         const size_t DN = dly.size();
         dly[dlyPos] = (float)x;
         double rp = (double)dlyPos - dlySamples; if (rp < 0) rp += (double)DN;

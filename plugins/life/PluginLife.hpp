@@ -86,6 +86,7 @@ protected:
             ToneSettings& o = s.tone[t];
             o.pitch = pv(tone(t, kTPitch)); o.kick = pv(tone(t, kTKick)) * 0.01; o.fm = pv(tone(t, kTFm)) * 0.01; o.ring = pv(tone(t, kTRing)) * 0.01;
             o.decay = pv(tone(t, kTDecay)) * 0.001; o.level = pv(tone(t, kTLevel)) * 0.01; o.mute = pv(tone(t, kTMute)) >= 0.5f;
+            o.fxSend = pv(fxSend(t)) * 0.01;
         }
         engine.setSettings(s);
     }

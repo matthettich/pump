@@ -65,7 +65,7 @@ protected:
     std::string formatParam(int i, float v) const override
     {
         char b[32];
-        if (i >= kToneBase)
+        if (i >= kToneBase && i < kFmLoop)
         {
             const int f = (i - kToneBase) % kToneFields;
             if (f == kTPitch)
@@ -90,7 +90,7 @@ protected:
         const char* const bl[4] = { "RANDOM", "CLEAR", "STEP", "RESET" };
         for (int k = 0; k < 4; ++k) { btnR[k] = Rect(236 + k * 60, 526, 56, 24); btnLabel[k] = bl[k]; }
         tonesR = Rect(486, 58, 500, 354);
-        for (int f = 0; f < 6; ++f) barRow[f] = Rect(556, 82 + f * 44, 420, 38);
+        for (int f = 0; f < kRowsN; ++f) barRow[f] = Rect(556, 80 + f * 38, 420, 32);
         for (int t = 0; t < kTones; ++t) { padR[t] = Rect(556 + t * 52.5f + 2, 350, 48.5f, 26); muteB[t]->r = Rect(556 + t * 52.5f + 8, 382, 36.5f, 20); }
         soundR = Rect(486, 422, 500, 110);
         for (int k = 0; k < 8; ++k) snd[k]->r = Rect(492 + k * 61.5f, 446, 61.5f, hs);
@@ -151,16 +151,16 @@ protected:
         // tones
         auto panel = [&](const Rect& r, const char* c) { strokeRect(r, theme.dim, 1.0f); caption(r.x + 12, r.y + 16, c); };
         panel(tonesR, "TONES");
-        static const char* const rowName[6] = { "PITCH", "KICK", "FM", "RING", "DECAY", "LEVEL" };
-        static const int rowField[6] = { kTPitch, kTKick, kTFm, kTRing, kTDecay, kTLevel };
-        for (int f = 0; f < 6; ++f)
+        static const char* const rowName[kRowsN] = { "PITCH", "KICK", "FM", "RING", "DECAY", "LEVEL", "FX" };
+        static const int rowField[kRowsN] = { kTPitch, kTKick, kTFm, kTRing, kTDecay, kTLevel, -1 };
+        for (int f = 0; f < kRowsN; ++f)
         {
             const Rect& rr = barRow[f];
             textAt(tonesR.x + 12, rr.cy(), rowName[f], kLabel, 9.0f, theme.ink2, ALIGN_LEFT | ALIGN_MIDDLE, 1.0f);
             line(rr.x, rr.b(), rr.r(), rr.b(), theme.dim, 1.0f);
             for (int k = 0; k < kTones; ++k)
             {
-                const int p = tone(k, rowField[f]);
+                const int p = rowField[f] < 0 ? fxSend(k) : tone(k, rowField[f]);
                 const float n = norm(p);
                 const Rect bar(rr.x + k * (rr.w / kTones) + 6, rr.b() - rr.h * n, rr.w / kTones - 12, rr.h * n);
                 fillRect(bar, toneColor(k, theme.dark));
@@ -184,19 +184,20 @@ protected:
     // bars: click or drag across them
     int barAt(float x, float y) const
     {
-        static const int rowField[6] = { kTPitch, kTKick, kTFm, kTRing, kTDecay, kTLevel };
-        for (int f = 0; f < 6; ++f)
+        static const int rowField[kRowsN] = { kTPitch, kTKick, kTFm, kTRing, kTDecay, kTLevel, -1 };
+        for (int f = 0; f < kRowsN; ++f)
         {
             const Rect& rr = barRow[f];
-            if (y >= rr.y - 3 && y <= rr.b() + 3 && x >= rr.x && x < rr.r()) return tone(pump::clampv((int)((x - rr.x) / (rr.w / kTones)), 0, kTones - 1), rowField[f]);
+            const int k = pump::clampv((int)((x - rr.x) / (rr.w / kTones)), 0, kTones - 1);
+            if (y >= rr.y - 3 && y <= rr.b() + 3 && x >= rr.x && x < rr.r()) return rowField[f] < 0 ? fxSend(k) : tone(k, rowField[f]);
         }
         return -1;
     }
     void setBar(int p, float y)
     {
-        static const int rowField[6] = { kTPitch, kTKick, kTFm, kTRing, kTDecay, kTLevel };
-        const int f = (p - kToneBase) % kToneFields;
-        int row = 0; for (int k = 0; k < 6; ++k) if (rowField[k] == f) row = k;
+        static const int rowField[kRowsN] = { kTPitch, kTKick, kTFm, kTRing, kTDecay, kTLevel, -1 };
+        const int f = p >= kFxSendBase ? -1 : (p - kToneBase) % kToneFields;
+        int row = 0; for (int k = 0; k < kRowsN; ++k) if (rowField[k] == f) row = k;
         const Rect& rr = barRow[row];
         if (std::find(editing.begin(), editing.end(), p) == editing.end()) { openGesture((uint32_t)p); editing.push_back(p); }
         setParamNorm(p, pump::clampv((rr.b() - y) / rr.h, 0.0f, 1.0f));
@@ -257,7 +258,7 @@ protected:
     void bodyMouseDrag(float x, float y, uint) override
     {
         if (painting) { int cx, cy; if (cellAt(x, y, cx, cy) && (((drawnB[(size_t)cy] >> cx) & 1) != (paintOn ? 1 : 0))) paintCell(cx, cy); return; }
-        if (dragBars) { const int p = barAt(x, std::min(std::max(y, barRow[0].y), barRow[5].b())); if (p >= 0) setBar(p, y); else { /* between rows: keep the last row */ } }
+        if (dragBars) { const int p = barAt(x, std::min(std::max(y, barRow[0].y), barRow[kRowsN - 1].b())); if (p >= 0) setBar(p, y); else { /* between rows: keep the last row */ } }
     }
     void bodyMouseUp(float, float) override
     {
@@ -300,7 +301,8 @@ protected:
 
 private:
     PluginLife* plug = nullptr;
-    Rect gridR, tonesR, soundR, seqR, fxR, barRow[6], padR[kTones], btnR[4];
+    static constexpr int kRowsN = 7;
+    Rect gridR, tonesR, soundR, seqR, fxR, barRow[kRowsN], padR[kTones], btnR[4];
     const char* btnLabel[4] = {};
     MenuButton *patternMenu, *ruleMenu;
     Button* muteB[kTones] = {};
