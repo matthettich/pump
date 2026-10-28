@@ -80,7 +80,8 @@ const S = {
   chans: 'LR', seconds: 4, level: -18,
   view: 'response', smooth: 12, windowMs: 500, norm: true, useCal: true,
   busy: false, noise: false, pending: null,
-  corr: { tilt: 0, bass: 0, treble: 0, amount: 100, fLo: 20, fHi: 20000, boost: 6, cut: 15, nulls: true, low: true, align: true },
+  corr: { tilt: 0, bass: 0, treble: 0, amount: 100, fLo: 20, fHi: 20000, boost: 6, cut: 15, nulls: true, low: true, align: true,
+          phase: false, pLo: 60, pHi: 3000, linear: false },
   design: null,
   sim: /(^|[#&?])sim\b/.test(location.hash + location.search),
 };
@@ -755,7 +756,7 @@ function designCorrection() {
   if (!added) { S.design = null; return null; }
   const c = S.corr, dt = c.align ? meanDt(runs) : 0;
   const params = [c.tilt, c.bass, c.treble, c.fLo, c.fHi, c.boost, c.cut, c.nulls ? 1 : 0, c.low ? 1 : 0, c.amount / 100,
-                  dt > 0 ? dt : 0, dt < 0 ? -dt : 0];
+                  dt > 0 ? dt : 0, dt < 0 ? -dt : 0, c.phase ? 1 : 0, c.pLo, c.pHi];
   const p = W.x.room_alloc(params.length * 8);
   W.f64(p, params.length).set(params);
   const n = W.x.room_corr_design(p);
@@ -764,7 +765,8 @@ function designCorrection() {
   for (let s = 0; s < 2; ++s) {
     const get = (k) => { const q = W.x.room_corr_curve(s, k); return q ? W.f64(q, n).slice() : null; };
     const m = get(0);
-    d.sides.push(m ? { measured: m, target: get(1), correction: get(2), result: get(3), guard: W.x.room_corr_info(s, 1), delay: W.x.room_corr_info(s, 2) } : null);
+    d.sides.push(m ? { measured: m, target: get(1), correction: get(2), result: get(3), guard: W.x.room_corr_info(s, 1), delay: W.x.room_corr_info(s, 2),
+                       gd: get(4), gdCorr: get(5) } : null);
   }
   S.design = d;
   return d;
@@ -780,8 +782,10 @@ function drawCorrection(w, h) {
   }
   $('empty').style.display = 'none';
   const F = corrFreqs();
-  const split = Math.round(h * 0.66);
-  const top = { x0: 46, x1: w - 14, y0: 14, y1: split - 10 }, bot = { x0: 46, x1: w - 14, y0: split + 8, y1: h - 26 };
+  const showPhase = S.corr.phase;
+  const split = Math.round(h * (showPhase ? 0.5 : 0.66)), split2 = showPhase ? Math.round(h * 0.73) : h;
+  const top = { x0: 46, x1: w - 14, y0: 14, y1: split - 10 }, bot = { x0: 46, x1: w - 14, y0: split + 8, y1: showPhase ? split2 - 10 : h - 26 };
+  const ph = { x0: 46, x1: w - 14, y0: split2 + 8, y1: h - 26 };
   const lx = (hz) => top.x0 + (top.x1 - top.x0) * Math.log(hz / 20) / Math.log(1000);
   // levels relative to the target's 200 Hz..2 kHz level
   const ref = d.sides.find((x) => x);
@@ -800,8 +804,8 @@ function drawCorrection(w, h) {
   g2.strokeStyle = theme.grid; g2.lineWidth = 1; g2.font = font(10, true); g2.fillStyle = css(theme.ink2);
   for (const hz of [20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000]) {
     const x = Math.round(lx(hz)) + 0.5;
-    for (const fr of [top, bot]) { g2.beginPath(); g2.moveTo(x, fr.y0); g2.lineTo(x, fr.y1); g2.stroke(); }
-    g2.textAlign = 'center'; g2.textBaseline = 'top'; g2.fillText(fmtHz(hz, true), x, bot.y1 + 6);
+    for (const fr of showPhase ? [top, bot, ph] : [top, bot]) { g2.beginPath(); g2.moveTo(x, fr.y0); g2.lineTo(x, fr.y1); g2.stroke(); }
+    g2.textAlign = 'center'; g2.textBaseline = 'top'; g2.fillText(fmtHz(hz, true), x, (showPhase ? ph : bot).y1 + 6);
   }
   g2.textAlign = 'right'; g2.textBaseline = 'middle';
   for (let db = yBot; db <= yTop; db += 10) { const y = Math.round(ly(db)) + 0.5; g2.beginPath(); g2.moveTo(top.x0, y); g2.lineTo(top.x1, y); g2.stroke(); g2.fillText(db + (db === yTop ? ' dB' : ''), top.x0 - 6, y); }
@@ -831,11 +835,31 @@ function drawCorrection(w, h) {
   });
   const tgt = d.sides.find((x) => x);
   line(top, tgt.target.map((v) => v + off), ly, css(theme.ink2), 1.5, [6, 4]);
+  if (showPhase) {
+    // arrival by frequency: each speaker's group delay over its treble's (faint), and after the phase correction (bold)
+    const rel = (a) => { let r = 0, k2 = 0; for (let i = 0; i < F.length; ++i) if (F[i] >= 3000 && F[i] <= 8000) { r += a[i]; ++k2; } r /= k2 || 1; return a.map((v) => v - r); };
+    let gMax = 2;
+    d.sides.forEach((sd) => { if (sd) for (let i = 0; i < F.length; ++i) if (F[i] >= 40 && F[i] <= 10000) gMax = Math.max(gMax, Math.abs(rel(sd.gd)[i])); });
+    gMax = Math.min(20, Math.ceil(gMax));
+    const gy = (ms) => ph.y0 + (ph.y1 - ph.y0) * (gMax - Math.max(-gMax, Math.min(gMax, ms))) / (2 * gMax);
+    g2.strokeStyle = theme.grid; g2.fillStyle = css(theme.ink2); g2.font = font(10, true); g2.textAlign = 'right'; g2.textBaseline = 'middle';
+    for (const ms of [-gMax, 0, gMax]) { const y = Math.round(gy(ms)) + 0.5; g2.beginPath(); g2.moveTo(ph.x0, y); g2.lineTo(ph.x1, y); g2.stroke(); g2.fillText((ms > 0 ? '+' : '') + ms + (ms === gMax ? ' ms' : ''), ph.x0 - 6, y); }
+    g2.fillStyle = theme.grid;
+    g2.fillRect(ph.x0, ph.y0, lx(S.corr.pLo) - ph.x0, ph.y1 - ph.y0);
+    g2.fillRect(lx(S.corr.pHi), ph.y0, ph.x1 - lx(S.corr.pHi), ph.y1 - ph.y0);
+    d.sides.forEach((sd, s) => {
+      if (!sd) return;
+      const g0 = rel(sd.gd);
+      line(ph, g0, gy, colours[s], 1.25, null, 0.35);
+      line(ph, g0.map((v, i) => v + sd.gdCorr[i]), gy, colours[s], 2);
+    });
+  }
   g2.strokeStyle = css(theme.ink); g2.lineWidth = 1.5;
-  for (const fr of [top, bot]) g2.strokeRect(fr.x0 + 0.75, fr.y0 + 0.75, fr.x1 - fr.x0 - 1.5, fr.y1 - fr.y0 - 1.5);
+  for (const fr of showPhase ? [top, bot, ph] : [top, bot]) g2.strokeRect(fr.x0 + 0.75, fr.y0 + 0.75, fr.x1 - fr.x0 - 1.5, fr.y1 - fr.y0 - 1.5);
   g2.font = font(11); g2.fillStyle = css(theme.ink2); g2.textAlign = 'left'; g2.textBaseline = 'top';
   g2.fillText(`AVERAGE OF ${d.positions} POSITION${d.positions === 1 ? '' : 'S'} (FAINT) · CORRECTED (BOLD) · TARGET (DASHED)`, top.x0 + 8, top.y0 + 6);
   g2.fillText('CORRECTION', bot.x0 + 8, bot.y0 + 6);
+  if (showPhase) g2.fillText(S.corr.linear ? 'ARRIVAL BY FREQUENCY (MEASURED FAINT, CORRECTED BOLD)' : 'ARRIVAL BY FREQUENCY: CORRECTED ONLY WITH LINEAR-PHASE FILTERS', ph.x0 + 8, ph.y0 + 6);
 }
 
 function showCorrInfo(d) {
@@ -851,6 +875,15 @@ function showCorrInfo(d) {
     parts.push(`${name}: <b>${lo.toFixed(1)} / +${Math.max(0, hi).toFixed(1)} dB</b>` + (sd.delay > 0 ? `, delayed <b>${sd.delay.toFixed(2)} ms</b>` : '') +
       (sd.guard > 0 ? `, no boost under <b>${fmtHz(sd.guard)}</b>` : ''));
   });
+  if (S.corr.phase) {
+    const spread = (a) => { let lo = 1e9, hi = -1e9; const F = corrFreqs(); for (let i = 0; i < F.length; ++i) if (F[i] >= Math.max(100, S.corr.pLo) && F[i] <= S.corr.pHi) { lo = Math.min(lo, a[i]); hi = Math.max(hi, a[i]); } return hi - lo; };
+    d.sides.forEach((sd, s) => {
+      if (!sd) return;
+      const after = sd.gd.map((v, i) => v + sd.gdCorr[i]);
+      parts.push(`${s ? 'RIGHT' : 'LEFT'} ARRIVAL SPREAD: <b>${spread(sd.gd).toFixed(1)} ms → ${spread(after).toFixed(1)} ms</b>`);
+    });
+    if (!S.corr.linear) parts.push('<span class="warn">Phase correction is only in LINEAR PHASE exports (and the plugin in linear phase).</span>');
+  }
   if (!d.sides[0] || !d.sides[1]) parts.push('<span class="warn">Only one speaker measured.</span>');
   el.innerHTML = parts.join('<br>');
 }
@@ -865,7 +898,8 @@ function showCorrControls() {
   set('cBoost', c.boost, '+' + c.boost.toFixed(1) + ' dB');
   set('cCut', c.cut, '-' + c.cut + ' dB');
   for (const [id, v] of [['cLo', c.fLo], ['cHi', c.fHi]]) $(id).querySelectorAll('button').forEach((b) => b.classList.toggle('on', +b.dataset.v === v));
-  for (const [id, k] of [['cNulls', 'nulls'], ['cLow', 'low'], ['cAlign', 'align']]) $(id).classList.toggle('on', c[k]);
+  for (const [id, k] of [['cNulls', 'nulls'], ['cLow', 'low'], ['cAlign', 'align'], ['cPhase', 'phase']]) $(id).classList.toggle('on', c[k]);
+  $('cLat').querySelectorAll('button').forEach((b) => b.classList.toggle('on', (b.dataset.v === 'linear') === c.linear));
 }
 
 function initCorrection() {
@@ -873,11 +907,16 @@ function initCorrection() {
   slider('cTilt', 'tilt'); slider('cBass', 'bass'); slider('cTreble', 'treble'); slider('cAmount', 'amount'); slider('cBoost', 'boost'); slider('cCut', 'cut');
   seg('cLo', (v) => { S.corr.fLo = +v; draw(); });
   seg('cHi', (v) => { S.corr.fHi = +v; draw(); });
-  for (const [id, k] of [['cNulls', 'nulls'], ['cLow', 'low'], ['cAlign', 'align']]) $(id).onclick = () => { S.corr[k] = !S.corr[k]; showCorrControls(); draw(); };
+  for (const [id, k] of [['cNulls', 'nulls'], ['cLow', 'low'], ['cAlign', 'align'], ['cPhase', 'phase']]) $(id).onclick = () => { S.corr[k] = !S.corr[k]; showCorrControls(); draw(); };
+  seg('cLat', (v) => { S.corr.linear = v === 'linear'; showCorrControls(); draw(); });
   $('cSave').onclick = saveProfile;
   $('cWin').onclick = exportWindows;
   $('cPi').onclick = exportPi;
   showCorrControls();
+}
+
+function filterKind() {
+  return S.corr.linear ? `Linear phase (about 0.17 s of latency)${S.corr.phase ? ' with phase correction' : ''}` : 'Minimum phase (no latency)';
 }
 
 function profileName() { return ($('cName').value || 'My room').trim().slice(0, 60) || 'My room'; }
@@ -901,14 +940,14 @@ function exportWindows() {
   for (const fs of rates) {
     const ch = [0, 1].map((s) => {
       const side = d.sides[s] ? s : (s ? 0 : 1);   // one speaker measured: its filter on both
-      const n = W.x.room_corr_fir(side, fs, 0);
+      const n = W.x.room_corr_fir(side, fs, S.corr.linear ? 1 : 0);
       return W.f32(W.x.room_fir_ptr(), n).slice();
     });
     files.push({ name: `pump-room-${fs}.wav`, data: wav(ch, fs) });
   }
   const name = profileName();
   const conf = [`# pump ROOM correction: ${name} (${new Date().toISOString().slice(0, 10)})`,
-    `# Minimum phase (no latency). The preamp (${d.preamp.toFixed(2)} dB) and the time alignment are inside the filters.`,
+    `# ${filterKind()}. The preamp (${d.preamp.toFixed(2)} dB) and the time alignment are inside the filters.`,
     'Channel: L R',
     ...rates.map((fs, i) => `${i ? 'ElseIf' : 'If'}: sampleRate == ${fs}\nConvolution: pump-room-${fs}.wav`),
     'EndIf:', ''].join('\r\n');
@@ -936,12 +975,12 @@ function exportPi() {
   for (const fs of rates)
     for (const s of [0, 1]) {
       const side = d.sides[s] ? s : (s ? 0 : 1);
-      const n = W.x.room_corr_fir(side, fs, 0);
+      const n = W.x.room_corr_fir(side, fs, S.corr.linear ? 1 : 0);
       files.push({ name: `coeffs/pump-room-${s ? 'R' : 'L'}-${fs}.wav`, data: wav([W.f32(W.x.room_fir_ptr(), n).slice()], fs) });
     }
   const yml = [
     `# pump ROOM correction for CamillaDSP: ${name} (${new Date().toISOString().slice(0, 10)})`,
-    `# Minimum phase. The preamp (${d.preamp.toFixed(2)} dB) and the time alignment are inside the filters.`,
+    `# ${filterKind()}. The preamp (${d.preamp.toFixed(2)} dB) and the time alignment are inside the filters.`,
     '# devices: set these to your audio interface (README.txt). As written: a USB interface that shows up as',
     '# "CODEC" (the common 16-bit USB line in/out boxes), its line input in and its line output out, at 48 kHz.',
     'devices:',
@@ -1043,6 +1082,7 @@ function exportPi() {
     'Status and errors: systemctl status pump-room   /   journalctl -u pump-room', '',
     `The filters include the preamp (${d.preamp.toFixed(2)} dB, headroom for the boosts) and the time alignment.`,
     'They exist for 44.1, 48, 88.2, 96 and 192 kHz; the config runs at 48 kHz (change samplerate to use another).',
+    S.corr.linear ? 'Linear-phase filters: about 0.17 s of latency on top (fine for music, too much for TV lip sync).' : 'Minimum-phase filters: no latency of their own.',
     'Latency: about the chunk size (1024 samples, 21 ms at 48 kHz) plus the interface\'s own. Lower chunksize for',
     'less (the Pi has to keep up: if you hear dropouts, raise it again).', ''].join('\n');
   files.push({ name: 'README.txt', data: new TextEncoder().encode(readme) });

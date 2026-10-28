@@ -61,6 +61,17 @@ check(d && d.s[0].mode < -4 && d.s[1].mode < -4, `the 110 Hz room mode is cut ($
 check(d && d.preamp <= 0 && d.preamp > -7, `preamp ${d && d.preamp.toFixed(2)} dB`);
 check(d && Math.abs(d.s[0].delay - Math.abs(run.dt)) < 0.01 && d.s[1].delay === 0, `the nearer (left) speaker delayed ${d && d.s[0].delay.toFixed(3)} ms`);
 if (shots) await page.screenshot({ path: join(shots, 'room-correction.png') });
+// phase: ALIGN PHASE with linear-phase filters lines up the sim speakers' late bass (their 40 Hz roll-off)
+await page.click('#cPhase');
+await page.click('#cLat button[data-v="linear"]');
+await page.waitForTimeout(200);
+const ph = await page.evaluate(() => {
+  const x = window.pumpRoom.S.design, F = Array.from({ length: x.sides[0].gd.length }, (_, i) => 20 * Math.pow(2, i / 48));
+  const band = (a) => { let lo = 1e9, hi = -1e9; for (let i = 0; i < F.length; ++i) if (F[i] >= 100 && F[i] <= 3000) { lo = Math.min(lo, a[i]); hi = Math.max(hi, a[i]); } return hi - lo; };
+  return x.sides.map((sd) => ({ before: band(sd.gd), after: band(sd.gd.map((v, i) => v + sd.gdCorr[i])) }));
+});
+check(ph.every((p) => p.after < 0.6 * p.before), `phase: arrival spread 100 Hz..3 kHz ${ph.map((p) => p.before.toFixed(2) + ' -> ' + p.after.toFixed(2)).join(' / ')} ms`);
+if (shots) await page.screenshot({ path: join(shots, 'room-phase.png') });
 const dir = mkdtempSync(join(tmpdir(), 'pump-room-'));
 {
   const [p] = await Promise.all([page.waitForEvent('download'), page.click('#cSave')]);
@@ -68,6 +79,8 @@ const dir = mkdtempSync(join(tmpdir(), 'pump-room-'));
   await p.saveAs(f);
   const text = (await import('node:fs')).readFileSync(f, 'utf8');
   check(text.startsWith('pump-room-profile 1') && /channel L /.test(text) && /channel R /.test(text), `profile saved (${p.suggestedFilename()}, ${text.length} bytes)`);
+  const gdCol = text.split('\n').filter((l) => /^[0-9]/.test(l)).map((l) => Math.abs(+l.split(' ')[4] || 0));
+  check(Math.max(...gdCol) > 0.2, `profile carries the phase correction (largest ${Math.max(...gdCol).toFixed(2)} ms)`);
   const [z] = await Promise.all([page.waitForEvent('download'), page.click('#cWin')]);
   const zf = join(dir, 'win.zip');
   await z.saveAs(zf);

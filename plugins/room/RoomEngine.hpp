@@ -1,6 +1,7 @@
 // pump ROOM: the engine. A stereo FIR per speaker, designed from the profile (common/dsp/RoomCorrect.hpp) at the
 // host's rate: the correction scaled by AMOUNT, the preamp that keeps its boosts from clipping, the time alignment;
-// minimum phase (latency: one convolution block) or linear phase (plus half the filter).
+// minimum phase (latency: one convolution block) or linear phase (plus half the filter, and the profile's phase
+// correction when it has one).
 //
 // Filters are designed on a worker thread of the engine and handed to the convolver, which crossfades them in over
 // one block; the audio thread never allocates, locks or designs. Without a profile the signal passes straight through
@@ -37,6 +38,7 @@ struct Design {
     double preampDb = 0.0;
     double delayMs[2] = { 0.0, 0.0 };
     int latency = 0;   // samples, the convolver's block included
+    bool phase = false;   // the profile's phase correction is in these filters
 };
 
 inline Design designFilters(const DesignInput& in, int block)
@@ -64,7 +66,16 @@ inline Design designFilters(const DesignInput& in, int block)
     for (int c = 0; c < 2; ++c)
     {
         d.delayMs[c] = in.s.align ? side[c]->delayMs : 0.0;
-        d.fir[c] = room::designFir(side[c]->f, corr[c], in.fs, taps, in.s.linear, d.delayMs[c] * 0.001 * in.fs, d.preampDb);
+        // the phase correction exists only in linear phase (it advances the bass: that needs the latency)
+        std::vector<double> gd;
+        if (in.s.linear && side[c]->hasPhase())
+        {
+            gd = side[c]->groupDelayMs;
+            for (double& v : gd) v *= in.s.amount;
+            d.phase = true;
+        }
+        d.fir[c] = room::designFir(side[c]->f, corr[c], in.fs, taps, in.s.linear, d.delayMs[c] * 0.001 * in.fs, d.preampDb,
+                                   gd.empty() ? nullptr : &gd);
     }
     d.latency = block + (in.s.linear ? taps / 2 : 0);
     return d;

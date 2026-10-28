@@ -129,6 +129,8 @@ double room_cal_at(double f) { return cal.at(f); }
 
 namespace {
 std::vector<std::vector<double>> corrIn[2];   // per side: responses on the correction grid
+std::vector<std::vector<double>> gdIn[2];     // per side: group delays (ms) on the correction grid
+std::vector<double> gdAvg[2], gdCorr[2];      // averaged group delay, and the phase correction (ms)
 ChannelCorrection corrOut[2];
 bool corrHave[2] = { false, false };
 double corrPreamp = 0.0, corrDelay[2] = { 0.0, 0.0 };
@@ -136,7 +138,7 @@ std::string text;
 std::vector<float> fir;
 }
 
-void room_corr_begin() { corrIn[0].clear(); corrIn[1].clear(); corrHave[0] = corrHave[1] = false; }
+void room_corr_begin() { for (int s = 0; s < 2; ++s) { corrIn[s].clear(); gdIn[s].clear(); corrHave[s] = false; } }
 
 // one measurement's response (window in ms, the mic's calibration if useCal) into a side's average (0 L, 1 R)
 int room_corr_add(int side, int id, double windowMs, int useCal)
@@ -147,10 +149,12 @@ int room_corr_add(int side, int id, double windowMs, int useCal)
     std::vector<float> r;
     m->response(g, 1.0 / 48.0, useCal ? &cal : nullptr, r);
     corrIn[side].emplace_back(r.begin(), r.end());
+    gdIn[side].push_back(groupDelayMs(m->ir.data(), (int)m->ir.size(), m->arrival.index, m->sampleRate, g));
     return (int)corrIn[side].size();
 }
 
-// p: tilt, bass dB, treble dB, fLo, fHi, max boost, max cut, protect nulls, guard low end, amount, delay L ms, delay R ms
+// p: tilt, bass dB, treble dB, fLo, fHi, max boost, max cut, protect nulls, guard low end, amount, delay L ms, delay R ms,
+//    phase on, phase from Hz, phase to Hz
 int room_corr_design(const double* p)
 {
     CorrectionSpec spec;
@@ -173,6 +177,19 @@ int room_corr_design(const double* p)
         if (corrHave[s]) corrs.push_back(&corrOut[s].correction);
         corrDelay[s] = std::max(0.0, p[10 + s]);
         corrOut[s].delayMs = corrDelay[s];
+        // phase: the positions' group delays averaged, then the correction that lines them up
+        gdAvg[s].assign(g.size(), 0.0);
+        gdCorr[s].assign(g.size(), 0.0);
+        if (corrHave[s] && !gdIn[s].empty())
+        {
+            for (const auto& v : gdIn[s]) for (size_t i = 0; i < g.size(); ++i) gdAvg[s][i] += v[i] / (double)gdIn[s].size();
+            PhaseSpec ps;
+            ps.on = p[12] != 0.0;
+            ps.fLo = p[13];
+            ps.fHi = p[14];
+            gdCorr[s] = designPhaseCorrection(g, gdAvg[s], ps);
+            for (double& v : gdCorr[s]) v *= std::clamp(spec.amount, 0.0, 1.0);
+        }
     }
     corrPreamp = preampFor(corrs);
     return (int)g.size();
@@ -183,7 +200,16 @@ const double* room_corr_curve(int side, int which)
 {
     if (side < 0 || side > 1 || !corrHave[side]) return nullptr;
     const ChannelCorrection& c = corrOut[side];
-    switch (which) { case 0: return c.measured.data(); case 1: return c.target.data(); case 2: return c.correction.data(); case 3: return c.result.data(); default: return nullptr; }
+    switch (which)
+    {
+    case 0: return c.measured.data();
+    case 1: return c.target.data();
+    case 2: return c.correction.data();
+    case 3: return c.result.data();
+    case 4: return gdAvg[side].data();    // measured group delay (ms)
+    case 5: return gdCorr[side].data();   // phase correction (ms)
+    default: return nullptr;
+    }
 }
 int room_corr_grid_size() { return (int)correctionGrid().size(); }
 double room_corr_info(int side, int what)
@@ -211,6 +237,7 @@ int room_corr_profile(const char* name, int len)
         c.correction = corrOut[s].correction;
         c.measured = corrOut[s].measured;
         c.target = corrOut[s].target;
+        c.groupDelayMs = gdCorr[s];
     }
     text = writeProfile(p);
     return (int)text.size();
@@ -218,13 +245,14 @@ int room_corr_profile(const char* name, int len)
 const char* room_text_ptr() { return text.data(); }
 int room_text_len() { return (int)text.size(); }
 
-// a side's correction filter at fs, the preamp and its delay in it (read with room_fir_ptr); returns its length
+// a side's correction filter at fs, the preamp and its delay in it, and with linear phase the phase correction (read
+// with room_fir_ptr); returns its length
 int room_corr_fir(int side, double fs, int linear)
 {
     fir.clear();
     if (side < 0 || side > 1 || !corrHave[side]) return 0;
     fir = designFir(corrOut[side].f, corrOut[side].correction, fs, correctionTaps(fs), linear != 0,
-                    corrDelay[side] * 0.001 * fs, corrPreamp);
+                    corrDelay[side] * 0.001 * fs, corrPreamp, linear != 0 ? &gdCorr[side] : nullptr);
     return (int)fir.size();
 }
 const float* room_fir_ptr() { return fir.data(); }

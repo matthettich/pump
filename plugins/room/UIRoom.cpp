@@ -20,7 +20,7 @@ public:
         outDial = addDial(kOutGain, "OUTPUT", Dial::Medium, true);
         outDial->tip = "Output gain";
         phaseSeg = addSegmented(kPhase, { "MINIMUM", "LINEAR" });
-        phaseSeg->tip = "Minimum phase: no extra latency (tracking, listening). Linear phase: no phase shift, about 0.17 s of latency (mixing)";
+        phaseSeg->tip = "Minimum phase: no extra latency (tracking, listening). Linear phase: about 0.17 s of latency (mixing), and the profile's phase correction if it has one";
         alignBtn = addToggle(kTimeAlign, "TIME ALIGN");
         alignBtn->small = true;
         alignBtn->tip = "Delay the nearer speaker so both arrive together (from the measurement)";
@@ -122,7 +122,9 @@ protected:
         // what the controls mean right now
         char b[160];
         const bool lin = (int)value(kPhase) == kLinear;
-        std::snprintf(b, sizeof b, lin ? "LINEAR PHASE: %d SAMPLES OF LATENCY" : "MINIMUM PHASE: %d SAMPLES OF LATENCY",
+        const bool hasPhase = prof.valid() && ((prof.side('L') && prof.side('L')->hasPhase()) || (prof.side('R') && prof.side('R')->hasPhase()));
+        std::snprintf(b, sizeof b, lin ? (hasPhase ? "LINEAR PHASE + PHASE CORRECTION: %d SAMPLES OF LATENCY" : "LINEAR PHASE: %d SAMPLES OF LATENCY")
+                                       : (hasPhase ? "MINIMUM PHASE: %d SAMPLES (PHASE CORRECTION NEEDS LINEAR)" : "MINIMUM PHASE: %d SAMPLES OF LATENCY"),
                       plug ? plug->engine.latency() : 0);
         textAt(phaseSeg->r.x, phaseSeg->r.b() + 18, b, kLabel, 10.0f, theme.ink2, ALIGN_LEFT | ALIGN_MIDDLE, 0.6f);
         if (prof.valid())

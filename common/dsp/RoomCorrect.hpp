@@ -8,6 +8,8 @@
 //    speaker's own low-end roll-off; limits on boost and cut; faded out outside the chosen band; smoothed more toward
 //    the top, where a single position means less;
 //  - per-speaker delays from the arrival times, so both arrive together; one preamp gain for headroom;
+//  - phase: each speaker's excess group delay (the low end and the crossover arriving later than the treble), measured
+//    with a frequency-dependent window, and a correction that lines it up (linear-phase filters only);
 //  - an FIR per speaker, minimum phase (no latency) or linear phase (half its length of latency), with the delay in it;
 //  - a profile text file (".pumproom") that carries the correction between the measurement app, the plugin and
 //    System EQ, and that each of them designs its own filter from at its own sample rate.
@@ -212,6 +214,83 @@ inline ChannelCorrection designCorrection(const std::vector<double>& f, const st
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
+// phase: group delay of the speakers and its correction
+
+// The group delay (ms) of a measured impulse response on the grid `f`, relative to its direct sound at `arrival`
+// (samples). Each frequency is read with its own window: `cycles` periods long (5: 100 ms at 50 Hz, 1.7 ms at 3 kHz),
+// at least 2 ms and at most 300 ms, so the treble sees the speaker and the bass sees as little of the room as it can.
+// The phase is unwrapped along the grid and differentiated, then smoothed over an octave: reflections ripple the group
+// delay around the speaker's own, and an octave averages the ripple out (tested with reflections 4.4 dB under the
+// direct sound: within 0.3 ms of the speaker from 300 Hz to 3 kHz, 1.2 ms from 80 to 300 Hz).
+inline std::vector<double> groupDelayMs(const float* ir, int n, double arrival, double fs, const std::vector<double>& f,
+                                        double cycles = 5.0)
+{
+    const size_t m = f.size();
+    std::vector<double> gd(m, 0.0);
+    if (ir == nullptr || n <= 0 || arrival < 0.0 || !(fs > 0.0) || m < 3) return gd;
+    const int pre = std::max(1, (int)std::lround(0.001 * fs));          // 1 ms before the direct sound, rising
+    const int a = (int)std::floor(arrival);
+    std::vector<double> ph(m);
+    for (size_t i = 0; i < m; ++i)
+    {
+        const int len = (int)std::lround(std::clamp(cycles / f[i], 0.002, 0.3) * fs);
+        const double w0 = 2.0 * kPi * f[i] / fs;
+        double re = 0.0, im = 0.0;
+        for (int k = -pre; k < len; ++k)
+        {
+            const int j = a + k;
+            if (j < 0 || j >= n) continue;
+            double w = k < 0 ? 0.5 - 0.5 * std::cos(kPi * (k + pre) / pre) : 0.5 + 0.5 * std::cos(kPi * k / len);
+            const double t = j - arrival;   // time from the direct sound (samples)
+            re += ir[j] * w * std::cos(w0 * t);
+            im -= ir[j] * w * std::sin(w0 * t);
+        }
+        ph[i] = std::atan2(im, re);
+    }
+    for (size_t i = 1; i < m; ++i)   // unwrap
+    {
+        double d = ph[i] - ph[i - 1];
+        while (d > kPi) { ph[i] -= 2.0 * kPi; d -= 2.0 * kPi; }
+        while (d < -kPi) { ph[i] += 2.0 * kPi; d += 2.0 * kPi; }
+    }
+    for (size_t i = 0; i < m; ++i)
+    {
+        const size_t lo = i == 0 ? 0 : i - 1, hi = i + 1 < m ? i + 1 : m - 1;
+        gd[i] = -(ph[hi] - ph[lo]) / (2.0 * kPi * (f[hi] - f[lo])) * 1000.0;
+    }
+    return smoothVariable(f, gd, 1.0, 1.0, 200.0, 5000.0, false);
+}
+
+struct PhaseSpec {
+    bool on = false;
+    double fLo = 60.0, fHi = 3000.0;   // the band lined up (faded out over half an octave outside it)
+    double maxMs = 20.0;               // largest correction (the filter's latency is far larger)
+};
+
+// The group delay to add (ms, per grid point) so the speaker's arrival is the same at every frequency in the band:
+// minus its excess over the treble (the 3..8 kHz average), smoothed, limited, faded out at the band's edges.
+inline std::vector<double> designPhaseCorrection(const std::vector<double>& f, const std::vector<double>& gdMs,
+                                                 const PhaseSpec& spec)
+{
+    std::vector<double> c(f.size(), 0.0);
+    if (!spec.on || gdMs.size() != f.size()) return c;
+    double ref = 0.0;
+    int k = 0;
+    for (size_t i = 0; i < f.size(); ++i)
+        if (f[i] >= 3000.0 && f[i] <= 8000.0) { ref += gdMs[i]; ++k; }
+    ref = k ? ref / k : 0.0;
+    for (size_t i = 0; i < f.size(); ++i)
+    {
+        double w = 1.0;
+        if (f[i] < spec.fLo) w = std::max(0.0, 1.0 - std::log2(spec.fLo / f[i]) * 2.0);
+        else if (f[i] > spec.fHi) w = std::max(0.0, 1.0 - std::log2(f[i] / spec.fHi) * 2.0);
+        w = 0.5 - 0.5 * std::cos(kPi * w);
+        c[i] = std::clamp(-(gdMs[i] - ref), -spec.maxMs, spec.maxMs) * w;
+    }
+    return smoothVariable(f, c, 1.0 / 3.0, 1.0 / 3.0, 200.0, 5000.0, false);
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
 // the filter
 
 // FIR length for a sample rate: about a third of a second (16384 taps at 44.1 / 48 kHz), enough for the low end.
@@ -224,9 +303,11 @@ inline int correctionTaps(double fs)
 
 // The FIR that applies `corrDb` (on `f`) at `fs`, with `gainDb` added and a delay of `delaySamples` (fractional
 // allowed) built in. Minimum phase: the response starts at once (plus the delay); length taps + delay. Linear phase:
-// symmetric about taps / 2 (its latency), plus the delay; length taps + delay.
+// symmetric about taps / 2 (its latency), plus the delay; length taps + delay. With linear phase, `groupDelayMs` (on
+// `f`) adds that group delay at each frequency (the phase correction: negative values arrive earlier than the rest).
 inline std::vector<float> designFir(const std::vector<double>& f, const std::vector<double>& corrDb, double fs, int taps,
-                                    bool linearPhase, double delaySamples = 0.0, double gainDb = 0.0)
+                                    bool linearPhase, double delaySamples = 0.0, double gainDb = 0.0,
+                                    const std::vector<double>* groupDelayMs = nullptr)
 {
     std::vector<float> out;
     if (!(fs > 0.0) || taps < 64 || f.empty() || corrDb.size() != f.size()) return out;
@@ -258,13 +339,18 @@ inline std::vector<float> designFir(const std::vector<double>& f, const std::vec
     if (linearPhase)
     {
         const double centre = 0.5 * taps + delaySamples;
+        const bool phase = groupDelayMs != nullptr && groupDelayMs->size() == f.size();
+        double extra = 0.0;   // the phase correction, integrated from its group delay
         for (int k = 0; k <= K; ++k)
         {
-            const double ph = -2.0 * kPi * k * centre / N;
+            if (phase && k > 0)
+                extra -= 2.0 * kPi * (fs / N) * curveAt(f, *groupDelayMs, k * fs / N) * 0.001;
+            const double ph = -2.0 * kPi * k * centre / N + extra;
             re[(size_t)k] = mag[(size_t)k] * std::cos(ph);
             im[(size_t)k] = mag[(size_t)k] * std::sin(ph);
         }
-        re[(size_t)K] = mag[(size_t)K] * std::cos(-kPi * centre);   // the Nyquist bin stays real
+        re[(size_t)K] = mag[(size_t)K] * std::cos(-kPi * centre + extra);   // the Nyquist bin stays real
+        im[(size_t)K] = 0.0;
         toTime(re, im);
         // a Tukey window (flat in the middle half) around the centre
         for (int i = 0; i < len; ++i)
@@ -318,7 +404,7 @@ inline std::vector<float> designFir(const std::vector<double>& f, const std::vec
 //   name <text to the end of the line>
 //   preamp <dB>
 //   channel L <delay ms>        (then R)
-//   <Hz> <correction dB> <measured dB> <target dB>     one line per grid point
+//   <Hz> <correction dB> <measured dB> <target dB> [<phase correction: group delay, ms>]   one line per point
 //   end
 //
 // Lines starting with '#' are comments. Numbers use '.' and are read without the C locale.
@@ -327,6 +413,8 @@ struct ProfileChannel {
     char side = 'L';
     double delayMs = 0.0;
     std::vector<double> f, correction, measured, target;
+    std::vector<double> groupDelayMs;   // the phase correction (5th column; zero in older profiles)
+    bool hasPhase() const { for (double v : groupDelayMs) if (v != 0.0) return true; return false; }
 };
 
 struct Profile {
@@ -393,9 +481,9 @@ inline bool parseProfile(const char* text, size_t len, Profile& p, std::string& 
         }
         if (line == "end") { cur = nullptr; continue; }
         if (cur == nullptr) continue;   // something newer than this reader: skipped
-        double v[4] = { 0, 0, 0, 0 };
+        double v[5] = { 0, 0, 0, 0, 0 };
         int got = 0;
-        while (got < 4 && q < qe)
+        while (got < 5 && q < qe)
         {
             while (q < qe && (*q == ' ' || *q == '\t')) ++q;
             if (q >= qe || !readNumber(q, qe, v[got])) break;
@@ -408,6 +496,7 @@ inline bool parseProfile(const char* text, size_t len, Profile& p, std::string& 
         cur->correction.push_back(v[1]);
         cur->measured.push_back(got > 2 ? v[2] : 0.0);
         cur->target.push_back(got > 3 ? v[3] : 0.0);
+        cur->groupDelayMs.push_back(got > 4 && std::fabs(v[4]) < 1000.0 ? v[4] : 0.0);
     }
     if (!header) { why = "not a pump ROOM profile"; return false; }
     for (int i = 0; i < p.channels; ++i)
@@ -436,8 +525,9 @@ inline std::string writeProfile(const Profile& p)
         s += dotDecimals(buf);
         for (size_t k = 0; k < c.f.size(); ++k)
         {
-            std::snprintf(buf, sizeof buf, "%.3f %.3f %.3f %.3f\n", c.f[k], c.correction[k],
-                          k < c.measured.size() ? c.measured[k] : 0.0, k < c.target.size() ? c.target[k] : 0.0);
+            std::snprintf(buf, sizeof buf, "%.3f %.3f %.3f %.3f %.4f\n", c.f[k], c.correction[k],
+                          k < c.measured.size() ? c.measured[k] : 0.0, k < c.target.size() ? c.target[k] : 0.0,
+                          k < c.groupDelayMs.size() ? c.groupDelayMs[k] : 0.0);
             s += dotDecimals(buf);
         }
         s += "end\n";

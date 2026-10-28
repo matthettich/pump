@@ -38,6 +38,16 @@ The plan, what's built, and how the measurement works. Stage 1 (measurement) is 
      service; a re-install keeps the devices section) and a read-me. Checked: the zip, the YAML parses, the script
      parses and its device-keeping merge works. **Not run on a Pi yet**, and the CamillaDSP config was written from
      its documentation (v4.1), not tried in it.
+3b. **Phase correction** — built (2026-10-28, asked for early by the owner). `groupDelayMs` in `RoomCorrect.hpp`
+   reads each measurement's group delay against its direct sound with a frequency-dependent window (5 cycles, 2..300 ms)
+   and smooths it over an octave (reflections ripple it; the octave averages them out); the positions are averaged per
+   speaker; `designPhaseCorrection` makes the group delay to add (minus the excess over the 3..8 kHz average, in the
+   PHASE band 60 Hz..3 kHz, faded over half an octave, limited to 20 ms). Linear-phase filters only (it advances the
+   bass: that takes the latency): the app's ALIGN PHASE with LINEAR PHASE exports, the plugin in LINEAR phase. The
+   profile carries it as a fifth column (group delay, ms; older readers ignore it). The CORRECTION view shows ARRIVAL
+   BY FREQUENCY (measured faint, corrected bold) and the spread before and after. Tested: a speaker with a 4th-order
+   roll-off at 50 Hz and a crossover allpass at 2 kHz (2.5 ms spread 100 Hz..2.5 kHz -> 0.4 ms), with reflections
+   4.4 dB down (still within 0.35 ms of the speaker 300 Hz..3 kHz).
 4. **Handheld measurement** — the long-term goal (the owner's): fast, easy tuning holding the mic in the hand. Before
    each sweep, short pings from each speaker give the mic's distance to each (time of flight, from the arrival times
    stage 1 already measures to a few hundredths of a sample); with the speakers' spacing that places the mic. A map

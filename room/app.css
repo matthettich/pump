@@ -98,7 +98,8 @@ main { flex: 1; display: grid; grid-template-columns: 330px 1fr; gap: 16px; padd
 
 .corr-cols { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px 22px; }
 .corr .row > span { width: 72px; }
-.corr .row .num { min-width: 88px; white-space: nowrap; }
+.corr .row .num { min-width: 84px; white-space: nowrap; }
+.corr .row input[type=range] { width: 0; min-width: 0; }
 .toggles { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0 10px; }
 .readout { font-size: 12px; color: var(--ink2); line-height: 1.6; }
 .readout b { color: var(--ink); font-weight: normal; font-family: "JBM", monospace; }

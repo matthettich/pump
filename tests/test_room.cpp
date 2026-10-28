@@ -40,6 +40,11 @@ struct Bq {
         return norm(A * ((A + 1) + (A - 1) * c + sA), -2 * A * ((A - 1) + (A + 1) * c), A * ((A + 1) + (A - 1) * c - sA),
                     (A + 1) - (A - 1) * c + sA, 2 * ((A - 1) - (A + 1) * c), (A + 1) - (A - 1) * c - sA);
     }
+    static Bq allpass(double fs, double f, double q)
+    {
+        const double w = 2 * kPi * f / fs, al = std::sin(w) / (2 * q), c = std::cos(w);
+        return norm(1 - al, -2 * c, 1 + al, 1 + al, -2 * c, 1 - al);
+    }
     static Bq norm(double b0, double b1, double b2, double a0, double a1, double a2)
     {
         Bq q; q.b0 = b0 / a0; q.b1 = b1 / a0; q.b2 = b2 / a0; q.a1 = a1 / a0; q.a2 = a2 / a0; return q;
@@ -569,6 +574,91 @@ static void testEngine()
     CHECK(e.info().preampDb == 0.0, "profile cleared");
 }
 
+// Phase: a speaker whose bass arrives late (a 4th-order roll-off at 50 Hz) and with a crossover's phase turn (an
+// allpass at 2 kHz). The measured group delay follows the real one, and the linear-phase correction lines it up.
+static double pathGdMs(const Path& p, double fs, double f)
+{
+    auto ph = [&](double x) { cd h = 1.0; for (const Bq& b : p.filters) h *= b.at(fs, x); return std::arg(h); };
+    const double d = f * 0.002;
+    double a = ph(f + d) - ph(f - d);
+    while (a > kPi) a -= 2 * kPi;
+    while (a < -kPi) a += 2 * kPi;
+    return -a / (2 * kPi * 2 * d) * 1000.0;
+}
+
+static void testPhase()
+{
+    printf("phase correction\n");
+    const double fs = 48000;
+    Path p;
+    p.filters = { Bq::highpass(fs, 50, 0.54), Bq::highpass(fs, 50, 1.31), Bq::allpass(fs, 2000, 0.7) };
+    p.latency = 1200;
+    SweepSpec s; s.sampleRate = fs; s.seconds = 3;
+    Measurement m = measure(p, s, 1.5, -95, 11);
+    const std::vector<double> g = correctionGrid();
+    const std::vector<double> gd = groupDelayMs(m.ir.data(), (int)m.ir.size(), m.arrival.index, fs, g);
+    // the true excess group delay, relative to 3..8 kHz like the design
+    double ref = 0; int k = 0;
+    for (double f : g) if (f >= 3000 && f <= 8000) { ref += pathGdMs(p, fs, f); ++k; }
+    ref /= k;
+    double mref = 0; k = 0;
+    for (size_t i = 0; i < g.size(); ++i) if (g[i] >= 3000 && g[i] <= 8000) { mref += gd[i]; ++k; }
+    mref /= k;
+    double worst = 0, wf = 0;
+    for (size_t i = 0; i < g.size(); ++i)
+    {
+        if (g[i] < 80 || g[i] > 5000) continue;
+        const double e = std::fabs((gd[i] - mref) - (pathGdMs(p, fs, g[i]) - ref));
+        if (e > worst) { worst = e; wf = g[i]; }
+    }
+    CHECK(worst < 0.8, "measured group delay follows the speaker's within %.3f ms, 80 Hz..5 kHz (worst at %.0f Hz; %.1f ms at 80 Hz)", worst, wf, pathGdMs(p, fs, 80) - ref);
+
+    PhaseSpec ps; ps.on = true;
+    const std::vector<double> corr = designPhaseCorrection(g, gd, ps);
+    const int taps = correctionTaps(fs);
+    std::vector<double> zero(g.size(), 0.0);
+    const std::vector<float> h = designFir(g, zero, fs, taps, true, 0.0, 0.0, &corr);
+    // speaker + filter: group delay flat (= the filter's latency) across the band
+    auto firPh = [&](double f) {
+        cd sum = 0.0; const cd step = std::exp(cd(0, -2 * kPi * f / fs)); cd z = 1.0;
+        for (float v : h) { sum += (double)v * z; z *= step; }
+        return sum;
+    };
+    auto totalGd = [&](double f) {
+        const double d = 0.1;   // Hz: the filter's own latency turns the phase fast
+        auto ph = [&](double x) { cd hh = firPh(x); for (const Bq& b : p.filters) hh *= b.at(fs, x); return std::arg(hh); };
+        double a = ph(f + d) - ph(f - d);
+        while (a > kPi) a -= 2 * kPi;
+        while (a < -kPi) a += 2 * kPi;
+        return -a / (2 * kPi * 2 * d) * 1000.0;
+    };
+    const double centre = taps / 2.0 / fs * 1000.0;
+    double before = 0, after = 0;
+    for (double f : { 100.0, 150.0, 250.0, 500.0, 1000.0, 1500.0, 2000.0, 2500.0 })
+    {
+        before = std::max(before, std::fabs(pathGdMs(p, fs, f) - ref));
+        after = std::max(after, std::fabs(totalGd(f) - centre - ref));
+    }
+    CHECK(after < 0.5 && before > 2.0, "spread of arrival times 100 Hz..2.5 kHz: %.2f ms before, %.2f ms after", before, after);
+    const std::vector<double> magDb = firDb(h, fs, std::vector<double>{ 100, 1000, 5000 });
+    CHECK(std::fabs(magDb[0]) < 0.1 && std::fabs(magDb[1]) < 0.1 && std::fabs(magDb[2]) < 0.1, "the phase filter leaves the level alone (%.3f / %.3f / %.3f dB)", magDb[0], magDb[1], magDb[2]);
+    PhaseSpec off;
+    const std::vector<double> none = designPhaseCorrection(g, gd, off);
+    double mx = 0; for (double v : none) mx = std::max(mx, std::fabs(v));
+    CHECK(mx == 0.0, "off: no phase correction");
+    // in a room (reflections): the measurement still finds the speaker's group delay in the mids
+    Path r = p;
+    r.taps = { { 0, 0.5 }, { (int)(0.0042 * fs), 0.3 }, { (int)(0.0091 * fs), 0.2 } };
+    Measurement mr = measure(r, s, 1.5, -95, 12);
+    const std::vector<double> gr = groupDelayMs(mr.ir.data(), (int)mr.ir.size(), mr.arrival.index, fs, g);
+    double rref = 0; k = 0;
+    for (size_t i = 0; i < g.size(); ++i) if (g[i] >= 3000 && g[i] <= 8000) { rref += gr[i]; ++k; }
+    rref /= k;
+    double rw = 0;
+    for (size_t i = 0; i < g.size(); ++i) if (g[i] >= 300 && g[i] <= 3000) rw = std::max(rw, std::fabs((gr[i] - rref) - (pathGdMs(p, fs, g[i]) - ref)));
+    CHECK(rw < 0.5, "with reflections 4.4 dB down: within %.2f ms of the speaker 300 Hz..3 kHz", rw);
+}
+
 int main()
 {
     testSweep();
@@ -588,6 +678,7 @@ int main()
     testFir();
     testProfile();
     testEngine();
+    testPhase();
     printf(fails ? "\n%d FAILED\n" : "\nall passed\n", fails);
     return fails ? 1 : 0;
 }

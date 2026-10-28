@@ -97,12 +97,14 @@
             <button class="key toggle on" id="cNulls" title="Boosts only fill broad dips: narrow cancellations can't be filled by EQ">SKIP NULLS</button>
             <button class="key toggle on" id="cLow" title="No boost below the speakers' own low-end roll-off">PROTECT LOW END</button>
             <button class="key toggle on" id="cAlign" title="Delay the nearer speaker so both arrive together">TIME ALIGN</button>
+            <button class="key toggle" id="cPhase" title="Line up each speaker's bass, mids and treble in time (its roll-off and crossover make the low end arrive late). Needs linear-phase filters">ALIGN PHASE</button>
           </div>
           <div class="readout" id="cInfo"></div>
         </div>
       </div>
       <div class="corr-save">
         <label class="row"><span>NAME</span><input type="text" id="cName" value="My room" maxlength="60"></label>
+        <div class="seg" id="cLat" title="Filters for the exports: minimum phase has no latency; linear phase adds about 0.17 s and carries the phase correction"><button data-v="min" class="on">NO LATENCY</button><button data-v="linear">LINEAR PHASE</button></div>
         <button class="key hot" id="cSave" title="A .pumproom file for pump ROOM (the plugin) and System EQ">SAVE PROFILE</button>
         <button class="key" id="cWin" title="Filters and a config file for the system-wide equalizer on Windows">EXPORT FOR WINDOWS</button>
         <button class="key" id="cPi" title="Filters, a CamillaDSP config and an install script for a Raspberry Pi between your sources and speakers">EXPORT FOR PI</button>
