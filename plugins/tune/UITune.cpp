@@ -35,7 +35,7 @@ struct NoteSlider : Control {
 
 class UITune : public PumpUI {
 public:
-    UITune() : PumpUI(params().data(), kNumParams, &presets(), pump::accents::tune(), "TUNE", 1100, 760, kBypass)
+    UITune() : PumpUI(params().data(), kNumParams, &presets(), pump::accents::tune(), "TUNE", 1100, 620, kBypass)
     {
         // ---- CORRECTION ----
         modeSeg = addSegmented(kMode, { "LIVE", "GRAPH" });
@@ -175,53 +175,57 @@ protected:
 
     void layout() override
     {
-        screenR = Rect(14, 56, 1072, 356);
+        // the panels at the bottom (three rows of Small dials set their height), the graph's strip over them, the
+        // screen takes the rest
+        const float ph = 238, y0 = H - kFooterH - 10 - ph;
+        const float sy = y0 - 12 - 26;
+        screenR = Rect(14, 56, 1072, sy - 12 - 56);
         const float bx = screenR.r() - 10, by = screenR.y + 7, bh = 22;
         float x = bx;
         auto place = [&](Button* b, float w) { x -= w; b->r = Rect(x, by, w, bh); x -= 6; };
         place(clearBtn, 62); place(resetBtn, 62); place(snapBtn, 56); place(followViewBtn, 70); place(captureBtn, 82);
-        const float sy = 420, sw = 254, sg = 18.7f;
+        const float sw = 254, sg = 18.7f;
         straightSl->r = Rect(18, sy, sw, 26);
         vibSl->r = Rect(18 + (sw + sg), sy, sw, 26);
         formSl->r = Rect(18 + 2 * (sw + sg), sy, sw, 26);
         gainSl->r = Rect(18 + 3 * (sw + sg), sy, sw, 26);
 
-        const float y0 = 458, ph = 268;
         corrPanel = Rect(14, y0, 410, ph);
-        modeSeg->r = Rect(26, y0 + 24, 120, 26);
-        keyMenu->r = Rect(156, y0 + 24, 82, 26);
-        scaleMenu->r = Rect(244, y0 + 24, 168, 26);
-        midiMenu->r = Rect(26, y0 + 60, 212, 26);
-        rangeSeg->r = Rect(244, y0 + 60, 168, 26);
+        modeSeg->r = Rect(26, y0 + 28, 120, 26);
+        keyMenu->r = Rect(156, y0 + 28, 82, 26);
+        scaleMenu->r = Rect(244, y0 + 28, 168, 26);
+        midiMenu->r = Rect(26, y0 + 64, 212, 26);
+        rangeSeg->r = Rect(244, y0 + 64, 168, 26);
         const float dh = Dial::heightFor(Dial::Medium), sh = Dial::heightFor(Dial::Small);
-        retuneDial->r = Rect(30, y0 + 110, 90, dh);
-        amountDial->r = Rect(126, y0 + 110, 90, dh);
-        humanDial->r = Rect(222, y0 + 110, 90, dh);
-        flexDial->r = Rect(318, y0 + 110, 90, dh);
+        retuneDial->r = Rect(30, y0 + 128, 90, dh);
+        amountDial->r = Rect(126, y0 + 128, 90, dh);
+        humanDial->r = Rect(222, y0 + 128, 90, dh);
+        flexDial->r = Rect(318, y0 + 128, 90, dh);
 
         pitchPanel = Rect(436, y0, 180, ph);
-        vibDial->r = Rect(446, y0 + 22, 76, sh);
-        rateDial->r = Rect(530, y0 + 22, 76, sh);
-        transDial->r = Rect(446, y0 + 104, 76, sh);
-        formDial->r = Rect(530, y0 + 104, 76, sh);
-        followBtn->r = Rect(448, y0 + 196, 156, 26);
+        vibDial->r = Rect(446, y0 + 30, 76, sh);
+        rateDial->r = Rect(530, y0 + 30, 76, sh);
+        transDial->r = Rect(446, y0 + 98, 76, sh);
+        formDial->r = Rect(530, y0 + 98, 76, sh);
+        followBtn->r = Rect(448, y0 + 186, 156, 26);
 
+        // HARMONY: its mode on the caption line, a column per voice (interval, level, pan)
         harmPanel = Rect(628, y0, 290, ph);
-        harmSeg->r = Rect(640, y0 + 24, 266, 24);
+        harmSeg->r = Rect(724, y0 + 6, 182, 20);
         for (int h = 0; h < kVoices; ++h)
         {
             const float hx = 636 + h * 69.0f;
-            intDial[h]->r = Rect(hx, y0 + 56, 68, sh);
-            lvlDial[h]->r = Rect(hx, y0 + 126, 68, sh);
-            panDial[h]->r = Rect(hx, y0 + 196, 68, sh);
+            intDial[h]->r = Rect(hx, y0 + 30, 68, sh);
+            lvlDial[h]->r = Rect(hx, y0 + 98, 68, sh);
+            panDial[h]->r = Rect(hx, y0 + 166, 68, sh);
         }
 
         outPanel = Rect(930, y0, 156, ph);
-        leadDial->r = Rect(936, y0 + 22, 72, sh);
-        harmLvlDial->r = Rect(1008, y0 + 22, 72, sh);
-        harmFormDial->r = Rect(936, y0 + 104, 72, sh);
-        harmHumDial->r = Rect(1008, y0 + 104, 72, sh);
-        outDial->r = Rect(972, y0 + 186, 72, sh);
+        leadDial->r = Rect(936, y0 + 30, 72, sh);
+        harmLvlDial->r = Rect(1008, y0 + 30, 72, sh);
+        harmFormDial->r = Rect(936, y0 + 98, 72, sh);
+        harmHumDial->r = Rect(1008, y0 + 98, 72, sh);
+        outDial->r = Rect(972, y0 + 166, 72, sh);
         updateVisibility();
     }
     bool graphMode() const { return (int)value(kMode) == kGraph; }
@@ -475,11 +479,11 @@ protected:
     {
         drawScreen();
         for (const Rect* r : { &corrPanel, &pitchPanel, &harmPanel, &outPanel }) strokeRect(*r, theme.dim, 1.0f);
-        caption(corrPanel.x + 12, corrPanel.y + 14, "CORRECTION");
-        caption(corrPanel.x + 12, corrPanel.y + 100, graphMode() ? "LIVE ONLY (THE GRAPH SETS ITS OWN NOTES)" : "");
-        caption(pitchPanel.x + 12, pitchPanel.y + 14, "PITCH");
-        caption(harmPanel.x + 12, harmPanel.y + 14, "HARMONY");
-        caption(outPanel.x + 12, outPanel.y + 14, "OUTPUT");
+        caption(corrPanel.x + 12, corrPanel.y + 16, "CORRECTION");
+        caption(corrPanel.x + 12, retuneDial->r.y - 12, graphMode() ? "LIVE ONLY (THE GRAPH SETS ITS OWN NOTES)" : "");
+        caption(pitchPanel.x + 12, pitchPanel.y + 16, "PITCH");
+        caption(harmPanel.x + 12, harmPanel.y + 16, "HARMONY");
+        caption(outPanel.x + 12, outPanel.y + 16, "OUTPUT");
         if (!graphMode())
         {
             // live readout where the graph's strip would be
@@ -492,8 +496,9 @@ protected:
                               pump::pitch::noteName(c, n2, 8), (int)std::lround(100 * (out - c)), (int)std::lround(100 * (out - in)));
             }
             else std::snprintf(b, sizeof b, "SING: THE PITCH SUNG AND THE PITCH THAT COMES OUT ARE DRAWN ABOVE");
-            textAt(20, 433, b, kLabel, 11.5f, theme.ink2, ALIGN_LEFT | ALIGN_MIDDLE, 1.0f);
-            textAt(W - 20, 433, std::string("LATENCY ") + std::to_string(plug ? plug->latencyNow() : 0), kLabel, 11.0f, theme.ink2, ALIGN_RIGHT | ALIGN_MIDDLE, 1.0f);
+            const float ry = straightSl->r.cy();
+            textAt(20, ry, b, kLabel, 11.5f, theme.ink2, ALIGN_LEFT | ALIGN_MIDDLE, 1.0f);
+            textAt(W - 20, ry, std::string("LATENCY ") + std::to_string(plug ? plug->latencyNow() : 0), kLabel, 11.0f, theme.ink2, ALIGN_RIGHT | ALIGN_MIDDLE, 1.0f);
         }
     }
 

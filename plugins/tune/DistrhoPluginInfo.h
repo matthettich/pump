@@ -26,7 +26,7 @@
 #define DISTRHO_UI_USE_NANOVG          1
 #define DISTRHO_UI_USER_RESIZABLE      1
 #define DISTRHO_UI_DEFAULT_WIDTH       1100
-#define DISTRHO_UI_DEFAULT_HEIGHT      760
+#define DISTRHO_UI_DEFAULT_HEIGHT      620
 
 #define DISTRHO_PLUGIN_VST3_CATEGORIES "Fx|Pitch Shift"
 #define DISTRHO_PLUGIN_CLAP_FEATURES   "audio-effect", "pitch-correction", "stereo"
