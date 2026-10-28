@@ -246,7 +246,11 @@ jobs:
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093   # v4
         with: { name: pump-room, path: bin }
       - name: Package
-        run: sh room/electron/build.sh
+        run: |
+          set -o pipefail
+          sh room/electron/build.sh 2>&1 | tee package.log \
+            || { echo "::error::$(grep -iE 'error|⨯|cannot|failed|not found' package.log | tail -12 | sed ':a;N;$!ba;s/\n/%0A/g')";
+                 echo "::error::$(tail -30 package.log | sed ':a;N;$!ba;s/\n/%0A/g')"; exit 1; }
       - name: Smoke test (measures the simulated room in the packaged app)
         run: PUMP_ROOM_SMOKE=1 "$(ls -d room/electron/dist/mac-universal/*.app | head -1)/Contents/MacOS/pump ROOM"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02   # v4
@@ -263,7 +267,11 @@ jobs:
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093   # v4
         with: { name: pump-room, path: bin }
       - name: Package
-        run: sh room/electron/build.sh
+        run: |
+          set -o pipefail
+          sh room/electron/build.sh 2>&1 | tee package.log \
+            || { echo "::error::$(grep -iE 'error|⨯|cannot|failed|not found' package.log | tail -12 | sed ':a;N;$!ba;s/\n/%0A/g')";
+                 echo "::error::$(tail -30 package.log | sed ':a;N;$!ba;s/\n/%0A/g')"; exit 1; }
       - name: Smoke test (measures the simulated room in the packaged app)
         run: |
           code=0

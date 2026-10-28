@@ -14,7 +14,7 @@ E="$H/room/electron"
 mkdir -p "$E/app"
 cp "$H/bin/pump-room.html" "$E/app/pump-room.html"
 cd "$E"
-npm install --no-audit --no-fund --no-save electron@latest electron-builder@latest
+npm install --no-audit --no-fund --save-dev electron@latest electron-builder@latest   # (records them in package.json for the packager; not committed)
 npx electron --version
 npx electron-builder --version
 case "$(uname -s)" in
