@@ -13,7 +13,7 @@ using namespace pump::vector;
 
 class UIVector : public PumpUI {
 public:
-    UIVector() : PumpUI(params().data(), kNumParams, &presets(), pump::accents::vector(), "VECTOR", 1000, 946, -1)
+    UIVector() : PumpUI(params().data(), kNumParams, &presets(), pump::accents::vector(), "VECTOR", 1000, 640, -1)
     {
         auto dial = [&](int p, const char* l, bool bi = false, const char* tip = nullptr) { Dial* d = addDial(p, l, Dial::Small, bi); if (tip) d->tip = tip; return d; };
         for (int s = 0; s < kSources; ++s)
@@ -40,6 +40,12 @@ public:
         velD = dial(kVelocity, "VELOCITY"); spreadD = dial(kSpread, "SPREAD"); voicesD = dial(kVoices, "VOICES"); glideD = dial(kGlide, "GLIDE");
         octD = dial(kOctave, "OCTAVE", true); volD = dial(kVolume, "VOLUME", true);
         vmodeSeg = addSegmented(kVoiceMode, { "POLY", "MONO", "LEGATO" });
+        // two pages under the square and the screens: SOURCES (the four sources, joystick, sequence, scanned) and
+        // VOICE (filter, amp, LFO, voice); the keyboard stays
+        srcB = addButton("SOURCES", [this] { setPage(0); }, [this] { return page == 0; });
+        srcB->tip = "The four sources, the joystick and envelope, the sequence and the scanned strings";
+        voiceB = addButton("VOICE", [this] { setPage(1); }, [this] { return page == 1; });
+        voiceB->tip = "The filter, the amp envelope, the LFO and the voice";
         keyboard.lowNote = 36;
         keyboard.send = [this](int note, int vel) { if (plug) plug->keys.push((uint8_t)note, (uint8_t)vel); };
         if (auto* p = static_cast<PluginVector*>(pluginPtr())) plug = p;
@@ -65,46 +71,88 @@ protected:
     void layout() override
     {
         const float top = 58, hs = Dial::heightFor(Dial::Small);
-        vecR = Rect(14, top, 250, 250);
-        for (int s = 0; s < kSources; ++s) srcR[s] = Rect(276 + (s & 1) * 244, top + (s >> 1) * 128, 236, 122);
-        scopeR = Rect(772, top, 188, 250);
-        meterL = Rect(966, top, 8, 238); meterR = Rect(977, top, 8, 238);
-        srcPanel = Rect(14, 320, 972, 150);
-        for (int s = 0; s < kSources; ++s)
+        // the square, the four sources' screens, the output
+        vecR = Rect(14, top, 210, 186);
+        for (int s = 0; s < kSources; ++s) srcR[s] = Rect(236 + (s & 1) * 266, top + (s >> 1) * 95, 258, 91);
+        scopeR = Rect(780, top, 180, 186);
+        meterL = Rect(966, top, 8, 174); meterR = Rect(977, top, 8, 174);
+        // the keyboard, the page keys beside it
+        const float ky = 550;
+        srcB->r = Rect(14, ky, 96, 25);
+        voiceB->r = Rect(14, ky + 31, 96, 25);
+        keyboard.r = Rect(122, ky, 858, 56);
+        const bool vp = page == 1;
+        std::vector<Control*> srcCtl = { xD, yD, envD, timeD, vloopSeg, seqRateD, seqStepsD, seqStrideD, seqXfD, seqTrD, sloopSeg, tenD, dampD, cenD, hamD, spdD };
+        for (int s = 0; s < kSources; ++s) for (Control* c : std::initializer_list<Control*>{ typeSeg[s], waveM[s], tuneD[s], fineD[s], levelD[s] }) srcCtl.push_back(c);
+        std::vector<Control*> voiceCtl = { cutD, resD, fenvD, keyD, lRateD, lPitchD, lXD, lYD, lCutD, velD, spreadD, voicesD, glideD, octD, volD, vmodeSeg };
+        for (int k = 0; k < 4; ++k) { voiceCtl.push_back(fD[k]); voiceCtl.push_back(aD[k]); }
+        for (Control* c : srcCtl) c->visible = !vp;
+        for (Control* c : voiceCtl) c->visible = vp;
+        const float y0 = top + 186 + 12;          // the page's area: y0 .. 538
+        const Rect none(0, 0, 0, 0);
+        srcPanel = vecPanel = seqPanel = scanPanel = filtPanel = ampPanel = lfoPanel = voicePanel = none;
+        if (!vp)
         {
-            const float x = 22 + s * 243;
-            typeSeg[s]->r = Rect(x, 342, 228, 22);
-            waveM[s]->r = Rect(x, 368, 228, 22);
-            tuneD[s]->r = Rect(x - 4, 394, 78, hs); fineD[s]->r = Rect(x + 74, 394, 78, hs); levelD[s]->r = Rect(x + 152, 394, 78, hs);
+            srcPanel = Rect(14, y0, 972, 150);
+            for (int s = 0; s < kSources; ++s)
+            {
+                const float x = 22 + s * 243;
+                typeSeg[s]->r = Rect(x, y0 + 26, 228, 22);
+                waveM[s]->r = Rect(x, y0 + 52, 228, 22);
+                tuneD[s]->r = Rect(x - 4, y0 + 76, 78, hs); fineD[s]->r = Rect(x + 74, y0 + 76, 78, hs); levelD[s]->r = Rect(x + 152, y0 + 76, 78, hs);
+            }
+            const float y1 = srcPanel.b() + 12;
+            vecPanel = Rect(14, y1, 308, 120);
+            vloopSeg->r = Rect(24, y1 + 26, 288, 22);
+            Dial* vd[4] = { xD, yD, envD, timeD };
+            for (int k = 0; k < 4; ++k) vd[k]->r = Rect(20 + k * 75, y1 + 50, 75, hs);
+            seqPanel = Rect(334, y1, 326, 120);
+            sloopSeg->r = Rect(344, y1 + 26, 306, 22);
+            Dial* sd[5] = { seqRateD, seqStepsD, seqStrideD, seqXfD, seqTrD };
+            for (int k = 0; k < 5; ++k) sd[k]->r = Rect(338 + k * 64, y1 + 50, 64, hs);
+            scanPanel = Rect(672, y1, 314, 120);
+            Dial* cd[5] = { tenD, dampD, cenD, hamD, spdD };
+            for (int k = 0; k < 5; ++k) cd[k]->r = Rect(676 + k * 61, y1 + 40, 61, hs);
+            return;
         }
-        vecPanel = Rect(14, 480, 308, 116);
-        vloopSeg->r = Rect(24, 502, 288, 22);
-        Dial* vd[4] = { xD, yD, envD, timeD };
-        for (int k = 0; k < 4; ++k) vd[k]->r = Rect(20 + k * 75, 526, 75, hs);
-        seqPanel = Rect(334, 480, 326, 116);
-        sloopSeg->r = Rect(344, 502, 306, 22);
-        Dial* sd[5] = { seqRateD, seqStepsD, seqStrideD, seqXfD, seqTrD };
-        for (int k = 0; k < 5; ++k) sd[k]->r = Rect(338 + k * 64, 526, 64, hs);
-        scanPanel = Rect(672, 480, 314, 116);
-        Dial* cd[5] = { tenD, dampD, cenD, hamD, spdD };
-        for (int k = 0; k < 5; ++k) cd[k]->r = Rect(676 + k * 61, 514, 61, hs);
-        filtPanel = Rect(14, 606, 640, 116);
+        const float rh = 132;
+        filtPanel = Rect(14, y0, 640, rh);
         Dial* fd[8] = { cutD, resD, fenvD, keyD, fD[0], fD[1], fD[2], fD[3] };
-        for (int k = 0; k < 8; ++k) fd[k]->r = Rect(20 + k * 79, 640, 79, hs);
-        ampPanel = Rect(666, 606, 320, 116);
-        for (int k = 0; k < 4; ++k) aD[k]->r = Rect(672 + k * 78, 640, 78, hs);
-        lfoPanel = Rect(14, 732, 400, 116);
+        for (int k = 0; k < 8; ++k) fd[k]->r = Rect(20 + k * 79, y0 + 44, 79, hs);
+        ampPanel = Rect(666, y0, 320, rh);
+        for (int k = 0; k < 4; ++k) aD[k]->r = Rect(672 + k * 78, y0 + 44, 78, hs);
+        const float y1 = y0 + rh + 12;
+        lfoPanel = Rect(14, y1, 400, rh);
         Dial* ld[5] = { lRateD, lPitchD, lXD, lYD, lCutD };
-        for (int k = 0; k < 5; ++k) ld[k]->r = Rect(20 + k * 78, 766, 78, hs);
-        voicePanel = Rect(426, 732, 560, 116);
-        vmodeSeg->r = Rect(436, 754, 540, 22);
+        for (int k = 0; k < 5; ++k) ld[k]->r = Rect(20 + k * 78, y1 + 44, 78, hs);
+        voicePanel = Rect(426, y1, 560, rh);
+        vmodeSeg->r = Rect(436, y1 + 28, 540, 22);
         Dial* od[6] = { velD, spreadD, voicesD, glideD, octD, volD };
-        for (int k = 0; k < 6; ++k) od[k]->r = Rect(432 + k * 91, 778, 91, hs);
-        keyboard.r = Rect(14, 858, 966, 56);
+        for (int k = 0; k < 6; ++k) od[k]->r = Rect(432 + k * 91, y1 + 56, 91, hs);
+    }
+    void setPage(int p)
+    {
+        if (p == page) return;
+        page = p;
+        layout();
+        saveUiState(page == 1 ? "page=voice;" : "page=sources;");
+        repaint();
+    }
+    void loadUiState(const std::string& s) override
+    {
+        page = uiStateGet(s, "page", "sources") == "voice" ? 1 : 0;
+        layout();
+        repaint();
     }
 
     void tick(float dt) override
     {
+        // test hook for headless screenshots (unused in normal runs): open on a page
+        if (!testPaged)
+        {
+            testPaged = true;
+            if (const char* tp = pump::testEnv("PUMP_TEST_PAGE")) setPage(std::strcmp(tp, "voice") == 0 || std::strcmp(tp, "1") == 0 ? 1 : 0);
+        }
         voicesD->enabled = (int)value(kVoiceMode) == 0;
         bool anySeq = false, anyScan = false;
         for (int s = 0; s < kSources; ++s) { const int t = (int)value(ps(s, kType)); anySeq = anySeq || t == kSequence; anyScan = anyScan || t == kScanned; }
@@ -243,9 +291,9 @@ protected:
         for (int s = 0; s < kSources; ++s) drawSource(s);
         drawScope();
         drawOutMeter(outMeter, meterL, meterR);
-        auto panel = [&](const Rect& r, const char* c) { strokeRect(r, theme.dim, 1.0f); caption(r.x + 12, r.y + 13, c); };
-        panel(srcPanel, "SOURCES   A · B · C · D"); panel(vecPanel, "JOYSTICK · ENVELOPE"); panel(seqPanel, "SEQUENCE"); panel(scanPanel, "SCANNED");
-        panel(filtPanel, "FILTER"); panel(ampPanel, "AMP"); panel(lfoPanel, "LFO"); panel(voicePanel, "VOICE");
+        auto panel = [&](const Rect& r, const char* c) { strokeRect(r, theme.dim, 1.0f); caption(r.x + 12, r.y + 16, c); };
+        if (page == 0) { panel(srcPanel, "SOURCES   A · B · C · D"); panel(vecPanel, "JOYSTICK · ENVELOPE"); panel(seqPanel, "SEQUENCE"); panel(scanPanel, "SCANNED"); }
+        else { panel(filtPanel, "FILTER"); panel(ampPanel, "AMP"); panel(lfoPanel, "LFO"); panel(voicePanel, "VOICE"); }
         keyboard.draw(*this);
     }
 
@@ -296,7 +344,7 @@ protected:
     std::vector<std::pair<std::string, std::string>> helpLines() override
     {
         return { { "THE SQUARE", "drag the joystick; ENV moves the point along the path (drag its points)" }, { "SEQ", "steps through the bank from the source's wave" },
-                 { "SCAN", "a ring of masses and springs struck in the wave's shape, then left to move" }, { "TRANSP", "transposes each sequence step: arpeggios" } };
+                 { "SOURCES | VOICE", "the two pages under the screens (the keyboard stays)" }, { "SCAN", "a ring of masses and springs struck in the wave's shape, then left to move" }, { "TRANSP", "transposes each sequence step: arpeggios" } };
     }
     std::string footerInfo() override
     {
@@ -314,6 +362,9 @@ private:
     Dial *xD, *yD, *envD, *timeD, *seqRateD, *seqStepsD, *seqStrideD, *seqXfD, *seqTrD, *tenD, *dampD, *cenD, *hamD, *spdD;
     Dial *cutD, *resD, *fenvD, *keyD, *fD[4], *aD[4], *lRateD, *lPitchD, *lXD, *lYD, *lCutD, *velD, *spreadD, *voicesD, *glideD, *octD, *volD;
     KeyboardUI keyboard;
+    Button *srcB, *voiceB;
+    int page = 0;              // 0 SOURCES, 1 VOICE
+    bool testPaged = false;
     bool kbDown = false, dragging = false, playing = false;
     int drag = -1, dx = kX, dy = kY;
     float ptX = 0.5f, ptY = 0.5f, mass[kMasses] = {}, scope[kScope] = {}, anim = 0.0f;
