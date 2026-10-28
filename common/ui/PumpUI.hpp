@@ -288,7 +288,7 @@ public:
         const double sf = getScaleFactor();
         fScaleSeen = sf;
         // the size this plugin was last left at (the corner grip), as a fraction of its logical size
-        const double zoom = readZoom(fTag.c_str());
+        const double zoom = readZoom(fTag.c_str(), defaultZoom());
         if (sf != 1.0 || zoom != 1.0) setSize((uint)std::lround(W * sf * zoom), (uint)std::lround(H * sf * zoom));
         setGeometryConstraints((uint)(W * 0.6 * sf), (uint)(H * 0.6 * sf), true, false);
         fFontLabel = createFontFromMemory("label", pump::fonts::kFontLabel, pump::fonts::kFontLabelSize, false);
@@ -763,7 +763,11 @@ protected:
 
     void onNanoDisplay() override
     {
-        fScale = (float)getWidth() / W;
+        // fit whatever size the host gives the window: both its width and its height (a host or the OS may shrink the
+        // window to the screen without asking; drawing by width alone then ran off the top and the right)
+        const float gw = (float)getWidth(), gh = (float)getHeight();
+        fScale = (gw > 0.0f && gh > 0.0f) ? std::min(gw / W, gh / H) : 1.0f;
+        beginPath(); rect(0, 0, gw, gh); fillColor(theme.bg); fill();
         save();
         scale(fScale, fScale);
         // background
@@ -775,6 +779,7 @@ protected:
             if (const char* tp = pump::testEnv("PUMP_TEST_PRESET")) applyPreset(std::atoi(tp));
             if (const char* td = pump::testEnv("PUMP_TEST_DARK")) if (td[0] == '1') { fDark = true; theme.build(fAccent, true); }
             if (const char* tw = pump::testEnv("PUMP_TEST_WIDTH")) { const int w = std::atoi(tw); if (w > 200) setSize((uint)w, (uint)(w * H / W)); }
+            if (const char* ts = pump::testEnv("PUMP_TEST_SIZE")) { int w = 0, h = 0; if (std::sscanf(ts, "%dx%d", &w, &h) == 2 && w > 200 && h > 200) setSize((uint)w, (uint)h); }
             fFrameClock = pump::winFrameClockStart(getWindow().getNativeWindowHandle(), &PumpUI::frameFromClock, this);
         }
         drawHeader();
@@ -1665,13 +1670,15 @@ protected:
         writeConfigLines(lines);
     }
     // the window size a plugin was last left at (1 = its logical size); new windows of it open at that size
-    static double readZoom(const char* tag)
+    static double readZoom(const char* tag, double def)
     {
-        if (!tag || !*tag) return 1.0;
+        if (!tag || !*tag) return def;
         const std::string v = configGet(std::string("zoom.") + tag);
-        const double z = v.empty() ? 1.0 : std::atof(v.c_str());
-        return (z >= 0.6 && z <= 3.0) ? z : 1.0;
+        const double z = v.empty() ? def : std::atof(v.c_str());
+        return (z >= 0.6 && z <= 3.0) ? z : def;
     }
+    // until a size is chosen: about 600 points tall, so the big windows (the instruments) fit a laptop screen
+    double defaultZoom() const { return pump::clampv(600.0 / H, 0.6, 1.0); }
     void rememberZoom()
     {
         if (fTag.empty()) return;
