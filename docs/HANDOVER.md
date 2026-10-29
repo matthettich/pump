@@ -6,7 +6,7 @@ Last updated 2026-10-29 (three new instruments: ACID, X0X, GLOSS; before them: p
 
 ## State
 
-- 32 plugins (effects, mastering, instruments, and ROOM room correction), VST3 + CLAP everywhere, AU on macOS. All build on macOS with
+- 33 plugins (effects, mastering, instruments, and ROOM room correction), VST3 + CLAP everywhere, AU on macOS. All build on macOS with
   `make -C plugins/<name> MACOS=true` (serial per plugin, see "Build gotchas").
 - CI (`.github/workflows/build.yml`) builds Windows x64 (MinGW cross-compile), macOS universal, Linux, runs the DSP
   tests and the licence-boundary check, and refreshes the `latest` pre-release on every push to `main`.
@@ -139,7 +139,9 @@ chip, vocal, ensemble saw, wave and physical voices.
 | **X0X**: eleven drums (BD SD CP CH OH LT MT HT RS CB CY on C-4 up the white keys, GM below), each on any of five machine circuits (tables at the top of X0xEngine.hpp), tune / decay / tone / a fourth control / level / pan; accent row; step masks as one integer parameter per row (`bd_steps` .. `ac_steps`, bit k = step k + 1, not automatable); OFF / SONG / FREE, PLAY; a PATTERNS menu in the window (`patternLibrary()`) that writes the steps only | `plugins/x0x` | `tests/test_x0x.cpp` (55 instrument x machine hits sound, end and stay finite; notes and GM map; bass drum tuning; grid timing, swing, accent, choke; SONG / FREE; loudness; random kits); screenshots |
 | **GLOSS**: seven machines with four controls each (`kMachineControls`), pitch envelope, glide, poly 8 / mono / legato, SVF with its own envelope, ADSR, drive soft / hard / fold at 2x, crush, width, LFO; a blob display drawn from the output | `plugins/gloss` | `tests/test_gloss.cpp` (every machine in tune at A2 and C4, the string to the cent; loudness; pitch envelope; poly / mono / legato; release; chip sync; bubbles chirp; random settings; CPU per machine); screenshots |
 
-All three are at about -20 dBFS RMS at VOLUME 0 dB (X0X's default kit and pattern about -18), have parameter ids
+| **BREAK** (asked for later the same day): a break chopper. Built-in breaks are scores in `BreakParams.hpp` (`kBreaks`: sixteenths for kick, snare with ghosts, hats, ride, toms; swing, room, tape, brightness, tightness) rendered by `BreakSounds.hpp` (an acoustic-style kit, a small Schroeder room, tape; three bars rendered with the same feel, the second kept and its first 3 ms crossfaded from the third's start, so it loops seamlessly; about 1.5 s for all fourteen, on a worker thread like PRISM's built-ins, retained / released by the plugins). Files: state "file" (stereo, 30 s, FILE LENGTH bars sets their tempo). 16 slices; per step slice / pitch / bend / level / decay / reverse; eight momentary effects (`fxN_hold` parameters are momentary, kPNoUndo; the window's pads and keys 1-8 go through an atomic; MIDI white keys from C-2); slices on MIDI white keys from C-4 | `plugins/break` | `tests/test_break.cpp` (lengths, seamless loops, levels; the straight chop reproduces the break; pitch, bend, decay, reverse, FIT; every effect; MIDI; SONG stop; random settings); screenshots |
+
+All four are at about -20 dBFS RMS at VOLUME 0 dB (X0X's default kit and pattern about -18), have parameter ids
 recorded in tests/data/param_ids.txt, run in `make tests-asan` (added to SAN_TESTS), and build as VST3 / CLAP here.
 Not tried in a DAW yet: the sequencers' song lock in Live and Renoise (the same `transport()` as GATE and LIFE), and the
 CLAP / VST3 / AU builds on Mac and Windows (CI builds them).

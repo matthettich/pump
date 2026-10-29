@@ -95,6 +95,10 @@ Instruments (MIDI in, stereo out):
   - **GLOSS** hyperpop synth — done (2026-10-29): seven machines (FM, sound chip, formant voice, supersaw, digital
     waves, plucked string, water drops), pitch envelope, drive / crush / width. Pink, a glossy blob. Later, maybe:
     COIL's modulation matrix, a second machine layered.
+  - **BREAK** break chopper — done (2026-10-29): fourteen built-in soul and funk breaks rendered by its own kit, or a
+    .wav; sixteen slices, a sixteen-step sequencer with a pitch and a volume envelope per step, eight momentary
+    effects. Later, maybe: transient-detected slices for files, 32 steps, per-step effects, time-stretch instead of
+    repitch.
 
 ## Instance List — planned, nice to have
 
