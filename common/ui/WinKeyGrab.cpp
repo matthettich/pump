@@ -77,8 +77,10 @@ LRESULT CALLBACK hookProc(int code, WPARAM wp, LPARAM lp)
     DWORD fgPid = 0;
     const DWORD fgThread = GetWindowThreadProcessId(fg, &fgPid);
     if (fgPid != g->ownPid && fgPid != g->hostPid && fgPid != g->ownerPid) return CallNextHookEx(gHook, code, wp, lp);
-    // the editor already has the keyboard: the window delivers keys as usual
-    if (GetFocus() == g->hwnd) return CallNextHookEx(gHook, code, wp, lp);
+    // Every key goes to the editor from here while the box is open, even when it looks focused: GetFocus() only
+    // answers for this thread's own input queue, so after takeFocus() it says "ours" while the keys are really going
+    // to the host's foreground thread (Renoise, sandboxed or not), which is why typing used to vanish there. Keeping
+    // the key from everyone and handing it over ourselves works either way, and can't type a letter twice.
 
     const bool ctrl = (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0;
     const bool shift = (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;

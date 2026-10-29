@@ -3,6 +3,9 @@
 // vowel chart, live), SCOPE. Below: the voice, its tone and the choir; vibrato, the envelope and the output; a keyboard.
 #include "ui/PumpUI.hpp"
 #include "ui/KeyboardUI.hpp"
+#include "FilePath.hpp"
+#include <cstdio>
+#include <filesystem>
 #include "PluginSing.hpp"
 
 START_NAMESPACE_DISTRHO
@@ -43,10 +46,14 @@ public:
         engSeg = addSegmented(kEngine, { "FORMANT", "VOICEBANK" });
         engSeg->tip = "Formant: SING's own voice. Voicebank: a recorded singer (the oto.ini voicebank layout) sings what it has, the formant voice the rest";
         genderD = dial(kGender, "GENDER", true, "Voicebank: moves the singer's formants up (+) or down (-) without changing the pitch");
-        loadBank = addButton("LOAD BANK", [this] { FileBrowserOptions op; op.title = "A voicebank: choose its oto.ini (or any file in its folder)"; openFileBrowser(op); });
+        loadBank = addButton("LOAD BANK", [this] { browsingText = false; FileBrowserOptions op; op.title = "A voicebank: choose its oto.ini (or any file in its folder)"; openFileBrowser(op); });
         loadBank->tip = "Load a voicebank: a folder of recorded syllables with an oto.ini (the oto.ini voicebank layout)";
         editBtn = addButton("EDIT", [this]() { editLyrics(); });
         editBtn->small = true; editBtn->tip = "Type new lyrics (Enter keeps them, Esc cancels; Cmd/Ctrl+V pastes)";
+        pasteBtn = addButton("PASTE", [this]() { pasteLyrics(); });
+        pasteBtn->small = true; pasteBtn->tip = "Use the text on the clipboard as the lyrics (copy them from any app; no typing here needed)";
+        openBtn = addButton("OPEN TXT", [this]() { browsingText = true; FileBrowserOptions op; op.title = "Lyrics: choose a text file (.txt)"; openFileBrowser(op); });
+        openBtn->small = true; openBtn->tip = "Load the lyrics from a text file; save the file again and SING picks up the change while this window is open";
         restartBtn = addButton("RESTART", [this]() { if (plug) plug->restartRequest.store(true); });
         restartBtn->small = true; restartBtn->tip = "Back to the first syllable (also when the host starts playing)";
 
@@ -66,12 +73,72 @@ protected:
         if ((i == kGlide || i == kVibDelay) && v < 0.5f) return "OFF";
         return PumpUI::formatParam(i, v);
     }
-    void onExtraState(const char* key, const char* value) override { if (std::strcmp(key, "lyrics") == 0) setText(value ? value : ""); }
+    void onExtraState(const char* key, const char* value) override
+    {
+        if (std::strcmp(key, "lyrics") == 0) setText(value ? value : "");
+        else if (std::strcmp(key, "lyrics_file") == 0) { textFile = value ? value : ""; textStamp = fileStamp(textFile); }
+    }
 
     void setText(const std::string& t) { text = t; syl = Lyrics::parse(t); }
+    // new lyrics from anywhere but the text box: kept in the session, sung from the first syllable
+    void useLyrics(const std::string& t)
+    {
+        setText(t);
+        setState("lyrics", t.c_str());
+        if (plug) plug->restartRequest.store(true);
+        repaint();
+    }
+    // Text from the clipboard or a file, as the text box takes it: printable ASCII; line breaks and tabs become spaces;
+    // a UTF-8 byte-order mark and Windows' curly quotes / dashes are tidied. (4000 characters, like the box.)
+    static std::string cleanLyrics(const std::string& in)
+    {
+        std::string out;
+        size_t i = in.compare(0, 3, "\xEF\xBB\xBF") == 0 ? 3 : 0;
+        for (; i < in.size() && out.size() < 4000; ++i)
+        {
+            const unsigned char c = (unsigned char)in[i];
+            if (c == 0xE2 && i + 2 < in.size() && (unsigned char)in[i + 1] == 0x80)   // ' ' " " - -
+            {
+                const unsigned char d = (unsigned char)in[i + 2];
+                const char rep = (d == 0x98 || d == 0x99) ? '\'' : (d == 0x9C || d == 0x9D) ? '"' : (d == 0x93 || d == 0x94) ? '-' : 0;
+                if (rep) { out.push_back(rep); i += 2; continue; }
+            }
+            if (c >= 32 && c < 127) out.push_back((char)c);
+            else if ((c == '\n' || c == '\r' || c == '\t') && !out.empty() && out.back() != ' ') out.push_back(' ');
+        }
+        while (!out.empty() && out.back() == ' ') out.pop_back();
+        return out;
+    }
+    void pasteLyrics()
+    {
+        size_t n = 0;
+        const char* d = static_cast<const char*>(getClipboard(n));
+        const std::string t = d && n ? cleanLyrics(std::string(d, n)) : std::string();
+        if (t.empty()) { setStatus("Nothing to paste: copy some text first"); return; }
+        useLyrics(t);
+        setStatus("Lyrics pasted");
+    }
+    static long long fileStamp(const std::string& path)
+    {
+        if (path.empty()) return 0;
+        std::error_code ec;
+        const auto t = std::filesystem::last_write_time(pump::utf8Path(path), ec);
+        return ec ? 0 : (long long)t.time_since_epoch().count();
+    }
+    bool loadLyricsFile(const std::string& path)
+    {
+        FILE* f = pump::fopenUtf8(path, "rb");
+        if (!f) return false;
+        std::string raw; char buf[4096]; size_t n;
+        while ((n = std::fread(buf, 1, sizeof buf, f)) > 0 && raw.size() < 65536) raw.append(buf, n);
+        std::fclose(f);
+        useLyrics(cleanLyrics(raw));
+        return true;
+    }
     void editLyrics()
     {
         openNameEntry(Rect(lyrR.x + 8, lyrR.b() - 34, lyrR.w - 16, 26), text, [this](const std::string& t) {
+            if (!textFile.empty()) { textFile.clear(); textStamp = 0; setState("lyrics_file", ""); }   // typed: no longer the file's
             setText(t);
             setState("lyrics", t.c_str());
             if (plug) plug->restartRequest.store(true);
@@ -82,6 +149,7 @@ protected:
     {
         const float top = 58, sh = 150, hm = Dial::heightFor(Dial::Medium);
         lyrR = Rect(14, top, 560, sh);
+        openBtn->r = Rect(lyrR.r() - 302, top + 6, 76, 18); pasteBtn->r = Rect(lyrR.r() - 222, top + 6, 68, 18);
         editBtn->r = Rect(lyrR.r() - 150, top + 6, 66, 18); restartBtn->r = Rect(lyrR.r() - 78, top + 6, 70, 18);
         vowR = Rect(586, top, 212, sh);
         scopeR = Rect(810, top, 150, sh);
@@ -113,6 +181,13 @@ protected:
     void tick(float dt) override
     {
         spreadD->enabled = widthD->enabled = value(kChoir) > 1.5f;
+        // the lyrics file, if one was opened: saved again (in any editor) -> sung from the top
+        if (!textFile.empty() && (watchT += dt) > 0.5f)
+        {
+            watchT = 0.0f;
+            const long long st = fileStamp(textFile);
+            if (st != 0 && st != textStamp) { textStamp = st; if (loadLyricsFile(textFile)) setStatus("Lyrics reloaded from the text file"); }
+        }
         if (!plug) return;
         for (int c = 0; c < 2; ++c)
         {
@@ -306,6 +381,7 @@ protected:
     std::vector<std::pair<std::string, std::string>> helpLines() override
     {
         return { { "Lyrics", "click the box (or EDIT), type, Enter; Cmd/Ctrl+V pastes" },
+                 { "PASTE / OPEN TXT", "take the lyrics from the clipboard or a text file, no typing in the host needed (a saved file updates)" },
                  { ", . ; ! ?", "a rest (that note is silent)" }, { "~", "hold the last vowel (a run over one word)" },
                  { "hel-lo", "split a word where you want the syllables" }, { "[HH AX L OW]", "spell the sounds directly" },
                  { "Mono", "overlapping notes slide to the next syllable" }, { "Poly", "a chord sings one syllable" } };
@@ -318,6 +394,16 @@ protected:
 
     void uiFileBrowserSelected(const char* filename) override
     {
+        if (browsingText)
+        {
+            browsingText = false;
+            if (!filename) return;
+            if (!loadLyricsFile(filename)) { setStatus("Couldn't open that file"); return; }
+            textFile = filename; textStamp = fileStamp(textFile);
+            setState("lyrics_file", filename);
+            setStatus("Lyrics from the file; save it again to update them");
+            return;
+        }
         if (!filename) return;
         setState("voicebank", filename);
         setParamGesture(kEngine, (float)kEngineBank);
@@ -332,7 +418,11 @@ private:
     Segmented* engSeg;
     Button* loadBank;
     Segmented* modeSeg;
-    Button *editBtn, *restartBtn;
+    Button *editBtn, *restartBtn, *pasteBtn, *openBtn;
+    bool browsingText = false;   // the file browser is open for a lyrics file (not a voicebank)
+    std::string textFile;        // the lyrics file being watched ("" none)
+    long long textStamp = 0;
+    float watchT = 0.0f;
     KeyboardUI keyboard;
     bool kbDown = false;
     std::string text;

@@ -113,6 +113,20 @@ int main()
         e.process(L.data(), R.data(), 24000, &on, 1);
         const double f = freqOf(L, 2400, 24000);
         CHECK(std::fabs(1200 * std::log2(f / 440.0)) < 3.0, "MIDI note 38 plays tone 3 at its pitch A4: %.2f Hz", f);
+        {
+            Engine w; w.setSettings(s); w.prepare(kSr, 256);
+            std::vector<float> L2(24000), R2(24000);
+            synth::Midi e4 { 0, 0x90, 52, 110 };   // E-4 (Renoise), the third white key from 48
+            w.process(L2.data(), R2.data(), 24000, &e4, 1);
+            const double f2 = freqOf(L2, 2400, 24000);
+            CHECK(std::fabs(1200 * std::log2(f2 / 440.0)) < 3.0, "E-4 (52) plays tone 3 too: %.2f Hz", f2);
+            Engine b; b.setSettings(s); b.prepare(kSr, 256);
+            synth::Midi blk { 0, 0x90, 49, 110 };
+            std::fill(L2.begin(), L2.end(), 0.0f);
+            b.process(L2.data(), R2.data(), 24000, &blk, 1);
+            double pk = 0; for (float v : L2) pk = std::max(pk, (double)std::fabs(v));
+            CHECK(pk < 1e-4, "a black key between them (49) plays nothing: peak %.2g", pk);
+        }
         // the parabolic sine: harmonics small (3rd about -40 dB)
         Settings k = quiet(); k.tone[0].pitch = 45; k.tone[0].kick = 1.0; k.tone[0].decay = 1.0;
         Engine g; g.setSettings(k); g.prepare(kSr, 256);

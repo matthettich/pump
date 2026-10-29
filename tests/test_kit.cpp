@@ -124,7 +124,7 @@ int main()
         {
             int ok = 0;
             for (int p = 0; p < kPads; ++p) { double off; if (padForNote(noteForPad(p), off) == p && off == 0.0) ++ok; }
-            double o1, o2; const int t1 = padForNote(41, o1), t2 = padForNote(50, o2);
+            double o1, o2; const int t1 = padForNote(41, o1), t2 = padForNote(47, o2);
             CHECK(ok == kPads && t1 == 5 && t2 == 5 && o1 < 0 && o2 > 0, "every pad's own note reaches it; low and high toms play the tom pad lower and higher");
         }
         if (sr != 48000.0) continue;
@@ -169,11 +169,12 @@ int main()
         // the pads in order on the white keys up from C4 (60); the General MIDI drum notes still play the same pads, the same
         bool order = true;
         for (int p = 0; p < kPads; ++p) order = order && kPadInfo[p].note == whiteKeyNote(p);
-        CHECK(order, "pads on C4 D4 E4 F4 G4 A4 B4 C5 (the white keys from 60)");
-        static const int gm[kPads] = { 36, 38, 39, 42, 46, 45, 37, 49 };
+        CHECK(order && kPadInfo[0].note == 48, "pads on C-4 D-4 E-4 F-4 G-4 A-4 B-4 C-5 (Renoise's names: the white keys from 48)");
+        static const int gm[kPads] = { 36, 38, 39, 42, 46, 45, 37, -1 };   // the cymbal has none below the pads
         bool allNew = true, allGm = true, same = true;
         for (int p = 0; p < kPads; ++p)
         {
+            if (gm[p] < 0) continue;
             std::vector<float> out[2];
             for (int pass = 0; pass < 2; ++pass)
             {
@@ -190,8 +191,11 @@ int main()
         CHECK(allNew, "each new note plays its pad, and only that pad");
         CHECK(allGm, "each General MIDI drum note (older patterns) still plays the same pad");
         CHECK(same, "a pad sounds the same from its new note and its old one");
-        double o1, o2; const int t1 = padForNote(41, o1), t2 = padForNote(50, o2);
-        CHECK(t1 == 5 && t2 == 5 && o1 < 0 && o2 > 0, "the toms 41-50 still play the tom pad at their own pitches");
+        double o1, o2; const int t1 = padForNote(41, o1), t2 = padForNote(47, o2);
+        CHECK(t1 == 5 && t2 == 5 && o1 < 0 && o2 > 0, "the toms 41-47 still play the tom pad at their own pitches");
+        double o3; bool black = true;
+        for (int n : { 49, 51, 54, 56, 58, 61, 62 }) black = black && padForNote(n, o3) < 0;
+        CHECK(black, "the black keys between the pads (and the notes past them) play nothing");
     }
     if (fails) { printf("%d failure(s)\n", fails); return 1; }
     printf("all passed\n");

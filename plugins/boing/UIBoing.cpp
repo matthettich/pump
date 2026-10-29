@@ -174,9 +174,8 @@ protected:
         fillRect(bar, withAlpha2(theme.ink, 0.15f));
         fillRect(Rect(bar.x, bar.y, bar.w * bl / 100.0f, bar.h), g > 0.45f ? theme.neonInk : theme.ink);
         // the note that plays it: name and number
-        static const char* const nn[12] = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
         const int note = kPadInfo[p].note;
-        std::snprintf(b, sizeof b, "%s%d", nn[note % 12], note / 12 - 1);
+        pump::padNoteName(note, b);   // as Renoise writes it (C-4 = 48)
         textAt(r.x + 8, r.b() - 10, b, kMono, 10.0f, ink, ALIGN_LEFT | ALIGN_MIDDLE);
         std::snprintf(b, sizeof b, "%d", note);
         textAt(r.r() - 8, r.b() - 10, b, kMono, 9.0f, g > 0.45f ? theme.neonInk : theme.ink2, ALIGN_RIGHT | ALIGN_MIDDLE);
@@ -227,7 +226,7 @@ protected:
     }
     std::vector<std::pair<std::string, std::string>> helpLines() override
     {
-        return { { "Click a pad / keys 1-8", "play it and edit it (higher in the pad = harder)" }, { "MIDI", "C4 up the white keys (C4 kick, D4 snare, E4 clap ... C5 cymbal); General MIDI drum notes too" },
+        return { { "Click a pad / keys 1-8", "play it and edit it (higher in the pad = harder)" }, { "MIDI", "C-4 (48) up the white keys: C-4 kick, D-4 snare, E-4 clap ... C-5 cymbal; the General MIDI drum notes below play them too" },
                  { "BLEND", "0 = the analog voice, 100 = the spring" } };
     }
     std::string footerInfo() override

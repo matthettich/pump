@@ -173,7 +173,7 @@ protected:
 
     void drawBody() override
     {
-        drawTube(); drawWaveOverlay(overlay, Rect(tubeR.x + 8, tubeR.y + tubeR.h * 0.56f - tubeR.h * 0.35f, tubeR.w - 16, tubeR.h * 0.7f), pump::hexColor(0x3FB878), pump::hexColor(0x7FE3A8)); drawVowel(); drawWave();
+        drawTube(); drawWaveOverlay(overlay, Rect(tubeR.x + 8, tubeR.y + tubeR.h * 0.56f - tubeR.h * 0.35f, tubeR.w - 16, tubeR.h * 0.7f)); drawVowel(); drawWave();
         drawOutMeter(outMeter, meterL, meterR);
         auto panel = [&](const Rect& r, const char* c) { strokeRect(r, theme.dim, 1.0f); caption(r.x + 12, r.y + 16, c); };
         panel(srcPanel, "VOICE SOURCE"); panel(trPanel, "TRACT"); panel(ensPanel, "ENSEMBLE"); panel(envPanel, "ENVELOPE"); panel(voicePanel, "VOICE");
@@ -222,7 +222,7 @@ protected:
 private:
     static constexpr int kWave = 1024;
     PluginTract* plug = nullptr;
-    WaveOverlay overlay;   // the output over the tract in light green
+    WaveOverlay overlay;   // the output over the tract, a thin line in the second colour
     Rect tubeR, vowelR, waveR, meterL, meterR, srcPanel, trPanel, ensPanel, envPanel, voicePanel;
     Segmented* vmodeSeg;
     Dial *tenseD, *breathD, *vibD, *vrateD, *jitD, *vowelD, *motionD, *mrateD, *sizeD, *brightD, *singersD, *detuneD, *sizesD, *vowelsD, *spreadD;

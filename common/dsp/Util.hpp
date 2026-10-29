@@ -52,17 +52,30 @@ constexpr int kAnalyzerRing = 1 << 16;
 
 template <typename T> inline T clampv(T v, T lo, T hi) { return v < lo ? lo : (v > hi ? hi : v); }
 
-// The drum plugins' pads (KIT, BOING, STRIKE, MACHINE) sit in order on the white keys up from C4 (60):
-// C4 D4 E4 F4 G4 A4 B4 C5 D5 ... so a keyboard plays kick, snare, clap, hat... one white key each.
+// The drum plugins' pads (KIT, BOING, STRIKE, MACHINE, LIFE, CHOP) sit in order on the white keys up from C-4 as
+// Renoise names it, MIDI note 48: C-4 D-4 E-4 F-4 G-4 A-4 B-4 C-5, so a keyboard plays kick, snare, clap, hat... one
+// white key each. (Renoise numbers octaves from 0 at MIDI 0, so its C-4 is 48; Live and Logic call 48 C2, other hosts
+// C3.) The pads print their note the Renoise way (padNoteName) with the MIDI number beside it, so it can be found in
+// any host.
+constexpr int kPadBaseNote = 48;
 constexpr int kWhiteKeySteps[7] = { 0, 2, 4, 5, 7, 9, 11 };   // semitones above C of C D E F G A B
-constexpr int whiteKeyNote(int i) { return 60 + 12 * (i / 7) + kWhiteKeySteps[i % 7]; }
-// the pad (index) a note's white key is, or -1 for a black key / below C4
+constexpr int whiteKeyNote(int i) { return kPadBaseNote + 12 * (i / 7) + kWhiteKeySteps[i % 7]; }
+// the pad (index) a note's white key is, or -1 for a black key / below the first pad
 constexpr int whiteKeyIndex(int note)
 {
-    if (note < 60) return -1;
-    const int o = (note - 60) / 12, k = (note - 60) % 12;
+    if (note < kPadBaseNote) return -1;
+    const int o = (note - kPadBaseNote) / 12, k = (note - kPadBaseNote) % 12;
     const int i = k == 0 ? 0 : k == 2 ? 1 : k == 4 ? 2 : k == 5 ? 3 : k == 7 ? 4 : k == 9 ? 5 : k == 11 ? 6 : -1;
     return i < 0 ? -1 : o * 7 + i;
+}
+// a pad's note as Renoise writes it: "C-4", "C#4" (MIDI 48 = C-4). buf: at least 5 chars
+inline const char* padNoteName(int note, char* buf)
+{
+    static const char* const nn[12] = { "C-", "C#", "D-", "D#", "E-", "F-", "F#", "G-", "G#", "A-", "A#", "B-" };
+    note = clampv(note, 0, 127);
+    buf[0] = nn[note % 12][0]; buf[1] = nn[note % 12][1]; buf[2] = (char)('0' + note / 12); buf[3] = 0;
+    if (note >= 120) { buf[2] = '1'; buf[3] = '0'; buf[4] = 0; }
+    return buf;
 }
 
 // One-pole coefficient for a time constant in seconds (reaches 1 - 1/e after `seconds`).

@@ -14,7 +14,7 @@
 // (x * X-WRAP + y * Y-WRAP + COLOUR) mod 8. LOOP: the board is the pattern evolved OFFSET + (step mod LENGTH)
 // generations, so it repeats exactly with the song; EVOLVE: it runs on from the pattern while the host plays (back
 // to the pattern when the host starts, or when it dies or stalls, with RESEED); FREE: the same at the host tempo,
-// whether or not the host plays. MIDI notes 36-43 play the voices directly.
+// whether or not the host plays. MIDI notes C-4 (48) up the white keys play the voices directly (36-43 too).
 #pragma once
 
 #include "dsp/Synth.hpp"
@@ -277,7 +277,14 @@ private:
     void handle(const synth::Midi& m)
     {
         const uint8_t st = m.status & 0xF0;
-        if (st == 0x90 && m.d2 > 0 && m.d1 >= 36 && m.d1 < 36 + kTones) hit(m.d1 - 36, m.d2 / 127.0);
+        if (st == 0x90 && m.d2 > 0)
+        {
+            // the voices' own notes: Renoise's C-4 (48) up the white keys, like the drum plugins' pads; the old run of
+            // 36-43 still plays them too, so older patterns keep working
+            const int w = whiteKeyIndex(m.d1);
+            if (w >= 0 && w < kTones) hit(w, m.d2 / 127.0);
+            else if (m.d1 >= 36 && m.d1 < 36 + kTones) hit(m.d1 - 36, m.d2 / 127.0);
+        }
     }
 
     void control()

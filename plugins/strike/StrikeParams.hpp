@@ -37,8 +37,8 @@ enum PadField : int { kEngine = 0, kPitch, kDecay, kTone, kCharA, kCharB, kBend,
 constexpr int pp(int pad, int field) { return pad * kPerPad + field; }
 enum KitParam : int { kChoke = kPads * kPerPad, kVelocity, kDrive, kVolume, kFollow, kNumParams };
 
-// The pads play in order on the white keys up from C4 (60): C4 D4 E4 F4 G4 A4 B4 C5 (whiteKeyNote). The General MIDI drum notes
-// (36 kick, 38 snare...) still play them too: see Engine::midi.
+// The pads play in order on the white keys up from Renoise's C-4 (MIDI 48): C-4 D-4 E-4 F-4 G-4 A-4 B-4 C-5 (whiteKeyNote).
+// The General MIDI drum notes below them (36 kick, 38 snare...) still play too.
 struct PadInfo { const char* sym; const char* name; const char* key; int note; int engine; float pitch, decay, tone, a, b, bend, bendT, noise, level, pan; };
 static const PadInfo kPadInfo[kPads] = {
     { "kick",  "Kick",       "KICK",   whiteKeyNote(0), kCircuit,  33, 520, 40, 35,  0, 14, 45,  0,  0,   0 },

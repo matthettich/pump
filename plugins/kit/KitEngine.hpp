@@ -20,12 +20,14 @@ struct Settings {
     double kitDrive = 0.0, velocity = 0.6, humanize = 0.0, volumeDb = -6.0;
 };
 
-// which pad a note plays, and at what pitch offset (semitones); -1 = none. The pads' own notes (C4 up the white keys,
-// 60-72) first; then the General MIDI drum notes (the pads' notes before 2026-10-27, so older patterns still play)
+// which pad a note plays, and at what pitch offset (semitones); -1 = none. The pads' own notes (Renoise's C-4 up the
+// white keys, 48-60) first; then, below them, the General MIDI drum notes, so older patterns still play. The black keys
+// between the pads stay silent.
 inline int padForNote(int note, double& offset)
 {
     offset = 0.0;
     for (int p = 0; p < kPads; ++p) if (kPadInfo[p].note == note) return p;
+    if (note >= kPadBaseNote) return -1;
     switch (note)
     {
     case 35: case 36: return 0;
@@ -37,13 +39,7 @@ inline int padForNote(int note, double& offset)
     case 43: offset = -3; return 5;
     case 45: return 5;
     case 47: offset = 2; return 5;
-    case 48: offset = 5; return 5;
-    case 50: offset = 7; return 5;
     case 37: return 6;
-    case 56: offset = 5; return 6;
-    case 49: case 57: return 7;
-    case 51: case 59: offset = -2; return 7;
-    case 52: case 55: offset = 1; return 7;
     default: return -1;
     }
 }

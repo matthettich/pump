@@ -160,7 +160,7 @@ int main()
         // the black keys left of the old run up from 60 (61, 63) still play theirs; 65 and 67 are pads' own notes now
         bool order = true;
         for (int p = 0; p < kPads; ++p) order = order && kPadInfo[p].note == whiteKeyNote(p);
-        CHECK(order, "pads on C4 D4 E4 F4 G4 A4 B4 C5 (the white keys from 60)");
+        CHECK(order && kPadInfo[0].note == 48, "pads on C-4 D-4 E-4 F-4 G-4 A-4 B-4 C-5 (Renoise's names: the white keys from 48)");
         auto plays = [](int note) {   // the one pad a note plays, -1 for none, -2 for more than one
             Settings s; Engine* e = fresh(s);
             const uint32_t before = e->lastHit();
@@ -172,13 +172,12 @@ int main()
             const uint32_t n = (after >> 8) - (before >> 8);
             return n == 0 ? -1 : n == 1 ? (int)(after & 0xFF) : -2;
         };
-        static const int gm[kPads] = { 36, 38, 37, 43, 48, 42, 46, 49 };
+        static const int gm[kPads] = { 36, 38, 37, 43, 47, 42, 46, -1 };   // the cymbal has none below the pads
         bool allNew = true, allGm = true;
-        for (int p = 0; p < kPads; ++p) { allNew = allNew && plays(kPadInfo[p].note) == p; allGm = allGm && plays(gm[p]) == p; }
+        for (int p = 0; p < kPads; ++p) { allNew = allNew && plays(kPadInfo[p].note) == p; allGm = allGm && (gm[p] < 0 || plays(gm[p]) == p); }
         CHECK(allNew, "each new note plays its pad, and only that pad");
         CHECK(allGm, "each General MIDI drum note (older patterns) still plays the same pad");
-        CHECK(plays(61) == 1 && plays(63) == 3 && plays(65) == 3 && plays(67) == 4, "61 and 63 (left of the old run up from 60) still play their pads; 65 and 67 play F4 and G4's");
-        CHECK(plays(59) == -1 && plays(75) == -1 && plays(70) == -1 && plays(73) == -1, "other notes play nothing");
+        CHECK(plays(49) == -1 && plays(51) == -1 && plays(54) == -1 && plays(61) == -1 && plays(62) == -1 && plays(72) == -1, "the black keys between the pads, and notes past them, play nothing");
     }
     printf("== random settings\n");
     {

@@ -569,8 +569,10 @@ public:
             show += (target - show) * std::min(1.0f, dt * (target > show ? 20.0f : 4.0f));
         }
     };
+    // The output drawn over a display as one thin plain line (no glow or outline) in the plugin's complementary colour
+    // (theme.second), so it stands apart from everything else on the screen.
     // win: samples across the width (1024 ≈ 5 cycles at 220 Hz); height: the peak as a fraction of the rect's height
-    void drawWaveOverlay(WaveOverlay& w, const Rect& p, const Color& light, const Color& dark, int win = 1024, float height = 0.42f)
+    void drawWaveOverlay(WaveOverlay& w, const Rect& p, int win = 1024, float height = 0.42f)
     {
         if (w.show < 0.01f) return;
         win = pump::clampv(win, 64, WaveOverlay::kN / 2);
@@ -581,7 +583,7 @@ public:
         for (int i = 0; i < win; ++i) mx = std::max(mx, std::fabs(w.buf[start + i]));
         const float want = 1.0f / mx;
         w.scale = want < w.scale ? want : w.scale + (want - w.scale) * 0.05f;
-        const Color c = theme.dark ? dark : light;
+        const Color c = theme.second;
         const int step = std::max(1, win / std::max(64, (int)p.w));
         save(); scissor(p.x, p.y, p.w, p.h);
         beginPath();
@@ -591,8 +593,7 @@ public:
             if (i == 0) moveTo(x, y); else lineTo(x, y);
         }
         lineJoin(ROUND); lineCap(ROUND);
-        strokeColor(withAlpha2(c, 0.28f * w.show)); strokeWidth(6.0f); stroke();
-        strokeColor(withAlpha2(c, w.show)); strokeWidth(2.0f); stroke();
+        strokeColor(withAlpha2(c, w.show)); strokeWidth(1.25f); stroke();
         restore();
     }
     void drawLevelMeter(const Rect& r, float levelDb, float peakDb, float dbMin = -60.0f, float dbMax = 6.0f)

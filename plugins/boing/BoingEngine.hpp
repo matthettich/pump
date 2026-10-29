@@ -180,10 +180,10 @@ private:
         const uint8_t st = m.status & 0xF0;
         if (st != 0x90 || m.d2 == 0) return;
         for (int p = 0; p < kPads; ++p) if (kPadInfo[p].note == m.d1) { start(p, m.d2 / 127.0); return; }
-        // the General MIDI drum notes (the pads' notes before 2026-10-27, so older patterns still play), and a few
-        // common alternatives: 35 kick, 40 snare, 41/45/47 low toms, 50 high tom, 44 pedal hat, 51/57 cymbals
-        static const int alt[][2] = { { 36, 0 }, { 38, 1 }, { 39, 2 }, { 43, 3 }, { 48, 4 }, { 42, 5 }, { 46, 6 }, { 49, 7 },
-                                      { 35, 0 }, { 40, 1 }, { 41, 3 }, { 45, 3 }, { 47, 4 }, { 50, 4 }, { 44, 5 }, { 51, 7 }, { 57, 7 } };
+        // below the pads, the General MIDI drum notes (so older patterns still play) and a few common alternatives:
+        // 35 kick, 40 snare, 41/45 low toms, 47 high tom, 44 pedal hat. The black keys between the pads stay silent.
+        static const int alt[][2] = { { 36, 0 }, { 38, 1 }, { 39, 2 }, { 43, 3 }, { 42, 5 }, { 46, 6 },
+                                      { 35, 0 }, { 40, 1 }, { 41, 3 }, { 45, 3 }, { 47, 4 }, { 44, 5 } };
         for (const auto& a : alt) if (a[0] == m.d1) { start(a[1], m.d2 / 127.0); return; }
     }
     double hz(const Pad& d, const PadSettings& s) const { return synth::midiToHz(s.pitch + s.bend * d.benv); }

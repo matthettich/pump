@@ -284,7 +284,7 @@ protected:
     void drawBody() override
     {
         drawObject();
-        drawWaveOverlay(overlay, Rect(objR.x + 10, objR.y + objR.h * 0.55f - objR.h * 0.38f, objR.w - 20, objR.h * 0.76f), pump::hexColor(0xF0806F), pump::hexColor(0xFF9D8F));
+        drawWaveOverlay(overlay, Rect(objR.x + 10, objR.y + objR.h * 0.55f - objR.h * 0.38f, objR.w - 20, objR.h * 0.76f));
         drawModes();
         drawOutMeter(outMeter, meterL, meterR);
         auto panel = [&](const Rect& r, const char* c) { strokeRect(r, theme.dim, 1.0f); caption(r.x + 12, r.y + 13, c); };
@@ -342,7 +342,7 @@ protected:
 
 private:
     PluginModal* plug = nullptr;
-    WaveOverlay overlay;   // the output over the object in light coral
+    WaveOverlay overlay;   // the output over the object, a thin line in the second colour
     Rect objR, modesR, meterL, meterR, objPanel, exPanel, voicePanel;
     Segmented *modelSeg, *exSeg, *vmodeSeg;
     Dial *modesD, *matD, *decayD, *dampD, *brightD, *stretchD, *posD, *hardD, *noiseD, *pressD, *vibD, *rateD;

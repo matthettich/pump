@@ -31,8 +31,8 @@ static const char* const kWaveKeys[] = { "SINE", "TRI", "FOLD", "SQUARE", "SAW",
 static const char* const kOnOff[] = { "Off", "On" };
 
 struct PadInfo { const char* sym; const char* name; const char* label; int note; float tank, wave, blend, pitch, decay, harm, spread, drip, bend, bendT, noise, ntone, click, hits, level, pan, send; };
-// The pads play in order on the white keys up from C4 (60): C4 D4 E4 F4 G4 A4 B4 C5 (whiteKeyNote). The General MIDI drum notes
-// (36 kick, 38 snare...) still play them too.
+// The pads play in order on the white keys up from Renoise's C-4 (MIDI 48): C-4 D-4 E-4 F-4 G-4 A-4 B-4 C-5 (whiteKeyNote).
+// The General MIDI drum notes below them (36 kick, 38 snare...) still play too.
 static const PadInfo kPadInfo[kPads] = {
     { "kick",  "Kick",       "KICK",   whiteKeyNote(0), 3, kSine,  45, 33, 450,  40,   0, 30, 24, 40,  0, 30, 40, 1,   0,   0,  5 },
     { "snare", "Snare",      "SNARE",  whiteKeyNote(1), 2, kTri,   70, 50, 260,   0,  30, 70,  7, 20, 70, 65, 50, 1,  -2,   0, 20 },

@@ -50,7 +50,7 @@ inline const std::vector<ParamSpec>& params()
         v.push_back({ s(sy + "_fx"), s(nm + " Effect"), "FX", 0, kNumFx - 1, kFxNone, PUnit::None, PScale::Linear, I, kFxNames, 1 });
         v.push_back({ s(sy + "_fx_amount"), s(nm + " Effect Amount"), "Amount", 0, 100, 50, PUnit::Percent, PScale::Linear, A, nullptr, 1 });
         v.push_back({ s(sy + "_level"), s(nm + " Level"), "Level", -24, 6, 0, PUnit::dB, PScale::Linear, A, nullptr, 1 });
-        v.push_back({ s(sy + "_note"), s(nm + " MIDI Note"), "Note", 0, 127, (float)(48 + p), PUnit::None, PScale::Linear, kPInteger, nullptr, 1 });
+        v.push_back({ s(sy + "_note"), s(nm + " MIDI Note"), "Note", 0, 127, (float)whiteKeyNote(p), PUnit::None, PScale::Linear, kPInteger, nullptr, 1 });
         v.push_back({ s(sy + "_key"), s(nm + " Key"), "Key", 0, 127, (float)('1' + p), PUnit::None, PScale::Linear, kPInteger, nullptr, 1 });
     }
     v.push_back({ "slices", "Slices", "Slices", 0, 1, 0, PUnit::None, PScale::Linear, I, kSliceCountNames, 1 });

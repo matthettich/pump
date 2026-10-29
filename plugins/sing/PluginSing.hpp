@@ -12,7 +12,7 @@ using namespace pump::sing;
 
 class PluginSing : public PumpPlugin {
 public:
-    PluginSing() : PumpPlugin(params().data(), kNumParams, &presets(), 2)
+    PluginSing() : PumpPlugin(params().data(), kNumParams, &presets(), 3)
     {
         sync();
         engine.prepare(getSampleRate(), (int)getBufferSize()); outLimit.prepare(getSampleRate());
@@ -40,6 +40,7 @@ protected:
     void initState(uint32_t index, State& state) override
     {
         if (index < kPumpNumStates) { PumpPlugin::initState(index, state); return; }
+        if (index - kPumpNumStates == 2) { state.key = "lyrics_file"; state.label = "Lyrics File"; state.defaultValue = ""; return; }   // OPEN TXT: watched by the UI
         if (index - kPumpNumStates == 1) { state.key = "voicebank"; state.label = "Voicebank"; state.defaultValue = ""; state.hints = kStateIsFilenamePath; return; }
         state.key = "lyrics";
         state.label = "Lyrics";
@@ -48,6 +49,7 @@ protected:
     void setState(const char* key, const char* value) override
     {
         if (std::strcmp(key, "lyrics") == 0) { lyrics = value ? value : ""; engine.setLyrics(lyrics); return; }
+        if (std::strcmp(key, "lyrics_file") == 0) { lyricsFile = value ? value : ""; return; }
         if (std::strcmp(key, "voicebank") == 0)
         {
             // read here (not on the audio thread); every bank loaded is kept until the plugin goes
@@ -75,6 +77,7 @@ protected:
     {
         if (std::strcmp(key, "lyrics") == 0) return String(lyrics.c_str());
         if (std::strcmp(key, "voicebank") == 0) return String(bankPath.c_str());
+        if (std::strcmp(key, "lyrics_file") == 0) return String(lyricsFile.c_str());
         return PumpPlugin::getState(key);
     }
 
@@ -138,7 +141,7 @@ protected:
 
 private:
     pump::synth::Midi midi[512 + 64] = {}, uiKeys[64] = {};
-    std::string lyrics = kDefaultLyrics, testNotes, bankPath, bankMsg;
+    std::string lyrics = kDefaultLyrics, testNotes, bankPath, bankMsg, lyricsFile;
     pump::Retained<Bank> banks;   // the loaded voicebank (freed once the audio thread has moved on)
     mutable std::mutex bankLock;
     double testWait = 0.0;

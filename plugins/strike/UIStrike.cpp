@@ -133,151 +133,136 @@ protected:
         for (int i = 0; i < kScopeN; ++i) scope[i] = plug->engine.outRing.at(end - (uint32_t)kScopeN + (uint32_t)i);
     }
 
-    // the pad's engine, moving as it rings (e: 0 quiet .. 1 just hit). Each engine draws what it does physically.
+    // The pad's engine as ORBIT draws its attractors: a path through the engine's own phase space, turning slowly in
+    // 3-D, traced by a bright head with a comet trail (older parts thinner and fainter) while the pad rings; the whole
+    // path stays faintly in view when it's quiet. e: 0 quiet .. 1 just hit. Each engine's path is what it does:
+    //  MODAL   a rim flexing in its first modes (CHAR A: membrane round, plate square, bar long, bell squat and deep)
+    //  STRING  the standing wave, its first three harmonics swinging out of the plane
+    //  CIRCUIT the resonator's ring-down: a spiral falling into the centre, a tight coil when quiet
+    //  FM      carrier against modulator, a knot that tangles as the index opens (CHAR A: RATIO sets its lobes)
+    //  WEST    a sine round the folder, folding over on itself harder with FOLD (CHAR A) and the level
+    //  ADDITIVE the inharmonic partials summed as a spirograph, more of them with DENSITY (CHAR A)
+    //  CHAOS   the Lorenz attractor itself
     void drawMotion(int p, const Rect& a, float e)
     {
         const int eng = pump::clampv((int)value(pp(p, kEngine)), 0, kNumEngines - 1);
         const float ca = value(pp(p, kCharA)) * 0.01f, t = anim, seed = p * 1.3f;
-        const float cx = a.cx(), cy = a.cy(), R = std::min(a.w, a.h) * 0.42f;
+        const float cx = a.cx(), cy = a.cy(), sc = std::min(a.w * 0.36f, a.h * 0.44f);
+        const float pi = 3.14159265f, tau = 2.0f * pi;
+        const int obj = std::min(3, (int)(ca * 4.0f));
+        const float ratio = 1.0f + std::round(ca * 4.0f), ix = 0.6f + 3.4f * e, drive = 0.9f + (1.5f + 4.0f * ca) * e;
+        const int nPart = 3 + (int)(ca * 5.0f);
+        const auto& L = lorenz();
+        auto wrap = [](float v, float m) { const float r = std::fmod(v, m); return r < 0.0f ? r + m : r; };
+        // the point of the engine's path at s (one lap = tau; CHAOS: along the attractor)
+        auto at = [&](float s, float& x, float& y, float& z) {
+            switch (eng)
+            {
+            case kModal:
+            {
+                const float th = s, d = 0.12f + 0.88f * e;
+                float r = 1.0f + d * (0.26f * std::cos(2 * th + seed) * std::cos(t * 11) + 0.14f * std::cos(3 * th) * std::cos(t * 17 + seed));
+                if (obj == 1) r /= std::max(std::fabs(std::cos(th)), std::fabs(std::sin(th))) * 1.15f;
+                const float sx = obj == 2 ? 1.5f : 1.0f, sy = obj == 2 ? 0.28f : obj == 3 ? 0.72f : 1.0f;
+                x = r * std::cos(th) * sx; z = r * std::sin(th) * sy;
+                y = d * 0.55f * std::sin(2 * th + seed) * std::cos(t * 11) + (obj == 3 ? 0.35f * (1.0f - std::fabs(std::cos(th))) : 0.0f);
+                break;
+            }
+            case kString:
+            {
+                const float u = 0.5f + 0.5f * std::sin(s), d = 0.1f + 0.9f * e;   // back and forth along the string
+                x = (u - 0.5f) * 2.6f;
+                y = -d * (std::sin(pi * u) * std::cos(t * 9) + 0.45f * std::sin(2 * pi * u) * std::cos(t * 15 + 1) + 0.25f * std::sin(3 * pi * u) * std::cos(t * 21 + 2));
+                z = d * 0.8f * (std::sin(pi * u) * std::sin(t * 9) - 0.4f * std::sin(2 * pi * u) * std::sin(t * 15));
+                break;
+            }
+            case kCircuit:
+            {
+                const float k = wrap(s, tau) / tau;                    // one ring-down per lap: 7 turns, falling inwards
+                const float r = (0.12f + 0.88f * e) * std::exp(-2.6f * k), th = k * 7.0f * tau - t * 4.0f;
+                x = r * std::cos(th) * 1.3f; z = r * std::sin(th); y = 0.9f * (k - 0.5f) * (0.3f + 0.7f * e);
+                break;
+            }
+            case kFm:
+            {
+                const float amp = 0.3f + 0.7f * e;
+                x = amp * 1.2f * std::sin(s); y = amp * std::sin(ratio * s + ix * std::sin(3 * s + t * 2)); z = amp * std::cos(s + 0.6f * std::sin(ratio * s));
+                break;
+            }
+            case kWest:
+            {
+                float v = std::sin(1.5f * s + t * 3) * drive;
+                for (int k = 0; k < 8 && (v > 1.0f || v < -1.0f); ++k) v = v > 1.0f ? 2.0f - v : -2.0f - v;
+                const float amp = 0.35f + 0.65f * e;
+                x = 1.25f * std::cos(s); z = std::sin(s); y = -amp * 0.9f * v;
+                break;
+            }
+            case kAdditive:
+            {
+                x = y = z = 0.0f; float tot = 0.0f;
+                for (int i = 0; i < nPart; ++i)
+                {
+                    const float f = 1.0f + i * (1.41f + 0.37f * hash01(i + p * 7)), a0 = 1.0f / (1.0f + 0.8f * i);
+                    const float ph = f * s + t * (0.5f + i * 0.3f);
+                    x += a0 * std::cos(ph); z += a0 * std::sin(ph); y += a0 * std::sin(f * 0.5f * s - t) * 0.6f; tot += a0;
+                }
+                const float amp = (0.35f + 0.65f * e) * 1.15f / tot;
+                x *= amp; y *= amp; z *= amp;
+                break;
+            }
+            default:
+            {
+                const float n = (float)L.size(), u = wrap(s / tau * 0.25f, 1.0f) * (n - 1);
+                const int i0 = std::min((int)u, (int)n - 1); const float fr = u - i0; const int i1 = std::min((int)n - 1, i0 + 1);
+                const float amp = 0.45f + 0.55f * e;
+                x = amp * 1.3f * (L[(size_t)i0][0] * (1 - fr) + L[(size_t)i1][0] * fr);
+                y = amp * (L[(size_t)i0][1] * (1 - fr) + L[(size_t)i1][1] * fr);
+                z = amp * 1.3f * (L[(size_t)i0][2] * (1 - fr) + L[(size_t)i1][2] * fr);
+                break;
+            }
+            }
+        };
+        // turning slowly about the vertical, tipped toward the viewer, with a little perspective (as ORBIT)
+        const float rot = t * 0.35f + seed, cr = std::cos(rot), sr = std::sin(rot), tilt = 0.42f, ct = std::cos(tilt), st = std::sin(tilt);
+        auto proj = [&](float s, float& X, float& Y, float& D) {
+            float x, y, z; at(s, x, y, z);
+            const float x1 = x * cr + z * sr, z1 = -x * sr + z * cr;
+            const float y2 = y * ct - z1 * st, z2 = y * st + z1 * ct;
+            const float k = 1.0f / (1.0f + 0.18f * z2);
+            X = cx + sc * x1 * k; Y = cy + sc * y2 * k; D = z2;
+        };
+        const bool chaos = eng == kChaos;
+        const float lap = chaos ? 4.0f * tau : tau;                         // the whole path (CHAOS: the attractor)
+        const float speed = chaos ? 2.4f : eng == kCircuit ? 0.9f : eng == kString ? 2.2f : 1.6f;
+        const float head = t * speed * (0.6f + 0.8f * e) + seed;
         const Color hot = pump::mixColor(theme.neon, theme.ink, theme.dark ? 0.0f : 0.45f);
-        const Color main = pump::mixColor(hot, theme.ink, std::min(1.0f, e * 1.5f)), faint = theme.dim;
-        const float pi = 3.14159265f;
         save(); scissor(a.x, a.y, a.w, a.h);
         lineJoin(ROUND); lineCap(ROUND);
-        auto finish = [&](float w) { strokeColor(main); strokeWidth(w); stroke(); };
-        if (eng == kModal)
+        // the whole path, faint
         {
-            // the object (CHAR A): membrane, plate, bar or bell; three rings of it flexing in its first modes
-            const int obj = std::min(3, (int)(ca * 4.0f));
-            const float sx = obj == 1 ? 1.0f : obj == 3 ? 1.35f : 1.3f, sy = obj == 3 ? 0.62f : 0.8f;
-            if (obj == 2)
-            {
-                // a bar: bending modes along it
-                beginPath();
-                for (int i = 0; i <= 64; ++i)
-                {
-                    const float u = i / 64.0f;
-                    float d = 0.0f;
-                    for (int m = 0; m < 3; ++m) d += 0.8f * std::cos(pi * (m + 1.5f) * u) * std::cos(t * (5.0f + 6.0f * std::sqrt(1.0f + m * 2.0f)) + m * 1.7f) / (1.0f + 0.35f * m);
-                    const float x = a.x + 6 + u * (a.w - 12), y = cy - e * d * a.h * 0.3f;
-                    if (!i) moveTo(x, y - 5); else lineTo(x, y - 5);
-                }
-                for (int i = 64; i >= 0; --i)
-                {
-                    const float u = i / 64.0f;
-                    float d = 0.0f;
-                    for (int m = 0; m < 3; ++m) d += 0.8f * std::cos(pi * (m + 1.5f) * u) * std::cos(t * (5.0f + 6.0f * std::sqrt(1.0f + m * 2.0f)) + m * 1.7f) / (1.0f + 0.35f * m);
-                    lineTo(a.x + 6 + u * (a.w - 12), cy - e * d * a.h * 0.3f + 5);
-                }
-                closePath(); fillColor(withAlpha2(main, 0.18f)); fill(); finish(1.5f);
-            }
-            else
-            {
-                for (int ri = 0; ri < 3; ++ri)
-                {
-                    const float s = ri == 0 ? 1.0f : ri == 1 ? 0.68f : 0.38f;
-                    beginPath();
-                    for (int i = 0; i <= 64; ++i)
-                    {
-                        const float th = i / 64.0f * 2.0f * pi;
-                        const float d = e * (0.22f * std::cos(2 * th + seed) * std::cos(t * 11 + ri) + 0.12f * std::cos(3 * th) * std::cos(t * 17 + seed));
-                        float rr = R * s * (1.0f + d * (1.2f - ri * 0.3f));
-                        if (obj == 1) rr /= std::max(std::fabs(std::cos(th)), std::fabs(std::sin(th)));   // a plate: square
-                        const float x = cx + rr * std::cos(th) * sx, y = cy + rr * std::sin(th) * sy;
-                        if (!i) moveTo(x, y); else lineTo(x, y);
-                    }
-                    closePath();
-                    if (ri == 0) { fillColor(withAlpha2(main, 0.10f + 0.12f * e)); fill(); }
-                    finish(ri == 0 ? 1.8f : 1.2f);
-                }
-            }
-        }
-        else if (eng == kString)
-        {
-            // a standing wave between two bridges, its first three harmonics
-            line(a.x + 4, cy - 10, a.x + 4, cy + 10, faint, 1.5f); line(a.r() - 4, cy - 10, a.r() - 4, cy + 10, faint, 1.5f);
+            const int n = chaos ? 260 : 140;
             beginPath();
-            for (int i = 0; i <= 64; ++i)
-            {
-                const float u = i / 64.0f;
-                const float d = e * (std::sin(pi * u) * std::cos(t * 9) + 0.45f * std::sin(2 * pi * u) * std::cos(t * 15 + 1) + 0.25f * std::sin(3 * pi * u) * std::cos(t * 21 + 2));
-                const float x = a.x + 4 + u * (a.w - 8), y = cy - d * a.h * 0.34f;
-                if (!i) moveTo(x, y); else lineTo(x, y);
-            }
-            finish(1.8f);
+            for (int i = 0; i <= n; ++i) { float X, Y, D; proj(head - lap * i / n, X, Y, D); if (!i) moveTo(X, Y); else lineTo(X, Y); }
+            strokeColor(withAlpha2(hot, 0.16f + 0.14f * e)); strokeWidth(0.8f); stroke();
         }
-        else if (eng == kCircuit)
+        // the comet: in pieces, older fainter and thinner; longer while the pad rings
+        const float live = std::max(e, 0.12f);
+        const float span = lap * (chaos ? 0.12f + 0.3f * e : 0.3f + 0.55f * e);
+        const int pieces = 24, per = 4;
+        for (int k = 0; k < pieces; ++k)
         {
-            // the ring-down as a spiral: the resonator's phase portrait, wide while it rings, a dot when quiet
-            beginPath(); circle(cx, cy, R); strokeColor(faint); strokeWidth(1.0f); stroke();
-            const float amp = 0.06f + 0.94f * e;
+            const float age = (k + 1.0f) / pieces;   // 1 = the newest piece
             beginPath();
-            for (int k = 0; k <= 110; ++k)
+            for (int j = 0; j <= per; ++j)
             {
-                const float th = k * 0.32f - t * 7.0f - seed, rr = R * amp * std::exp(-k * 0.028f);
-                const float x = cx + rr * std::cos(th) * 1.25f, y = cy + rr * std::sin(th);
-                if (!k) moveTo(x, y); else lineTo(x, y);
+                const float s = head - span * (1.0f - (k * per + j) / (float)(pieces * per));
+                float X, Y, D; proj(s, X, Y, D);
+                if (!j) moveTo(X, Y); else lineTo(X, Y);
             }
-            finish(1.6f);
+            strokeColor(withAlpha2(hot, live * (0.06f + 0.94f * age * age))); strokeWidth(0.6f + 1.6f * age * (0.5f + 0.5f * e)); stroke();
         }
-        else if (eng == kFm)
-        {
-            // carrier against modulator: the figure tangles as the index opens; RATIO (CHAR A) sets its lobes
-            const float amp = 0.2f + 0.8f * e, ix = 0.4f + 3.0f * e, ratio = 1.0f + std::round(ca * 4.0f);
-            beginPath();
-            for (int i = 0; i <= 180; ++i)
-            {
-                const float s = i / 180.0f * 2.0f * pi;
-                const float x = cx + R * 1.3f * amp * std::sin(s), y = cy + R * amp * std::sin(ratio * s + ix * std::sin(3 * s + t * 2));
-                if (!i) moveTo(x, y); else lineTo(x, y);
-            }
-            finish(1.4f);
-        }
-        else if (eng == kWest)
-        {
-            // a sine through the folder: FOLD (CHAR A) and the level multiply the folds
-            line(a.x + 4, cy, a.r() - 4, cy, faint, 1.0f);
-            const float drive = 0.8f + (1.5f + 4.0f * ca) * e;
-            beginPath();
-            for (int i = 0; i <= 80; ++i)
-            {
-                const float u = i / 80.0f;
-                float v = std::sin(2 * pi * u * 1.5f + t * 3) * drive;
-                for (int k = 0; k < 8 && (v > 1.0f || v < -1.0f); ++k) v = v > 1.0f ? 2.0f - v : -2.0f - v;
-                const float x = a.x + 4 + u * (a.w - 8), y = cy - a.h * 0.34f * (0.25f + 0.75f * e) * v;
-                if (!i) moveTo(x, y); else lineTo(x, y);
-            }
-            finish(1.6f);
-        }
-        else if (eng == kAdditive)
-        {
-            // the partials: DENSITY (CHAR A) sets how many; they shimmer and fall with the level
-            const int n = 10 + (int)(ca * 20.0f);
-            const float bw = (a.w - 10) / n, base = a.b() - 4;
-            line(a.x + 5, base, a.r() - 5, base, faint, 1.0f);
-            beginPath();
-            const int fr = (int)(t * 18.0f);
-            for (int i = 0; i < n; ++i)
-            {
-                const float amp = (1.0f - i / (n * 1.4f)) * (0.45f + 0.55f * hash01(i + p * 7)) * (0.65f + 0.35f * hash01(i * 31 + fr));
-                const float x = a.x + 5 + (i + 0.5f) * bw, h = (a.h - 8) * (0.04f + 0.96f * e * amp);
-                moveTo(x, base); lineTo(x, base - h);
-            }
-            strokeColor(main); strokeWidth(std::max(1.5f, std::min(3.0f, bw * 0.55f))); stroke();
-        }
-        else
-        {
-            // the attractor, turning, growing with the level
-            const float amp = (0.3f + 0.7f * e) * R * 1.1f, rot = t * 0.4f + seed, cs = std::cos(rot), sn = std::sin(rot);
-            const auto& L = lorenz();
-            beginPath();
-            for (size_t i = 0; i < L.size(); ++i)
-            {
-                const float x = cx + amp * 1.3f * (L[i][0] * cs - L[i][2] * sn), y = cy + amp * L[i][1];
-                if (!i) moveTo(x, y); else lineTo(x, y);
-            }
-            finish(1.1f);
-        }
+        float X, Y, D; proj(head, X, Y, D);
+        beginPath(); circle(X, Y, 1.6f + 2.2f * e); fillColor(withAlpha2(theme.ink, 0.35f + 0.65f * live)); fill();
         restore();
     }
     static float hash01(int n) { const float x = std::sin(n * 12.9898f) * 43758.5453f; return x - std::floor(x); }
@@ -309,9 +294,8 @@ protected:
         textAt(r.x + 8, r.y + 32, kPadInfo[p].key, kLabel, 12.0f, ink, ALIGN_LEFT | ALIGN_MIDDLE, 1.0f);
         textAt(r.x + 8, r.y + 50, kEngineKeys[pump::clampv((int)value(pp(p, kEngine)), 0, kNumEngines - 1)], kLabel, 8.5f, g > 0.45f ? theme.neonInk : theme.ink2, ALIGN_LEFT | ALIGN_MIDDLE, 0.6f);
         // the note that plays it: name and number
-        static const char* const nn[12] = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
         const int note = kPadInfo[p].note;
-        std::snprintf(b, sizeof b, "%s%d", nn[note % 12], note / 12 - 1);
+        pump::padNoteName(note, b);   // as Renoise writes it (C-4 = 48)
         textAt(r.x + 8, r.b() - 10, b, kMono, 10.0f, ink, ALIGN_LEFT | ALIGN_MIDDLE);
         std::snprintf(b, sizeof b, "%d", note);
         textAt(r.x + 38, r.b() - 10, b, kMono, 9.0f, g > 0.45f ? theme.neonInk : theme.ink2, ALIGN_LEFT | ALIGN_MIDDLE);
@@ -377,7 +361,7 @@ protected:
     }
     std::vector<std::pair<std::string, std::string>> helpLines() override
     {
-        return { { "Click a pad / keys 1-8", "play it and edit it (higher in the pad = harder)" }, { "MIDI", "C4 up the white keys (C4 kick, D4 snare, E4 rim ... C5 cymbal); General MIDI drum notes too" },
+        return { { "Click a pad / keys 1-8", "play it and edit it (higher in the pad = harder)" }, { "MIDI", "C-4 (48) up the white keys: C-4 kick, D-4 snare, E-4 rim ... C-5 cymbal; the General MIDI drum notes below play them too" },
                  { "TONE / CHAR A / CHAR B", "named for what they do in the pad's engine" } };
     }
     std::string footerInfo() override

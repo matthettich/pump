@@ -12,10 +12,10 @@
 // powering on), this block is silent rather than the audio thread waiting. With one instance nothing is ever copied. Every instance powers on from the same
 // start-up memory, so the same settings and hits always sound the same.
 //
-// MIDI: on channel 1 and 9-16 the seven sounds play at their own pitch, in order on the white keys up from C4 (C4 drum 1,
-// D4 drum 2, E4 drum 3, F4 snare, G4 cymbal, A4 closed hat, B4 open hat), and so do the General MIDI drum notes (the
-// sounds' notes before 2026-10-27, so older patterns still play: 36 35 drum 1; 41 43 45 47 drum 2; 37 39 48 50 drum 3;
-// 38 40 snare; 42 44 closed hat; 46 open hat; 49 51 52 55 57 59 cymbal). Channels 2-8 play sounds 1-7 chromatically
+// MIDI: on channel 1 and 9-16 the seven sounds play at their own pitch, in order on the white keys up from Renoise's C-4
+// (MIDI 48: C-4 drum 1, D-4 drum 2, E-4 drum 3, F-4 snare, G-4 cymbal, A-4 closed hat, B-4 open hat), and so do the
+// General MIDI drum notes below them (so older patterns still play: 36 35 drum 1; 41 43 45 47 drum 2; 37 39 drum 3;
+// 38 40 snare; 42 44 closed hat; 46 open hat). Channels 2-8 play sounds 1-7 chromatically
 // (60 = the sound's own pitch), the way the machine's per-voice MIDI channels do.
 #pragma once
 
@@ -30,17 +30,17 @@
 
 namespace pump { namespace machine {
 
-// which sound a note plays (-1 none): its own note (C4 up the white keys, 60-71), or a General MIDI drum note
+// which sound a note plays (-1 none): its own note (C-4 up the white keys, 48-59), or a General MIDI drum note below
 inline int soundForNote(int note)
 {
     if (const int w = whiteKeyIndex(note); w >= 0 && w < kSounds) return w;
+    if (note >= kPadBaseNote) return -1;   // the black keys between the pads stay silent
     switch (note)
     {
     case 35: case 36: return 0;
     case 41: case 43: case 45: case 47: return 1;
-    case 37: case 39: case 48: case 50: return 2;
+    case 37: case 39: return 2;
     case 38: case 40: return 3;
-    case 49: case 51: case 52: case 55: case 57: case 59: return 4;
     case 42: case 44: return 5;
     case 46: return 6;
     default: return -1;
@@ -49,7 +49,7 @@ inline int soundForNote(int note)
 // the firmware renders OUTPUT_DMA_SIZE frames per block (64 in this build; machine_fw.c checks it at compile time)
 constexpr int kMaxFwBlock = 64;
 
-inline int noteForSound(int s) { return whiteKeyNote(clampv(s, 0, kSounds - 1)); }   // C4 D4 E4 F4 G4 A4 B4
+inline int noteForSound(int s) { return whiteKeyNote(clampv(s, 0, kSounds - 1)); }   // C-4 D-4 E-4 F-4 G-4 A-4 B-4 (48-59)
 
 class Engine {
 public:

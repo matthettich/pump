@@ -165,12 +165,10 @@ private:
         const uint8_t st = m.status & 0xF0;
         if (st != 0x90 || m.d2 == 0) return;
         for (int p = 0; p < kPads; ++p) if (kPadInfo[p].note == m.d1) { hit(p, m.d2 / 127.0); return; }
-        // the General MIDI drum notes (the pads' notes before 2026-10-27, so older patterns still play)
-        static const int gm[kPads] = { 36, 38, 37, 43, 48, 42, 46, 49 };
+        // below the pads, the General MIDI drum notes (so older patterns still play); 47 stands in for the high tom.
+        // The black keys between the pads stay silent.
+        static const int gm[kPads] = { 36, 38, 37, 43, 47, 42, 46, -1 };
         for (int p = 0; p < kPads; ++p) if (gm[p] == m.d1) { hit(p, m.d2 / 127.0); return; }
-        // and what is left of the old run of pads up from 60 in semitones: the white keys are the pads' own notes now,
-        // so only 61 (snare) and 63 (low tom) still play their old pads
-        if (m.d1 >= 61 && m.d1 < 60 + kPads && (m.d1 & 1)) hit(m.d1 - 60, m.d2 / 127.0);
     }
 
     void start(Voice& v, int p, double vel)

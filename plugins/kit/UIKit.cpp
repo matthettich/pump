@@ -168,9 +168,8 @@ protected:
         textAt(r.x + 8, r.y + 12, b, kMono, 10.0f, ink, ALIGN_LEFT | ALIGN_MIDDLE);
         textAt(r.x + 8, r.y + 32, kPadInfo[p].label, kLabel, 12.5f, ink, ALIGN_LEFT | ALIGN_MIDDLE, 1.0f);
         textAt(r.x + 8, r.y + 50, kModelKeys[pump::clampv((int)value(pp(p, kModel)), 0, kNumModels - 1)], kLabel, 9.5f, g > 0.45f ? theme.neonInk : theme.ink2, ALIGN_LEFT | ALIGN_MIDDLE, 0.8f);
-        static const char* const nn[12] = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
         const int note = kPadInfo[p].note;   // the note that plays it: name and number
-        std::snprintf(b, sizeof b, "%s%d", nn[note % 12], note / 12 - 1);
+        pump::padNoteName(note, b);   // as Renoise writes it (C-4 = 48)
         textAt(r.x + 8, r.b() - 10, b, kMono, 10.0f, ink, ALIGN_LEFT | ALIGN_MIDDLE);
         std::snprintf(b, sizeof b, "%d", note);
         textAt(r.r() - 8, r.b() - 10, b, kMono, 9.0f, g > 0.45f ? theme.neonInk : theme.ink2, ALIGN_RIGHT | ALIGN_MIDDLE);
@@ -259,7 +258,7 @@ protected:
     }
     std::vector<std::pair<std::string, std::string>> helpLines() override
     {
-        return { { "Click a pad / keys 1-8", "play it and edit it (higher in the pad = harder)" }, { "MIDI", "C4 up the white keys (C4 kick, D4 snare, E4 clap, F4 hat ... C5 cymbal); General MIDI drum notes too, toms 41-50 at their own pitches" } };
+        return { { "Click a pad / keys 1-8", "play it and edit it (higher in the pad = harder)" }, { "MIDI", "C-4 (48) up the white keys: C-4 kick, D-4 snare, E-4 clap, F-4 hat ... C-5 cymbal; the General MIDI drum notes below play them too" } };
     }
     std::string footerInfo() override
     {

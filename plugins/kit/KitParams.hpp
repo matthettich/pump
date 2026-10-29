@@ -29,8 +29,8 @@ static const char* const kModelNames[] = { "Kick", "Snare", "Clap", "Hat", "Tom"
 static const char* const kModelKeys[] = { "KICK", "SNARE", "CLAP", "HAT", "TOM", "METAL", "FM", "NOISE" };
 
 struct PadInfo { const char* sym; const char* name; const char* label; int note; int model; float tune, decay, pitch, pdecay, tone, noise, click, chr, drive, level, pan; };
-// The pads play in order on the white keys up from C4 (60): C4 D4 E4 F4 G4 A4 B4 C5 (whiteKeyNote). The General MIDI drum notes
-// (36 kick, 38 snare..., the toms 41-50 at their own pitches) still play them too: see padForNote.
+// The pads play in order on the white keys up from Renoise's C-4 (MIDI 48): C-4 D-4 E-4 F-4 G-4 A-4 B-4 C-5 (whiteKeyNote).
+// The General MIDI drum notes below them (36 kick, 38 snare..., the toms 41-47 at their own pitches) still play too: see padForNote.
 static const PadInfo kPadInfo[kPads] = {
     { "kick",  "Kick",       "KICK",   whiteKeyNote(0), kKick,       0, 450, 30, 40, 50,   0, 40, 20, 10,   0,   0 },
     { "snare", "Snare",      "SNARE",  whiteKeyNote(1), kSnare,      0, 220, 12, 30, 55,  60, 40, 50,  0,  -2,   0 },

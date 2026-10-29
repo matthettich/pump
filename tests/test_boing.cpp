@@ -114,13 +114,13 @@ int main()
         const double ro = rms(open, 14400, 28800), rc = rms(choked, 14400, 28800);
         CHECK(rc < ro * 0.2, "the closed hat chokes the open one: %.1f dB under it", 20 * std::log10(rc / ro));
         bool all = true;
-        for (int note : { 35, 36, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 57 })
+        for (int note : { 35, 36, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47 })
         {
             Engine x; x.setSettings(s); x.prepare(kSr, 256);
             const auto y = run(x, 9600, { { 0, 0x90, (uint8_t)note, 100 } });
             if (rms(y, 0, 4800) < 1e-4) { all = false; printf("    note %d silent\n", note); }
         }
-        CHECK(all, "the GM drum notes 35-51 and 57 each play a pad");
+        CHECK(all, "the GM drum notes 35-47 (below the pads) each play a pad");
         Settings t = s; t.tankLevel = 0.8; t.pad[1].send = 1.0;
         Engine w; w.setSettings(t); w.prepare(kSr, 256);
         Engine d; d.setSettings(s); d.prepare(kSr, 256);
@@ -162,12 +162,13 @@ int main()
         // the pads in order on the white keys up from C4 (60); the General MIDI drum notes still play the same pads
         bool order = true;
         for (int p = 0; p < kPads; ++p) order = order && kPadInfo[p].note == whiteKeyNote(p);
-        CHECK(order, "pads on C4 D4 E4 F4 G4 A4 B4 C5 (the white keys from 60)");
-        static const int gm[kPads] = { 36, 38, 39, 43, 48, 42, 46, 49 };
+        CHECK(order && kPadInfo[0].note == 48, "pads on C-4 D-4 E-4 F-4 G-4 A-4 B-4 C-5 (Renoise's names: the white keys from 48)");
+        static const int gm[kPads] = { 36, 38, 39, 43, 47, 42, 46, -1 };   // the cymbal has none below the pads
         bool allNew = true, allGm = true;
         for (int p = 0; p < kPads; ++p)
             for (int pass = 0; pass < 2; ++pass)
             {
+                if (pass && gm[p] < 0) continue;
                 Settings s = defaults();
                 Engine e; e.setSettings(s); e.prepare(kSr, 256);
                 run(e, 512, { { 0, 0x90, (uint8_t)(pass ? gm[p] : kPadInfo[p].note), 110 } });

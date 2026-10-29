@@ -41,8 +41,8 @@ public:
 protected:
     static std::string noteName(int n)
     {
-        static const char* const nn[12] = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
-        return std::string(nn[((n % 12) + 12) % 12]) + std::to_string(n / 12 - 1);
+        char b[8];   // as Renoise writes it (C-4 = 48), like the drum plugins' pads
+        return pump::padNoteName(n, b);
     }
     static std::string keyName(int k)
     {

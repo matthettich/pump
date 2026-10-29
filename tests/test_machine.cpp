@@ -140,12 +140,12 @@ int main()
         // the same sounds (and sound the same); channels 2-8 still play their sound chromatically
         bool order = true;
         for (int s = 0; s < kSounds; ++s) order = order && noteForSound(s) == whiteKeyNote(s) && soundForNote(whiteKeyNote(s)) == s;
-        CHECK(order, "sounds on C4 D4 E4 F4 G4 A4 B4 (the white keys from 60)");
-        static const int gm[kSounds] = { 36, 45, 37, 38, 49, 42, 46 };
+        CHECK(order && noteForSound(0) == 48, "sounds on C-4 D-4 E-4 F-4 G-4 A-4 B-4 (Renoise's names: the white keys from 48)");
+        static const int gm[kSounds] = { 36, 45, 37, 38, -1, 42, 46 };   // the cymbal has none below the pads
         bool gmMap = true;
-        for (int s = 0; s < kSounds; ++s) gmMap = gmMap && soundForNote(gm[s]) == s;
-        for (int n : { 35, 41, 43, 47, 39, 48, 50, 40, 51, 52, 55, 57, 59, 44 }) gmMap = gmMap && soundForNote(n) >= 0;
-        for (int n : { 61, 63, 66, 72, 73, 74, 34 }) gmMap = gmMap && soundForNote(n) == -1;
+        for (int s = 0; s < kSounds; ++s) gmMap = gmMap && (gm[s] < 0 || soundForNote(gm[s]) == s);
+        for (int n : { 35, 41, 43, 47, 39, 40, 44 }) gmMap = gmMap && soundForNote(n) >= 0;
+        for (int n : { 49, 51, 54, 56, 58, 60, 61, 72, 34 }) gmMap = gmMap && soundForNote(n) == -1;
         CHECK(gmMap, "the General MIDI drum notes still map to the same sounds; odd notes between and past the new ones play nothing");
         const double sr = 48000.0;
         auto plays = [&](uint8_t status, int note, std::vector<float>* out) {   // the one sound a note plays, -1 none, -2 more
@@ -161,9 +161,13 @@ int main()
         {
             std::vector<float> a, b;
             allNew = allNew && plays(0x99, noteForSound(s), &a) == s;
-            allGm = allGm && plays(0x99, gm[s], &b) == s;
-            same = same && a == b;
-            ch1 = ch1 && plays(0x90, noteForSound(s), nullptr) == s && plays(0x90, gm[s], nullptr) == s;
+            ch1 = ch1 && plays(0x90, noteForSound(s), nullptr) == s;
+            if (gm[s] >= 0)
+            {
+                allGm = allGm && plays(0x99, gm[s], &b) == s;
+                same = same && a == b;
+                ch1 = ch1 && plays(0x90, gm[s], nullptr) == s;
+            }
             chrom = chrom && plays((uint8_t)(0x91 + s), 64, nullptr) == s && plays((uint8_t)(0x91 + s), 36, nullptr) == s;
         }
         CHECK(allNew, "each new note plays its sound, and only that sound");

@@ -173,7 +173,7 @@ protected:
             const float a = std::max(flash[k], std::min(1.0f, lv[k] * 1.5f));
             Color fillC = pump::mixColor(withAlpha2(col, 0.25f), col, a);
             keyBox(padR[k], true, a > 0.6f, &fillC, 3.0f);
-            char nb[4]; std::snprintf(nb, sizeof nb, "%d", k + 1);
+            char nb[8]; pump::padNoteName(pump::whiteKeyNote(k), nb);   // the note that plays it, as Renoise writes it
             textAt(padR[k].cx(), padR[k].cy(), nb, kBold, 11.0f, theme.ink, ALIGN_CENTER | ALIGN_MIDDLE);
         }
         panel(soundR, "SOUND");
@@ -278,7 +278,7 @@ protected:
             static const char* const tip[4] = { "A random drawing", "Clear the drawing", "One generation on, now", "Back to the pattern (and the cycle's start)" };
             setStatus(tip[k]);
         }
-        for (int k = 0; k < kTones; ++k) if (padR[k].contains(x, y)) setStatus("Play this voice (MIDI note " + std::to_string(36 + k) + ")");
+        for (int k = 0; k < kTones; ++k) if (padR[k].contains(x, y)) { char nb[8]; setStatus("Play voice " + std::to_string(k + 1) + " (MIDI " + pump::padNoteName(pump::whiteKeyNote(k), nb) + " = " + std::to_string(pump::whiteKeyNote(k)) + ")"); }
     }
     void onExtraState(const char* key, const char* value) override { if (std::strcmp(key, "board") == 0) drawnB = boardFromText(value); }
     bool keyPress(uint key, uint) override
@@ -290,7 +290,7 @@ protected:
     std::vector<std::pair<std::string, std::string>> helpLines() override
     {
         return { { "1-8", "play a voice" }, { "SPACE", "one generation on" }, { "DRAW", "click or drag on the grid" },
-                 { "BARS", "click or drag across them" }, { "MIDI 36-43", "the voices" } };
+                 { "BARS", "click or drag across them" }, { "MIDI C-4 (48) up", "the voices, on the white keys" } };
     }
     std::string footerInfo() override
     {

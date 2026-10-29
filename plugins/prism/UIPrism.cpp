@@ -214,7 +214,7 @@ protected:
     void drawBody() override
     {
         drawSound();
-        drawWaveOverlay(overlay, Rect(soundR.x + 10, soundR.y + 24, soundR.w - 20, soundR.h - 64), pump::hexColor(0x8B5CF6), pump::hexColor(0xB49CFF));
+        drawWaveOverlay(overlay, Rect(soundR.x + 10, soundR.y + 24, soundR.w - 20, soundR.h - 64));
         drawNow();
         drawOutMeter(outMeter, meterL, meterR);
         auto panel = [&](const Rect& r, const char* c) { strokeRect(r, theme.dim, 1.0f); caption(r.x + 12, r.y + 16, c); };
@@ -276,7 +276,7 @@ protected:
 private:
     static constexpr int kImgW = 512, kImgH = 64;
     PluginPrism* plug = nullptr;
-    WaveOverlay overlay;   // the output over the sound in violet
+    WaveOverlay overlay;   // the output over the sound, a thin line in the second colour
     Rect soundR, partsR, meterL, meterR, srcPanel, playPanel, specPanel, voicePanel;
     MenuButton *srcA, *srcB;
     Button *loadA, *loadB;
