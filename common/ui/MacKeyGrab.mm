@@ -207,7 +207,7 @@ void* textFieldOpen(uintptr_t nativeView, float fx, float fy, float fw, float fh
     }]);
     f->ended = PUMP_RETAIN([nc addObserverForName:NSControlTextDidEndEditingNotification object:field queue:nil usingBlock:^(NSNotification* n) {
         // Enter ends it; a click elsewhere only takes the keyboard away (click the field to go on typing)
-        if ([[[n userInfo] objectForKey:@"NSTextMovement"] intValue] == 0x10)   // NSTextMovementReturn self->fire(1);
+        if ([[[n userInfo] objectForKey:@"NSTextMovement"] intValue] == 0x10) self->fire(1);   // 0x10: NSTextMovementReturn
     }]);
     // Esc (the field itself ignores it) and Enter, before anything of the host's can take them
     f->monitor = PUMP_RETAIN([NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskKeyDown handler:^NSEvent*(NSEvent* e) {
