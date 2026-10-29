@@ -84,6 +84,18 @@ Instruments (MIDI in, stereo out):
     subfolders), finds each syllable's alias (kana / romaji, VCV / CV, then the vowel) and sings it by PSOLA (formants
     kept, GENDER shifts them); the formant voice sings what the bank lacks.
 
+- Asked for on 2026-10-29:
+  - **ACID** acid bass synth — done (2026-10-29): five bass voices (a diode-ladder acid voice with the accent
+    capacitor and slides, and four other classic mono basses), a sixteen-step pattern sequencer (note, accent, slide,
+    tie / rest; song, keys, free) and a random pattern generator with acid-line rules, lanes and mutate. Gray, the notes
+    in colour. Later, maybe: pattern banks and chaining, the pattern as MIDI out, its engines in Thunder Plus.
+  - **X0X** rhythm machine — done (2026-10-29): eleven drums, each modelled on any of five classic rhythm machines'
+    circuits, a sixteen-step grid with an accent row, a pattern library. Later, maybe: A/B patterns (32 steps), flams,
+    per-step velocity, separate outputs.
+  - **GLOSS** hyperpop synth — done (2026-10-29): seven machines (FM, sound chip, formant voice, supersaw, digital
+    waves, plucked string, water drops), pitch envelope, drive / crush / width. Pink, a glossy blob. Later, maybe:
+    COIL's modulation matrix, a second machine layered.
+
 ## Instance List — planned, nice to have
 
 One window that shows every pump EQ in the session. Decided 2026-10-23: build it in tiers, after the EQ bug audit;

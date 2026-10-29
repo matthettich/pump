@@ -2,11 +2,11 @@
 
 The pick-up doc: where things stand, what is verified and what is not, and what is open. Conventions and the layout
 are in [DEVELOPING.md](DEVELOPING.md) and the plan is in [ROADMAP.md](ROADMAP.md); this file does not repeat them.
-Last updated 2026-10-28 (pump ROOM: measurement, correction, plugin, System EQ, exports, phase, handheld; before it: GUI pass, COIL modulation, LIFE sound, AU crash fix).
+Last updated 2026-10-29 (three new instruments: ACID, X0X, GLOSS; before them: pump ROOM, GUI pass, COIL modulation, LIFE sound, AU crash fix).
 
 ## State
 
-- 29 plugins (effects, mastering, instruments, and ROOM room correction), VST3 + CLAP everywhere, AU on macOS. All build on macOS with
+- 32 plugins (effects, mastering, instruments, and ROOM room correction), VST3 + CLAP everywhere, AU on macOS. All build on macOS with
   `make -C plugins/<name> MACOS=true` (serial per plugin, see "Build gotchas").
 - CI (`.github/workflows/build.yml`) builds Windows x64 (MinGW cross-compile), macOS universal, Linux, runs the DSP
   tests and the licence-boundary check, and refreshes the `latest` pre-release on every push to `main`.
@@ -122,6 +122,35 @@ Where Playwright lives: in the session that built this it was `/opt/npm-tools/no
   `gh api repos/matthettich/pump/releases/tags/latest`.
 - A push cancels the running CI (the `concurrency` group): don't push while waiting on a result you need.
 - `make room` builds the plugin; the page is `make room-page`.
+
+## What changed in the 2026-10-29 session: ACID, X0X, GLOSS
+
+The owner asked for an acid bass synth with a pattern sequencer and a random pattern generator (gray, colourful
+display and sequencer), an x0x-style drum machine with kits of the classic acid drum machines, and a hyperpop synth
+built on the voices of a classic machine-based mono synth (pink). The voicings are named generically in the repo
+(the owner's rule); in chat: ACID's models recall the bass line with the diode ladder, a saw/pulse/sub mono, a pocket
+three-oscillator bass, a two-oscillator bass station and a screaming two-pole; X0X's EIGHT / NINE / SIX / TEN / SEVEN are
+the classic analog boxes and the first eight-bit sample box; GLOSS's machines recall the machine-based synth's FM,
+chip, vocal, ensemble saw, wave and physical voices.
+
+| Plugin | Where | Verified by |
+|---|---|---|
+| **ACID**: five models (Acid: band-limited saw / transistor square into a coupled four-stage diode ladder whose stage coefficient comes from a table built from the ladder's own response, so the resonance sits at the cutoff; decaying filter envelope, slow amp decay, an accent capacitor that charges over consecutive accents; Solo, Pocket, Station, Scream), 2x oversampled; a 16-step sequencer (note -12..+24, gate note / tie / rest, accent, slide; length, rate 1/32..1/8 with triplets, swing as GATE's, gate length, transpose; OFF / SONG / KEYS / FREE, and PLAY from the window); MIDI legato slides, velocity >= ACC VEL accents; RANDOM / MUTATE over chosen lanes with acid-line rules (`randomizeSteps` in AcidParams.hpp) | `plugins/acid` | `tests/test_acid.cpp` (pitch per model, slides, the diode table's phase at the cutoff, resonance near the cutoff, the grid timing, swing, tie, slide without a new attack, KEYS transposition, SONG stopping with the host, loudness of every model's line, 3600 random patterns against the rules, MUTATE, random settings); screenshots light and dark |
+| **X0X**: eleven drums (BD SD CP CH OH LT MT HT RS CB CY on C-4 up the white keys, GM below), each on any of five machine circuits (tables at the top of X0xEngine.hpp), tune / decay / tone / a fourth control / level / pan; accent row; step masks as one integer parameter per row (`bd_steps` .. `ac_steps`, bit k = step k + 1, not automatable); OFF / SONG / FREE, PLAY; a PATTERNS menu in the window (`patternLibrary()`) that writes the steps only | `plugins/x0x` | `tests/test_x0x.cpp` (55 instrument x machine hits sound, end and stay finite; notes and GM map; bass drum tuning; grid timing, swing, accent, choke; SONG / FREE; loudness; random kits); screenshots |
+| **GLOSS**: seven machines with four controls each (`kMachineControls`), pitch envelope, glide, poly 8 / mono / legato, SVF with its own envelope, ADSR, drive soft / hard / fold at 2x, crush, width, LFO; a blob display drawn from the output | `plugins/gloss` | `tests/test_gloss.cpp` (every machine in tune at A2 and C4, the string to the cent; loudness; pitch envelope; poly / mono / legato; release; chip sync; bubbles chirp; random settings; CPU per machine); screenshots |
+
+All three are at about -20 dBFS RMS at VOLUME 0 dB (X0X's default kit and pattern about -18), have parameter ids
+recorded in tests/data/param_ids.txt, run in `make tests-asan` (added to SAN_TESTS), and build as VST3 / CLAP here.
+Not tried in a DAW yet: the sequencers' song lock in Live and Renoise (the same `transport()` as GATE and LIFE), and the
+CLAP / VST3 / AU builds on Mac and Windows (CI builds them).
+
+**GL headers for screenshots in a session without them:** the package registries were blocked, so the GL headers were
+generated from the Khronos XML registry (git clone of KhronosGroup/OpenGL-Registry and EGL-Registry works): a small
+script wrote `GL/gl.h` (1.0-1.3 prototypes and enums) and `GL/glx.h` (GLX 1.0-1.4) from gl.xml / glx.xml, next to the
+registry's glext.h, glxext.h and KHR/khrplatform.h, in /home/claude/sysroot/include, with gl.pc / x11.pc in
+/home/claude/sysroot/pkgconfig pointing at the system's libGL.so.1 (a symlink to libGL.so). The DPF submodule's own pugl
+submodule must be initialised (`git -C dpf submodule update --init`). Then `make -C plugins/<x> jack` and Xvfb render
+the real windows.
 
 ## Also open: LIFE's sound against its reference (in progress, 2026-10-27)
 
