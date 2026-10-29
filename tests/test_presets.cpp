@@ -54,6 +54,7 @@
 #include "../plugins/tract/TractParams.hpp"
 #include "../plugins/acid/AcidParams.hpp"
 #include "../plugins/x0x/X0xParams.hpp"
+#include "../plugins/gloss/GlossParams.hpp"
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -235,6 +236,7 @@ int main()
         { "ROOM", roomfx::params(), roomfx::presets(), roomfx::kNumParams },
         { "ACID", acid::params(), acid::presets(), acid::kNumParams },
         { "X0X", x0x::params(), x0x::presets(), x0x::kNumParams },
+        { "GLOSS", gloss::params(), gloss::presets(), gloss::kNumParams },
     };
     std::map<std::string, int> sections;
     std::vector<std::vector<std::string>> chains;
