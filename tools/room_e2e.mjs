@@ -1,6 +1,6 @@
 // End-to-end check of the built pump ROOM page (bin/pump-room.html, `make room-page`) in headless Chromium, with the
 // page's simulated room (#sim) standing in for the speakers and mic: a measurement of both speakers, the timing and
-// level between them, a calibration file, and a session saved and opened again.
+// level between them, a calibration file, a session saved and opened again, handheld points and the Bluetooth link.
 // Needs Playwright:  node tools/room_e2e.mjs [path/to/pump-room.html] [screenshot folder]
 import { chromium } from 'playwright';
 import { mkdtempSync } from 'node:fs';
@@ -170,6 +170,23 @@ await page.click('#view button[data-v="correction"]');
 await page.waitForTimeout(200);
 const pos = await page.evaluate(() => window.pumpRoom.S.design && window.pumpRoom.S.design.positions);
 check(pos >= 6, `the correction averages ${pos} positions (the handheld ones included)`);
+
+// Bluetooth: the response measured with the longer lead-in and search, timing not shown, the correction EQ only
+await page.click('#link button[data-v="bt"]');
+check(await page.evaluate(() => document.querySelector('#hCal').disabled), 'bluetooth: handheld needs a wired link');
+const nBefore = await page.evaluate(() => window.pumpRoom.S.runs.length);
+await page.click('#view button[data-v="response"]');
+await page.click('#measure');
+await page.waitForFunction((b) => window.pumpRoom.S.runs.length === b + 1 && !window.pumpRoom.S.busy, nBefore, { timeout: 60000 });
+const bt = await page.evaluate(() => { const r = window.pumpRoom.S.runs.at(-1); return { bt: r.bt, snr: r.ch.map((c) => c.snr) }; });
+check(bt.bt === true && bt.snr.length === 2 && bt.snr.every((x) => x > 40), `bluetooth: both speakers measured (SNR ${bt.snr.map((x) => x.toFixed(0)).join(' / ')} dB)`);
+check(/not measured over Bluetooth/.test(await page.evaluate(() => [...document.querySelectorAll('.verdict')].at(-1).textContent)), 'bluetooth: timing not shown');
+await page.click('#view button[data-v="correction"]');
+await page.waitForTimeout(200);
+const btd = await page.evaluate(() => { const x = window.pumpRoom.S.design; return x && { delays: x.sides.map((sd) => sd && sd.delay), align: document.querySelector('#cAlign').disabled }; });
+check(btd && btd.align && btd.delays.every((v) => !v), `bluetooth: EQ only, no delay (${btd && btd.delays.join(' / ')})`);
+if (shots) await page.screenshot({ path: join(shots, 'room-bluetooth.png') });
+await page.click('#link button[data-v="wired"]');
 check(errors.length === 0, 'no page errors' + (errors.length ? ': ' + errors.join('; ') : ''));
 await browser.close();
 console.log(fails ? `\n${fails} FAILED` : '\nall passed');

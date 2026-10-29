@@ -146,6 +146,14 @@ recorded in tests/data/param_ids.txt, run in `make tests-asan` (added to SAN_TES
 Not tried in a DAW yet: the sequencers' song lock in Live and Renoise (the same `transport()` as GATE and LIFE), and the
 CLAP / VST3 / AU builds on Mac and Windows (CI builds them).
 
+**pump ROOM, phones and Bluetooth (same session):** LINK WIRED / BLUETOOTH in the setup panel (`S.bt`, stored as
+`link`; each run keeps `bt`, saved in sessions). Bluetooth widens the capture (lead-in 1.5 s, search 2.4 s, tail 2.6 s,
+a -80 dBFS keep-alive noise in the silence) and any used Bluetooth run makes the correction EQ only (no delay, no phase,
+UP TO capped at 16 kHz; `btRuns()` / `showBtLocks()` in app.js); the verdict says timing isn't measured and HANDHELD is
+off. Phones: a screen wake lock while audio runs (`keepAwake`), a note when the output can't be picked. tools/room_e2e.mjs
+measures once over the Bluetooth link too. Not tried on a real phone or Bluetooth receiver yet: on Android Chrome the
+mic must be a USB one (the phone's own mic is tuned for voice and isn't flat).
+
 **GL headers for screenshots in a session without them:** the package registries were blocked, so the GL headers were
 generated from the Khronos XML registry (git clone of KhronosGroup/OpenGL-Registry and EGL-Registry works): a small
 script wrote `GL/gl.h` (1.0-1.3 prototypes and enums) and `GL/glx.h` (GLX 1.0-1.4) from gl.xml / glx.xml, next to the

@@ -100,6 +100,11 @@ it to Applications; the first time, right-click > Open, since it isn't notarized
 **https://matthettich.github.io/pump/** (the newest build from main). See [docs/ROOM.md](docs/ROOM.md) for how it works.
 
 - **START AUDIO**, pick the mic (and its input, on an interface) and the output. Allow the microphone when asked.
+- **Phones and Bluetooth:** the web page works on an Android phone in Chrome, with a USB measurement mic
+  (USB-C, or a USB-C adapter): it plays through the phone's own output and keeps the screen on while audio runs. If
+  the speakers are reached over Bluetooth, set **LINK** to **BLUETOOTH**: the response is measured with a longer lead-in
+  and search (Bluetooth adds a delay that changes each time it connects), and the correction is EQ only, up to 16 kHz,
+  with no time alignment, phase correction or HANDHELD. A wired output gives the full correction.
 - **Mic calibration:** load the mic's calibration file (frequency / dB per line: the usual .txt, .cal or .frd files
   read as they are). Without one the mic is taken as flat.
 - **TEST LEVEL** plays pink noise: set the volume so the mic meter sits in the shaded band (-30 to -12 dBFS).

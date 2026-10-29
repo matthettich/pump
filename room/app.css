@@ -88,7 +88,7 @@ main { flex: 1; display: grid; grid-template-columns: 330px 1fr; gap: 16px; padd
 .chan .sw.off { background: transparent !important; }
 .chan .lab { color: var(--ink2); font-size: 11px; }
 .chan .num { white-space: nowrap; }
-.chan .warn, .verdict .warn { color: var(--red); }
+.chan .warn, .verdict .warn, .warn { color: var(--red); }
 .chan .key { height: 22px; font-size: 11px; padding: 0 7px; }
 .verdict { margin-top: 8px; padding: 6px 8px; background: var(--panel2); font-size: 12px; display: flex; flex-wrap: wrap; gap: 4px 18px; }
 .verdict b { font-weight: normal; font-family: "JBM", monospace; }

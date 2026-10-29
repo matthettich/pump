@@ -118,6 +118,14 @@ from npm at build time, pinned in build.sh. Not notarized yet: the first open on
 - The page runs from a file (`file://`). The worklet is loaded from a `data:` URL: a `blob:` module is refused as
   cross-origin when the page's origin is null.
 - Choosing the output needs `AudioContext.setSinkId` (Chrome, Edge); elsewhere it plays to the system output.
+- On a phone (Android Chrome; a USB mic) it plays to the phone's output, and asks for a screen wake lock while audio
+  runs (a sleeping screen stops the audio mid-sweep); the lock is asked for again when the page comes back.
+- **LINK: BLUETOOTH** (saved in the browser and with each run, `bt` in sessions): the lead-in is at least 1.5 s
+  (receivers wake up and fade in) with the noise floor read from its second half, the search for the sweep at least
+  2.4 s, the tail at least 2.6 s, and a -80 dBFS whisper of noise fills the silence (some receivers mute on digital
+  silence). Its delay changes between connections and its clock drifts, so a correction that uses any Bluetooth run
+  is EQ only: no time alignment, no phase alignment, UP TO capped at 16 kHz (codecs often stop there); the verdict
+  says timing isn't measured, and HANDHELD (which tracks the mic by timing) is off.
 - The mic is opened with echo cancellation, noise suppression and automatic gain off.
 - `#sim` at the end of the page's address replaces the speakers and mic with a simulated room (two speakers at 2.9
   and 3.1 m, a mode at 110 Hz, reflections, 12 ms latency). `node tools/room_e2e.mjs` runs the built page that way

@@ -25,6 +25,8 @@
     <label class="row"><span>MIC</span><select id="mic" disabled><option>—</option></select></label>
     <label class="row" id="micChRow" hidden><span>MIC INPUT</span><select id="micCh"></select></label>
     <label class="row"><span>OUTPUT</span><select id="out" disabled><option>System output</option></select></label>
+    <div class="row"><span>LINK</span><div class="seg" id="link" title="How the sweeps get to the speakers"><button data-v="wired" class="on">WIRED</button><button data-v="bt">BLUETOOTH</button></div></div>
+    <div class="calbox" id="linkNote" hidden></div>
     <div class="row"><span>RATE</span><b class="num" id="rate">—</b></div>
     <div class="meter" title="Microphone level">
       <div class="meter-target"></div><div class="meter-bar" id="meterBar"></div><div class="meter-hold" id="meterHold"></div>

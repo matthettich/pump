@@ -79,7 +79,7 @@ const S = {
   runs: [], nextColour: 0,
   chans: 'LR', seconds: 4, level: -18,
   view: 'response', smooth: 12, windowMs: 500, norm: true, useCal: true,
-  busy: false, noise: false, pending: null,
+  busy: false, noise: false, pending: null, bt: false, wake: null,
   corr: { tilt: 0, bass: 0, treble: 0, amount: 100, fLo: 20, fHi: 20000, boost: 6, cut: 15, nulls: true, low: true, align: true,
           phase: false, pLo: 60, pHi: 3000, linear: false },
   design: null,
@@ -87,6 +87,11 @@ const S = {
 };
 const GRID = { lo: 20, hi: 20000, perOct: 96 };
 const TAIL_S = 2.0, PRE_S = 0.5, SEARCH_S = 1.0, SPEED = 343;
+// Bluetooth playback: its delay is longer (often 100-300 ms) and changes from one connection to the next, the receiver's
+// clock drifts against this one, and its codec may stop at about 16 kHz. So: a longer search for the sweep, a longer
+// lead-in (receivers wake up and fade in), a whisper of noise under the run (some mute on digital silence), and only
+// the frequency response is used: no time alignment, no phase correction, no handheld tracking, EQ up to 16 kHz.
+const BT = { preS: 1.5, tailS: 2.6, searchS: 2.4, fHi: 16000, keepAlive: 1e-4 };
 
 function status(text, err = false) {
   const s = $('status');
@@ -135,6 +140,7 @@ async function startAudio() {
     if (S.sim) S.node.port.postMessage({ type: 'sim', on: true });
     await S.ctx.resume();
     S.fs = S.ctx.sampleRate;
+    keepAwake(true);
     $('rate').textContent = (S.fs / 1000).toFixed(1) + ' kHz';
     await listDevices();
     $('start').textContent = 'RESTART AUDIO';
@@ -156,8 +162,27 @@ async function stopAudio() {
   if (S.stream) { S.stream.getTracks().forEach((t) => t.stop()); S.stream = null; }
   if (S.ctx) { try { await S.ctx.close(); } catch (e) {} S.ctx = null; }
   setNoise(false);
+  keepAwake(false);
   $('measure').disabled = true;
   $('noise').disabled = true;
+}
+
+// Phones: keep the screen on while audio runs (a sleeping screen stops the audio mid-sweep)
+async function keepAwake(on) {
+  try {
+    if (on && navigator.wakeLock && !S.wake) { S.wake = await navigator.wakeLock.request('screen'); S.wake.addEventListener('release', () => { S.wake = null; }); }
+    else if (!on && S.wake) { await S.wake.release(); S.wake = null; }
+  } catch (e) { S.wake = null; }
+}
+
+function showLink() {
+  $('link').querySelectorAll('button').forEach((b) => b.classList.toggle('on', (b.dataset.v === 'bt') === S.bt));
+  const canPick = !!(S.ctx && S.ctx.setSinkId);
+  const notes = [];
+  if (S.bt) notes.push('<b>Bluetooth:</b> the response is measured, timing isn\'t (its delay varies): the correction is EQ only, up to 16 kHz, and HANDHELD needs a wired link.');
+  if (S.ctx && !canPick) notes.push('This browser plays through the device\'s own output: on a phone, its speaker or whatever is connected by Bluetooth or USB. Choose <b>BLUETOOTH</b> if the speakers are connected that way.');
+  $('linkNote').innerHTML = notes.join('<br>');
+  $('linkNote').hidden = notes.length === 0;
 }
 
 async function listDevices() {
@@ -180,7 +205,8 @@ async function listDevices() {
     : '<option>System output</option>';
   if (canPick) $('out').value = S.outId || 'default';
   $('out').disabled = !canPick;
-  $('out').title = canPick ? '' : 'This browser plays to the system output (Chrome and Edge can choose)';
+  $('out').title = canPick ? '' : 'This browser plays to the system output (Chrome and Edge on a computer can choose)';
+  showLink();
 }
 
 function fillMicChannels(n) {
@@ -225,17 +251,20 @@ function setNoise(on) {
 // handheld mode (its short location pings too).
 async function capture({ sides, seconds, level, preS = PRE_S, tailS = TAIL_S, searchS = SEARCH_S, minSnr = 10 }) {
   const fs = S.fs;
+  if (S.bt) { preS = Math.max(preS, BT.preS); tailS = Math.max(tailS, BT.tailS); searchS = Math.max(searchS, BT.searchS); }
   const n = W.x.room_sweep(fs, 10, 0, seconds, level);
   const sweep = W.f32(W.x.room_sweep_ptr(), n).slice();
   const pre = Math.round(preS * fs), seg = n + Math.round(tailS * fs), total = pre + sides.length * seg;
   const out = [new Float32Array(total), new Float32Array(total)];
   sides.forEach((side, k) => out[side === 'L' ? 0 : 1].set(sweep, pre + k * seg));
+  if (S.bt) for (const o of out) for (let i = 0; i < total; ++i) if (o[i] === 0) o[i] = (Math.random() * 2 - 1) * BT.keepAlive;
   const result = await new Promise((resolve, reject) => {
     S.pending = { resolve, reject };
     S.node.port.postMessage({ type: 'run', out, length: total }, [out[0].buffer, out[1].buffer]);
   });
   const rec = result.rec;
-  const noiseDb = pre > 0.1 * fs ? rmsDb(rec.subarray(Math.round(0.05 * fs), pre - Math.round(0.05 * fs))) : null;
+  // the noise floor: the second half of the lead-in (a Bluetooth receiver may still be waking up in the first)
+  const noiseDb = pre > 0.1 * fs ? rmsDb(rec.subarray(Math.max(Math.round(0.05 * fs), pre >> 1), pre - Math.round(0.05 * fs))) : null;
   const chans = [];
   for (let k = 0; k < sides.length; ++k) {
     const side = sides[k], name = side === 'L' ? 'left' : 'right';
@@ -289,7 +318,7 @@ async function measure() {
 }
 
 function runFrom(cap, name, seconds, level) {
-  const run = { name, time: new Date().toISOString(), fs: cap.fs, seconds, level, noiseDb: cap.noiseDb ?? -120, ch: [], notes: [], use: true };
+  const run = { name, time: new Date().toISOString(), fs: cap.fs, seconds, level, noiseDb: cap.noiseDb ?? -120, ch: [], notes: [], use: true, bt: S.bt };
   if (cap.dropped > 0) run.notes.push('The mic input dropped out during the run: measure again.');
   for (const c of cap.chans) {
     if (c.id === null) run.notes.push(c.note);
@@ -616,7 +645,8 @@ function verdict(run) {
   if (run.ch.length !== 2) return run.notes.length ? `<span class="warn">${esc(run.notes.join(' '))}</span>` : '';
   const parts = [];
   const dt = run.dtMs, cm = Math.abs(dt) / 1000 * SPEED * 100;
-  if (Math.abs(dt) < 0.02) parts.push('TIMING: <b>both arrive together</b>');
+  if (run.bt) parts.push('TIMING: <b>not measured over Bluetooth</b> (its delay varies)');
+  else if (Math.abs(dt) < 0.02) parts.push('TIMING: <b>both arrive together</b>');
   else {
     const later = dt > 0 ? 'right' : 'left', earlier = dt > 0 ? 'left' : 'right';
     parts.push(`TIMING: <b>${later} ${Math.abs(dt).toFixed(2)} ms later (${cm.toFixed(1)} cm further)</b> → delay ${earlier} by ${Math.abs(dt).toFixed(2)} ms`);
@@ -655,7 +685,7 @@ function saveSession() {
     cal: S.cal ? { name: S.cal.name, text: S.cal.text } : null,
     correction: S.corr,
     runs: S.runs.map((run) => ({
-      name: run.name, time: run.time, fs: run.fs, seconds: run.seconds, level: run.level, noiseDb: run.noiseDb, notes: run.notes, use: run.use,
+      name: run.name, time: run.time, fs: run.fs, seconds: run.seconds, level: run.level, noiseDb: run.noiseDb, notes: run.notes, use: run.use, bt: !!run.bt,
       pos: run.pos || null,
       ch: run.ch.map((c) => {
         const seg = irSegment(c);
@@ -685,7 +715,7 @@ async function openSession(file) {
       if (!(fs >= 8000 && fs <= 768000) || !Array.isArray(r.ch)) continue;
       const run = { name: String(r.name || 'Position'), time: String(r.time || new Date().toISOString()), fs,
                     seconds: +r.seconds || 0, level: +r.level || 0, noiseDb: +r.noiseDb || -120, ch: [],
-                    notes: Array.isArray(r.notes) ? r.notes.map(String) : [], use: r.use !== false,
+                    notes: Array.isArray(r.notes) ? r.notes.map(String) : [], use: r.use !== false, bt: r.bt === true,
                     pos: r.pos && isFinite(+r.pos.x) && isFinite(+r.pos.y) ? { x: +r.pos.x, y: +r.pos.y } : undefined };
       for (const ch of r.ch) {
         if (typeof ch.ir !== 'string') continue;
@@ -768,15 +798,25 @@ function meanDt(runs) {
   return both.length ? both.reduce((a, r) => a + r.dtMs, 0) / both.length : 0;
 }
 
+// any measurement in the correction made over Bluetooth: EQ only
+function btRuns() { return S.runs.some((r) => r.use && r.bt); }
+function showBtLocks() {
+  const bt = btRuns();
+  for (const id of ['cAlign', 'cPhase']) $(id).disabled = bt;
+  $('cAlign').title = bt ? 'Off: measured over Bluetooth, whose delay varies' : 'Delay the nearer speaker so both arrive together';
+  $('hCal').disabled = S.busy || !S.node || S.bt;
+}
+
 function designCorrection() {
+  showBtLocks();
   const runs = S.runs.filter((r) => r.use);
   W.x.room_corr_begin();
   let added = 0;
   for (const run of runs) for (const c of run.ch) added += W.x.room_corr_add(c.side === 'L' ? 0 : 1, c.id, S.windowMs, S.useCal && S.cal ? 1 : 0) ? 1 : 0;
   if (!added) { S.design = null; return null; }
-  const c = S.corr, dt = c.align ? meanDt(runs) : 0;
-  const params = [c.tilt, c.bass, c.treble, c.fLo, c.fHi, c.boost, c.cut, c.nulls ? 1 : 0, c.low ? 1 : 0, c.amount / 100,
-                  dt > 0 ? dt : 0, dt < 0 ? -dt : 0, c.phase ? 1 : 0, c.pLo, c.pHi];
+  const c = S.corr, bt = btRuns(), dt = c.align && !bt ? meanDt(runs) : 0;
+  const params = [c.tilt, c.bass, c.treble, c.fLo, bt ? Math.min(c.fHi, BT.fHi) : c.fHi, c.boost, c.cut, c.nulls ? 1 : 0, c.low ? 1 : 0, c.amount / 100,
+                  dt > 0 ? dt : 0, dt < 0 ? -dt : 0, c.phase && !bt ? 1 : 0, c.pLo, c.pHi];
   const p = W.x.room_alloc(params.length * 8);
   W.f64(p, params.length).set(params);
   const n = W.x.room_corr_design(p);
@@ -802,7 +842,7 @@ function drawCorrection(w, h) {
   }
   $('empty').style.display = 'none';
   const F = corrFreqs();
-  const showPhase = S.corr.phase;
+  const showPhase = S.corr.phase && !btRuns();
   const split = Math.round(h * (showPhase ? 0.5 : 0.66)), split2 = showPhase ? Math.round(h * 0.73) : h;
   const top = { x0: 46, x1: w - 14, y0: 14, y1: split - 10 }, bot = { x0: 46, x1: w - 14, y0: split + 8, y1: showPhase ? split2 - 10 : h - 26 };
   const ph = { x0: 46, x1: w - 14, y0: split2 + 8, y1: h - 26 };
@@ -895,7 +935,8 @@ function showCorrInfo(d) {
     parts.push(`${name}: <b>${lo.toFixed(1)} / +${Math.max(0, hi).toFixed(1)} dB</b>` + (sd.delay > 0 ? `, delayed <b>${sd.delay.toFixed(2)} ms</b>` : '') +
       (sd.guard > 0 ? `, no boost under <b>${fmtHz(sd.guard)}</b>` : ''));
   });
-  if (S.corr.phase) {
+  if (btRuns()) parts.push('<span class="warn">BLUETOOTH: EQ only, up to 16 kHz (no time alignment or phase correction: its delay varies).</span>');
+  else if (S.corr.phase) {
     const spread = (a) => { let lo = 1e9, hi = -1e9; const F = corrFreqs(); for (let i = 0; i < F.length; ++i) if (F[i] >= Math.max(100, S.corr.pLo) && F[i] <= S.corr.pHi) { lo = Math.min(lo, a[i]); hi = Math.max(hi, a[i]); } return hi - lo; };
     d.sides.forEach((sd, s) => {
       if (!sd) return;
@@ -919,6 +960,7 @@ function showCorrControls() {
   set('cCut', c.cut, '-' + c.cut + ' dB');
   for (const [id, v] of [['cLo', c.fLo], ['cHi', c.fHi]]) $(id).querySelectorAll('button').forEach((b) => b.classList.toggle('on', +b.dataset.v === v));
   for (const [id, k] of [['cNulls', 'nulls'], ['cLow', 'low'], ['cAlign', 'align'], ['cPhase', 'phase']]) $(id).classList.toggle('on', c[k]);
+  showBtLocks();
   $('cLat').querySelectorAll('button').forEach((b) => b.classList.toggle('on', (b.dataset.v === 'linear') === c.linear));
 }
 
@@ -1329,13 +1371,14 @@ function showHand() {
   const finished = H.center && H.targets.length && H.done.every(Boolean);
   const step = !ready ? 1 : (!H.center ? 2 : (finished ? 4 : 3));
   for (const k of [1, 2, 3]) { $('hs' + k).classList.toggle('now', k === step); $('hs' + k).classList.toggle('done', k < step); }
-  $('hCal').disabled = S.busy || !S.node;
+  $('hCal').disabled = S.busy || !S.node || S.bt;
   $('hCenter').disabled = S.busy || !ready;
   $('hStart').disabled = (S.busy && !H.running) || !H.center || (H.cur < 0 && !H.running);
   $('hStart').textContent = H.running ? 'STOP' : (H.done.some(Boolean) ? 'CONTINUE' : 'START');
   $('hRestart').disabled = S.busy || !H.center;
   const n = H.done.filter(Boolean).length;
   const facts = [];
+  if (S.bt) facts.push('<span class="warn">HANDHELD needs a wired link: it tracks the mic by timing, and Bluetooth\'s delay varies. Switch LINK to WIRED.</span>');
   if (ready) facts.push(`SPEAKERS <b>${(H.spacing * 100).toFixed(0)} cm</b> APART · LATENCY <b>${(H.lat / H.fs * 1000).toFixed(1)} ms</b>`);
   if (H.center) facts.push(`POINTS <b>${n} / ${H.targets.length}</b>`);
   $('hInfo').innerHTML = facts.join('<br>') + (H.info ? `<br><span class="${H.infoErr ? 'warn' : ''}">${esc(H.info)}</span>` : '');
@@ -1452,6 +1495,10 @@ function init() {
   };
   S.micId = recall('mic') || '';
   S.outId = recall('out') || '';
+  S.bt = recall('link') === 'bt';
+  seg('link', (v) => { S.bt = v === 'bt'; store('link', v); showLink(); showCorrControls(); showBtLocks(); if (S.view === 'handheld') showHand(); draw(); });
+  showLink();
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && S.ctx) keepAwake(true); });
   seg('chans', (v) => { S.chans = v; if (S.noise) setNoise(true); });
   seg('len', (v) => { S.seconds = +v; });
   $('level').oninput = () => { S.level = +$('level').value; $('levelText').textContent = S.level + ' dB'; if (S.noise) setNoise(true); };
