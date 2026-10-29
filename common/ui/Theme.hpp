@@ -86,6 +86,7 @@ namespace accents {
     inline Accent freeze() { return { "freeze", hexColor(0xC9E8FF), hexColor(0x1E4A73), hexColor(0xFF9A5C) }; }   // frost
     inline Accent tract()  { return { "tract",  hexColor(0xFF8FA3), hexColor(0x8A1A2E), hexColor(0x3FC9B0) }; }   // flush
     inline Accent acid()   { return { "acid",   hexColor(0xC9CED6), hexColor(0x2E333B), hexColor(0xFF6A2B) }; }   // gray (the notes in colour)
+    inline Accent x0x()    { return { "x0x",    hexColor(0xF3E3BC), hexColor(0x5B4326), hexColor(0xE8402F) }; }   // cream (the rows in colour)
     inline Accent chop()   { return { "chop",   hexColor(0xC6FF6B), hexColor(0x3E6100), hexColor(0xD45CFF) }; }   // lime
     // room measurement and correction (the app in room/ uses it too, in app.js)
     inline Accent room()   { return { "room",   hexColor(0xFFC86B), hexColor(0x6E4300), hexColor(0x2F7BFF) }; }   // amber

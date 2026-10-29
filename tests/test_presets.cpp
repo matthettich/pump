@@ -53,6 +53,7 @@
 #include "../plugins/freeze/FreezeParams.hpp"
 #include "../plugins/tract/TractParams.hpp"
 #include "../plugins/acid/AcidParams.hpp"
+#include "../plugins/x0x/X0xParams.hpp"
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -233,6 +234,7 @@ int main()
         { "TRACT", tract::params(), tract::presets(), tract::kNumParams },
         { "ROOM", roomfx::params(), roomfx::presets(), roomfx::kNumParams },
         { "ACID", acid::params(), acid::presets(), acid::kNumParams },
+        { "X0X", x0x::params(), x0x::presets(), x0x::kNumParams },
     };
     std::map<std::string, int> sections;
     std::vector<std::vector<std::string>> chains;
