@@ -21,4 +21,16 @@ namespace pump {
 using KeyGrabFn = bool (*)(void* user, unsigned vk, unsigned ch, bool press, bool ctrl, bool shift);
 void* keyGrabStart(uintptr_t nativeView, KeyGrabFn key, void* user);
 void keyGrabStop(void* grab);
+
+// macOS only (null elsewhere): a real one-line text field floating over a typed-name box (SING's lyrics, preset
+// names). It lives in a non-activating panel, the kind of window that takes the keyboard without bringing its app to
+// the front: a sandboxed plugin's process can't come forward on macOS 14 and later (activation became cooperative,
+// and the host doesn't yield), and an in-process editor shares its window with the host's own key handling. The
+// field gets the keys either way, with the system's own editing (cursor, selection, Cmd+V/C/X/Z, accents).
+// fx, fy, fw, fh: the box as fractions of the editor view (from its top left). how: 0 the text changed, 1 Enter,
+// -1 Esc. bg / ink: 0xRRGGBB.
+using TextFieldFn = void (*)(void* user, const char* utf8, int how);
+void* textFieldOpen(uintptr_t nativeView, float fx, float fy, float fw, float fh, const char* initial, unsigned maxLen,
+                    unsigned bg, unsigned ink, TextFieldFn fn, void* user);
+void textFieldClose(void* field);
 }

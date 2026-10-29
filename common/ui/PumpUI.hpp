@@ -302,7 +302,7 @@ public:
         buildHeader();
     }
 
-    ~PumpUI() override { pump::keyGrabStop(fKeyGrab); fKeyGrab = nullptr; pump::winFrameClockStop(fFrameClock); fFrameClock = nullptr; }
+    ~PumpUI() override { pump::textFieldClose(fNativeField); fNativeField = nullptr; pump::keyGrabStop(fKeyGrab); fKeyGrab = nullptr; pump::winFrameClockStop(fFrameClock); fFrameClock = nullptr; }
 
     // ---- for subclasses ------------------------------------------------------------------------------------------
     Theme theme;
@@ -715,9 +715,49 @@ public:
     void takeKeyboardFocus()
     {
         getWindow().focus();
+        // macOS, a typed name (SING's lyrics, a preset name): a real text field over the box (KeyGrab.hpp), which gets
+        // the keys in Renoise sandboxed or not. Values typed into a control keep the drawn box (Tab moves between them).
+        if (fEdit.param < 0 && fNativeField == nullptr)
+        {
+            const float gw = (float)getWidth(), gh = (float)getHeight();
+            if (gw > 0.0f && gh > 0.0f)
+            {
+                auto hex = [](const Color& c) {
+                    auto b = [](float v) { return (unsigned)pump::clampv((int)std::lround(v * 255.0f), 0, 255); };
+                    return b(c.red) << 16 | b(c.green) << 8 | b(c.blue);
+                };
+                const Rect& r = fEdit.r;
+                fNativeField = pump::textFieldOpen(getWindow().getNativeWindowHandle(), r.x * fScale / gw, r.y * fScale / gh,
+                                                   r.w * fScale / gw, r.h * fScale / gh, fEdit.text.c_str(), (unsigned)fEdit.maxLen,
+                                                   hex(theme.screen), hex(theme.ink), &PumpUI::textFromField, this);
+            }
+            if (fNativeField != nullptr) return;
+        }
         if (fKeyGrab == nullptr) fKeyGrab = pump::keyGrabStart(getWindow().getNativeWindowHandle(), &PumpUI::keyFromGrab, this);
     }
-    void releaseKeyboard() { if (fKeyGrab) { pump::keyGrabStop(fKeyGrab); fKeyGrab = nullptr; } }
+    void releaseKeyboard()
+    {
+        if (fKeyGrab) { pump::keyGrabStop(fKeyGrab); fKeyGrab = nullptr; }
+        if (fNativeField) { pump::textFieldClose(fNativeField); fNativeField = nullptr; }
+    }
+    // the native field (macOS): its text mirrored into the box as it's typed; Enter keeps it, Esc cancels
+    static void textFromField(void* self, const char* utf8, int how)
+    {
+        PumpUI* ui = static_cast<PumpUI*>(self);
+        if (!ui->fEdit.active || ui->fEdit.param >= 0) return;
+        std::string t;
+        for (const char* c = utf8 ? utf8 : ""; *c && t.size() < ui->fEdit.maxLen; ++c)
+        {
+            const unsigned char u = (unsigned char)*c;
+            if (u >= 32 && u < 127) t.push_back((char)u);
+            else if ((u == '\n' || u == '\r' || u == '\t') && !t.empty() && t.back() != ' ') t.push_back(' ');
+        }
+        ui->fEdit.text = t;
+        ui->fEdit.selectAll = false;
+        if (how > 0) ui->commitTextEntry();
+        else if (how < 0) { ui->setStatus("Not saved"); ui->fEdit.active = false; ui->fEdit.onText = nullptr; }
+        ui->repaint();
+    }
     // A key the grab kept from the host: the same path as a key the window delivers (Windows virtual-key codes).
     static bool keyFromGrab(void* self, unsigned vk, unsigned ch, bool press, bool ctrl, bool shift)
     {
@@ -838,7 +878,7 @@ protected:
     static void frameFromClock(void* self) { static_cast<PumpUI*>(self)->frame(); }
     void frame()
     {
-        if (fKeyGrab && !fEdit.active) releaseKeyboard();   // the box closed (Enter, Esc, a click elsewhere)
+        if ((fKeyGrab || fNativeField) && !fEdit.active) releaseKeyboard();   // the box closed (Enter, Esc, a click elsewhere)
         const double now = nowSeconds();
         float dt = (float)(now - fLastTick);
         if (dt <= 0.0f || dt > 0.25f) dt = 1.0f / 30.0f;
@@ -1806,6 +1846,7 @@ protected:
     bool fResizing = false;
     float fResizeStartX = 0, fResizeStartW = 0;
     double fLastTick = 0.0;
+    void* fNativeField = nullptr;  // macOS: the real text field over a typed-name box (KeyGrab.hpp)
     void* fKeyGrab = nullptr;      // Windows / macOS: the keyboard held for an open text box (KeyGrab.hpp)
     void* fFrameClock = nullptr;   // Windows: the steady frame clock (WinFrameClock.hpp)
     MenuButton* fPresetMenu = nullptr;

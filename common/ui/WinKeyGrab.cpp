@@ -144,10 +144,14 @@ void keyGrabStop(void* grab)
     unhook();
     delete g;
 }
+void* textFieldOpen(uintptr_t, float, float, float, float, const char*, unsigned, unsigned, unsigned, TextFieldFn, void*) { return nullptr; }
+void textFieldClose(void*) {}
 } // namespace pump
 #elif !defined(__APPLE__)   // macOS: MacKeyGrab.mm
 namespace pump {
 void* keyGrabStart(uintptr_t, KeyGrabFn, void*) { return nullptr; }
 void keyGrabStop(void*) {}
+void* textFieldOpen(uintptr_t, float, float, float, float, const char*, unsigned, unsigned, unsigned, TextFieldFn, void*) { return nullptr; }
+void textFieldClose(void*) {}
 }
 #endif
