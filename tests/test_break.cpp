@@ -207,6 +207,28 @@ int main()
             render(e, L, R, {}, stop, sr);
             CHECK(rms(L, (size_t)(0.1 * sr), L.size()) < 1e-4, "SONG: silent once the host stops");
         }
+        // ---- the break goes away or changes while voices play (a built-in still being made, FILE with no file, a
+        //      shorter file): silence or the new break, never a read through the old one
+        {
+            Engine e; Settings s = one(kStraight); s.seqMode = kSeqFree; e.setSettings(s); e.prepare(sr, 512); e.setSource(&tn);
+            std::vector<float> L((size_t)(0.3 * sr)), R;
+            Transport t; t.bpm = 120.0;
+            render(e, L, R, {}, t, sr);
+            const bool was = rms(L, 0, L.size()) > 0.05;
+            e.setSource(nullptr);
+            for (int k = 0; k < kFx; ++k) { s.fxHold[k] = true; } e.setSettings(s);
+            render(e, L, R, {}, t, sr);
+            const bool quiet = rms(L, (size_t)(0.05 * sr), L.size()) < 0.05;
+            e.playSlice(3, 1.0);
+            render(e, L, R, {}, t, sr);
+            Source shortSrc = tone(sr); shortSrc.L.resize(100); shortSrc.R.resize(100);
+            s = one(kStraight); s.seqMode = kSeqFree; e.setSettings(s); e.setSource(&tn);
+            render(e, L, R, {}, t, sr);
+            e.setSource(&shortSrc);
+            render(e, L, R, {}, t, sr);
+            bool fin = true; for (float x : L) fin = fin && std::isfinite(x);
+            CHECK(was && quiet && fin, "the break taken away mid-play: silence; a shorter one: plays on");
+        }
         // ---- random settings
         {
             std::mt19937 rg(3); std::uniform_real_distribution<double> u(0, 1);

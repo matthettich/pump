@@ -55,7 +55,15 @@ public:
     void setSettings(const Settings& s) { set = s; }
     void setTransport(const Transport& t) { tr = t; }
     void setPreview(bool on) { preview = on; }
-    void setSource(const Source* s) { src = s; }
+    // the break to play, every block: nullptr while a built-in is still being made or with no file (silence: every voice
+    // stops, they read through it); another break: the voices fade out of it
+    void setSource(const Source* s)
+    {
+        if (s == src) return;
+        if (!s || s->size() < 64) { for (auto& v : voices) v.active = false; src = s && s->size() >= 64 ? s : nullptr; return; }
+        if (src) for (auto& v : voices) if (v.active) v.fadeOut = true;
+        src = s;
+    }
     // held from outside (the window, the keys): combined with the parameters and the MIDI notes
     void setHeld(int k, bool on) { if (k >= 0 && k < kFx) uiHeld[k] = on; }
 
@@ -130,7 +138,7 @@ public:
             if (stut && ++stutCount >= stutLen) { stutCount = 0; restutter(); }
             // the voices
             double l = 0.0, r = 0.0;
-            for (auto& v : voices) if (v.active) voiceSample(v, l, r, fitR, rev);
+            if (src) for (auto& v : voices) if (v.active) voiceSample(v, l, r, fitR, rev);
             // REPEAT: capture, then loop
             if (repOn)
             {

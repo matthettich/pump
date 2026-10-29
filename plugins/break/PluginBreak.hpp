@@ -33,8 +33,14 @@ public:
     std::atomic<int> padSlice { -1 };              // the window's slice to play now (0-based)
     std::atomic<unsigned> uiHeld { 0u };           // effects held in the window or by the computer keys (bits)
 
-    // what plays now (the window draws it): nullptr while a built-in is still being made, or with no file
-    const Source* sourceNow() const { return nowSrc.load(std::memory_order_acquire); }
+    // what plays now (the window draws it, on the host's main thread): nullptr while a built-in is still being made, or
+    // with no file. A file comes from peek(), which stays valid on this thread until it loads another (what the audio
+    // thread last used may already be freed after a new file is loaded)
+    const Source* sourceNow() const
+    {
+        const int sel = (int)pv(kSource);
+        return sel == kSourceFile ? file.peek() : Breaks::get().ready(sel);
+    }
     std::string fileInfo() const { std::lock_guard<std::mutex> g(lock); return info; }
 
 protected:
@@ -114,7 +120,6 @@ protected:
         const Source* f = file.acquire();   // every block: acknowledges what is in use
         const int sel = (int)pv(kSource);
         const Source* src = sel == kSourceFile ? f : Breaks::get().ready(sel);
-        nowSrc.store(src, std::memory_order_release);
         engine.setSource(src);
         engine.setPreview(preview.load(std::memory_order_relaxed));
         const unsigned uh = uiHeld.load(std::memory_order_relaxed);
@@ -151,7 +156,6 @@ private:
     pump::synth::Midi midi[512] = {};
     std::string path, info;
     pump::Retained<Source> file;
-    std::atomic<const Source*> nowSrc { nullptr };
     mutable std::mutex lock;
 
     DISTRHO_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PluginBreak)

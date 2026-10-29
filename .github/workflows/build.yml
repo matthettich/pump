@@ -138,21 +138,27 @@ jobs:
           cp -R bin/*.component ~/Library/Audio/Plug-Ins/Components/
           killall -9 AudioComponentRegistrar >/dev/null 2>&1 || true
           sleep 2
-          fails=0
+          fails=0; failed=""
+          auval -a 2>&1 | grep -i wake | head -60
           for c in bin/*.component; do
             n=$(basename "$c" .component)
             t=$(plutil -extract AudioComponents.0.type raw "$c/Contents/Info.plist")
             st=$(plutil -extract AudioComponents.0.subtype raw "$c/Contents/Info.plist")
             m=$(plutil -extract AudioComponents.0.manufacturer raw "$c/Contents/Info.plist")
-            if timeout 300 auval -strict -v "$t" "$st" "$m" > "auval-$n.log" 2>&1 && grep -q "AU VALIDATION SUCCEEDED" "auval-$n.log"; then
+            if perl -e 'alarm shift; exec @ARGV' 300 auval -strict -v "$t" "$st" "$m" > "auval-$n.log" 2>&1 && grep -q "AU VALIDATION SUCCEEDED" "auval-$n.log"; then
               echo "ok: $n"
             else
-              fails=$((fails+1)); echo "::warning::auval failed: $n ($t $st $m)"
+              fails=$((fails+1)); failed="$failed $n"
               grep -nE "FAIL|ERROR|Error|error|WARNING|crash|Crash|signal" "auval-$n.log" | head -25
               tail -25 "auval-$n.log"
+              # the first few in full as annotations (the log isn't always reachable)
+              if [ $fails -le 4 ]; then
+                msg=$( (grep -E "FAIL|ERROR|rror|WARNING|rash|signal|Cannot|not found|didn't" "auval-$n.log" | head -8; tail -4 "auval-$n.log") | tr -d '\r' | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
+                echo "::warning title=auval $n::$msg"
+              fi
             fi
           done
-          echo "$fails Audio Unit(s) failed validation"
+          echo "::notice title=auval::$fails Audio Unit(s) failed validation:$failed"
       - name: System EQ (menu-bar app)
         # pump EQ on everything the Mac plays; bundles the signed bin/pump-eq.component from the step above
         run: |
