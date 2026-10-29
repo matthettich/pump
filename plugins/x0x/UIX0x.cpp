@@ -156,7 +156,9 @@ protected:
             keyBox(c.pad, false, padDown == i);
             if (l > 0.01f) fillRect(c.pad.inset(2), withAlpha2(col, 0.25f + 0.75f * l));
             fillRect(Rect(c.pad.x, c.pad.y, 5, c.pad.h), col);
-            textAt(c.pad.x + 10, c.pad.y + 13, kInstrInfo[i].label, kLabel, 10.0f, theme.ink, ALIGN_LEFT | ALIGN_MIDDLE, 0.6f);
+            float fs = 10.0f;   // shrink to fit the pad (fonts render wider on some systems)
+            while (fs > 7.0f && textWidth(kInstrInfo[i].label, kLabel, fs, 0.6f) > c.pad.w - 16) fs -= 0.25f;
+            textAt(c.pad.x + 10, c.pad.y + 13, kInstrInfo[i].label, kLabel, fs, theme.ink, ALIGN_LEFT | ALIGN_MIDDLE, 0.6f);
             char nb[8]; pump::padNoteName(noteForInstr(i), nb);
             std::snprintf(b, sizeof b, "%s %d", nb, noteForInstr(i));
             textAt(c.pad.x + 10, c.pad.y + 30, b, kMono, 9.5f, theme.ink2, ALIGN_LEFT | ALIGN_MIDDLE);

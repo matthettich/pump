@@ -12,13 +12,13 @@ START_NAMESPACE_DISTRHO
 using namespace pump::gloss;
 
 static const char* const kMachineAbout[kNumMachines] = {
-    "two-operator FM: latex, boings, squeaks",
-    "a sound chip: bitwise waves, sync, ring",
-    "a formant voice: vowels, size, breath",
-    "seven detuned saws, stereo",
-    "sixteen digital waves, bits, fold, warp",
-    "a plucked string, string to metal",
-    "water drops that chirp and fizz",
+    "FM: latex, boings, squeaks",
+    "a sound chip: sync, ring",
+    "a formant voice: vowels",
+    "seven detuned saws",
+    "digital waves, fold, warp",
+    "a plucked string, to metal",
+    "water drops that chirp",
 };
 
 class UIGloss : public PumpUI {
@@ -175,7 +175,15 @@ protected:
         caption(machR.x + 10, machR.y + 12, "MACHINE");
         const int m = pump::clampv((int)value(kMachine), 0, kNumMachines - 1);
         for (int k = 0; k < kNumMachines; ++k)
-            textAt(machineBtn[k]->r.r() + 8, machineBtn[k]->r.cy(), kMachineAbout[k], kLabel, 9.0f, k == m ? theme.ink : theme.ink2, ALIGN_LEFT | ALIGN_MIDDLE, 0.3f);
+        {
+            // shrink to fit the box (fonts render wider on some systems)
+            const float x = machineBtn[k]->r.r() + 8, avail = machR.r() - 8 - x;
+            float size = 9.0f;
+            while (size > 6.5f && textWidth(kMachineAbout[k], kLabel, size, 0.3f) > avail) size -= 0.25f;
+            save(); scissor(x, machR.y, avail, machR.h);
+            textAt(x, machineBtn[k]->r.cy(), kMachineAbout[k], kLabel, size, k == m ? theme.ink : theme.ink2, ALIGN_LEFT | ALIGN_MIDDLE, 0.3f);
+            restore();
+        }
         auto panel = [&](const Rect& r, const char* c) { strokeRect(r, theme.dim, 1.0f); caption(r.x + 12, r.y + 13, c); };
         panel(machP, (std::string(kMachineKeys[m]) + " CONTROLS").c_str());
         panel(pitchP, "PITCH"); panel(filtP, "FILTER"); panel(ampP, "AMP"); panel(fxP, "DRIVE / CRUSH"); panel(lfoP, "LFO"); panel(outP, "OUT");
