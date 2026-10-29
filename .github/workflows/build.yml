@@ -129,6 +129,30 @@ jobs:
           cp THIRD_PARTY_NOTICES.md dist/pump-macos/
           cp plugins/machine/NOTICE.md dist/pump-macos/pump-MACHINE-NOTICE.md && cp plugins/machine/fw/LICENSE dist/pump-macos/pump-MACHINE-LICENSE-GPL-3.0.txt
           cd dist && ditto -c -k --keepParent pump-macos pump-macos.zip
+      - name: Validate the Audio Units (auval)
+        # loads every plugin the way a host's scan does (open, initialise, render, parameters, state): a plugin that
+        # fails here is one a DAW would hide. Report-only for now: each failure is a warning with its log.
+        continue-on-error: true
+        run: |
+          mkdir -p ~/Library/Audio/Plug-Ins/Components
+          cp -R bin/*.component ~/Library/Audio/Plug-Ins/Components/
+          killall -9 AudioComponentRegistrar >/dev/null 2>&1 || true
+          sleep 2
+          fails=0
+          for c in bin/*.component; do
+            n=$(basename "$c" .component)
+            t=$(plutil -extract AudioComponents.0.type raw "$c/Contents/Info.plist")
+            st=$(plutil -extract AudioComponents.0.subtype raw "$c/Contents/Info.plist")
+            m=$(plutil -extract AudioComponents.0.manufacturer raw "$c/Contents/Info.plist")
+            if timeout 300 auval -strict -v "$t" "$st" "$m" > "auval-$n.log" 2>&1 && grep -q "AU VALIDATION SUCCEEDED" "auval-$n.log"; then
+              echo "ok: $n"
+            else
+              fails=$((fails+1)); echo "::warning::auval failed: $n ($t $st $m)"
+              grep -nE "FAIL|ERROR|Error|error|WARNING|crash|Crash|signal" "auval-$n.log" | head -25
+              tail -25 "auval-$n.log"
+            fi
+          done
+          echo "$fails Audio Unit(s) failed validation"
       - name: System EQ (menu-bar app)
         # pump EQ on everything the Mac plays; bundles the signed bin/pump-eq.component from the step above
         run: |
