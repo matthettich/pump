@@ -18,6 +18,10 @@
 // room profiles and headphone profiles apart, to switch between with one click; opening a .pumproom file (a double
 // click) adds it to the library and switches to it.
 //
+// Restart After a Crash (menu, on by default): each launch starts a small guardian (this same program with --guard),
+// which waits for the app to end; a quit leaves a marker, anything else (a crash) opens the app again, at most
+// three times in ten minutes. Open at Login (menu, off by default) starts it when you log in.
+//
 // Nothing on the audio thread allocates, locks or calls Objective-C.
 
 #import <Cocoa/Cocoa.h>
@@ -29,10 +33,15 @@
 #import <ServiceManagement/ServiceManagement.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 #include <dlfcn.h>
+#include <spawn.h>
+#include <sys/event.h>
+#include <unistd.h>
 #include <algorithm>
 #include <atomic>
 #include <cmath>
+#include <cerrno>
 #include <cstring>
+#include <string>
 #include <vector>
 
 static NSString* const kAppName = @"System EQ";
@@ -804,6 +813,7 @@ static NSString* currentOutputKey()
     [self listenForDeviceChanges];
     [self watchProcesses];
 
+    startGuardian();
     [self updateLevelHold];
     wantOn = ![prefs() boolForKey:@"off"];
     if (wantOn)
@@ -831,6 +841,8 @@ static NSString* currentOutputKey()
 
 - (void)applicationWillTerminate:(NSNotification*)note
 {
+    // a quit, not a crash: the guardian leaves it closed
+    [NSData.data writeToURL:cleanExitURL(getpid()) atomically:NO];
     [self saveState];
     engine.stop();
 }
@@ -1076,6 +1088,10 @@ static OSStatus processListener(AudioObjectID, UInt32, const AudioObjectProperty
     login.target = self;
     login.state = SMAppService.mainAppService.status == SMAppServiceStatusEnabled ? NSControlStateValueOn
                                                                                   : NSControlStateValueOff;
+
+    NSMenuItem* restart = [menu addItemWithTitle:@"Restart After a Crash" action:@selector(toggleRestart:) keyEquivalent:@""];
+    restart.target = self;
+    restart.state = restartOnCrash() ? NSControlStateValueOn : NSControlStateValueOff;
 
     NSMenuItem* privacy = [menu addItemWithTitle:@"Audio Recording Permission…" action:@selector(openPrivacy:)
                                    keyEquivalent:@""];
@@ -1403,6 +1419,12 @@ static double preampOf(NSString* text)
     [self updateStatus];
 }
 
+- (void)toggleRestart:(id)sender
+{
+    [prefs() setBool:!restartOnCrash() forKey:@"restartOnCrash"];
+    [prefs() synchronize];   // the guardian reads it from another process
+}
+
 - (void)toggleLogin:(id)sender
 {
     NSError* err = nil;
@@ -1703,8 +1725,86 @@ static double preampOf(NSString* text)
 
 @end
 
+// --- crash restart: the guardian
+
+static NSURL* cleanExitURL(pid_t pid)
+{
+    return [stateDir() URLByAppendingPathComponent:[NSString stringWithFormat:@"clean-exit-%d", (int)pid]];
+}
+
+static BOOL restartOnCrash()
+{
+    return [prefs() objectForKey:@"restartOnCrash"] == nil || [prefs() boolForKey:@"restartOnCrash"];
+}
+
+// start the guardian for this process (detached: it outlives a crash)
+static void startGuardian()
+{
+    NSString* exe = NSBundle.mainBundle.executablePath;
+    if (exe == nil)
+        return;
+    const std::string path = exe.UTF8String, pid = std::to_string((int)getpid());
+    char* args[] = { (char*)path.c_str(), (char*)"--guard", (char*)pid.c_str(), nullptr };
+    posix_spawnattr_t attr;
+    posix_spawnattr_init(&attr);
+    posix_spawnattr_setflags(&attr, POSIX_SPAWN_SETSID);
+    pid_t child = 0;
+    if (posix_spawn(&child, path.c_str(), nullptr, &attr, args, nullptr) != 0)
+        NSLog(@"%@: couldn't start the crash guardian", kAppName);
+    posix_spawnattr_destroy(&attr);
+}
+
+// wait for `pid` to end; open the app again unless it quit (its marker) or restarts are off or too frequent
+static int runGuardian(pid_t pid)
+{
+    const int kq = kqueue();
+    if (kq < 0)
+        return 0;
+    struct kevent ev;
+    EV_SET(&ev, pid, EVFILT_PROC, EV_ADD | EV_ONESHOT, NOTE_EXIT, 0, nullptr);
+    if (kevent(kq, &ev, 1, nullptr, 0, nullptr) < 0)
+        return 0;   // already gone before we could watch it
+    struct kevent got;
+    while (kevent(kq, nullptr, 0, &got, 1, nullptr) < 0 && errno == EINTR) {}
+    close(kq);
+    NSURL* marker = cleanExitURL(pid);
+    if ([NSFileManager.defaultManager fileExistsAtPath:marker.path])
+    {
+        [NSFileManager.defaultManager removeItemAtURL:marker error:nil];
+        return 0;   // quit on purpose
+    }
+    [prefs() synchronize];
+    if (!restartOnCrash())
+        return 0;
+    // at most three restarts in ten minutes: a crash at every start shouldn't loop forever
+    const double now = NSDate.date.timeIntervalSince1970;
+    NSMutableArray* recent = [NSMutableArray array];
+    for (NSNumber* t in [prefs() arrayForKey:@"crashRestarts"] ?: @[])
+        if ([t isKindOfClass:NSNumber.class] && now - t.doubleValue < 600.0)
+            [recent addObject:t];
+    if (recent.count >= 3)
+    {
+        NSLog(@"%@: crashed again; not restarting (3 restarts in 10 minutes)", kAppName);
+        return 0;
+    }
+    [recent addObject:@(now)];
+    [prefs() setObject:recent forKey:@"crashRestarts"];
+    [prefs() synchronize];
+    sleep(2);
+    NSString* bundle = NSBundle.mainBundle.bundlePath;
+    char* args[] = { (char*)"/usr/bin/open", (char*)"-a", (char*)bundle.UTF8String, nullptr };
+    pid_t child = 0;
+    posix_spawn(&child, "/usr/bin/open", nullptr, nullptr, args, nullptr);
+    NSLog(@"%@: restarted after a crash", kAppName);
+    return 0;
+}
+
 int main(int argc, const char* argv[])
 {
+    if (argc >= 3 && std::strcmp(argv[1], "--guard") == 0)
+    {
+        @autoreleasepool { return runGuardian((pid_t)std::atoi(argv[2])); }
+    }
     @autoreleasepool
     {
         NSApplication* app = NSApplication.sharedApplication;

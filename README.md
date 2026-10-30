@@ -94,7 +94,9 @@ window; `pump-macos.pkg` installs it in Applications, and `system-eq-macos.zip` 
   Everything plays at the lowest preamp of your profiles (the menu shows it); quitting System EQ is the way back to
   full level, and turning the EQ off asks first when that would be louder. *Reset Level Hold…* works it out again
   from the library. Room Profiles on Windows does the same: quitting it (it asks) gives full level back.
-- **EQ On** in the menu turns it off and gives the Mac its untouched output back. *Open at Login* starts it with the Mac.
+- **EQ On** in the menu turns it off and gives the Mac its untouched output back. *Open at Login* (off until you
+  turn it on) starts it when you log in. *Restart After a Crash* (on) opens it again if it ever crashes, at most three
+  times in ten minutes; quitting from the menu always leaves it closed (a Force Quit counts as a crash).
 - The first start asks for permission to record system audio (that's how it hears other apps). If you hear nothing,
   *Audio Recording Permission…* in the menu opens the right page in System Settings. Unsigned builds may ask again
   after an update.
