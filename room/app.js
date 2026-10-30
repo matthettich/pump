@@ -79,7 +79,7 @@ const S = {
   runs: [], nextColour: 0,
   chans: 'LR', seconds: 4, level: -18,
   view: 'response', smooth: 12, windowMs: 500, norm: true, useCal: true,
-  busy: false, noise: false, pending: null, bt: false, wake: null,
+  busy: false, noise: false, flip: false, unsaved: false, pending: null, bt: false, wake: null,
   corr: { tilt: 0, bass: 0, treble: 0, amount: 100, fLo: 20, fHi: 20000, boost: 6, cut: 15, nulls: true, low: true, align: true,
           phase: false, pLo: 60, pHi: 3000, linear: false },
   design: null,
@@ -147,6 +147,7 @@ async function startAudio() {
     $('start').classList.remove('hot');
     $('measure').disabled = false;
     $('noise').disabled = false;
+    $('flip').disabled = S.chans !== 'LR';
     status(S.sim ? 'Simulated room (test mode): no speakers or mic are used.' : 'Audio running. Play TEST LEVEL and set your volume, then MEASURE.');
   } catch (e) {
     await stopAudio();
@@ -165,6 +166,7 @@ async function stopAudio() {
   keepAwake(false);
   $('measure').disabled = true;
   $('noise').disabled = true;
+  $('flip').disabled = true;
 }
 
 // Phones: keep the screen on while audio runs (a sleeping screen stops the audio mid-sweep)
@@ -236,11 +238,25 @@ function fromWorklet(m) {
   }
 }
 
-function setNoise(on) {
+// Pink noise at the sweeps' loudness (the same RMS: a sweep at LEVEL dB peak is LEVEL - 3 dB RMS), so setting the
+// volume by ear with it sets the sweeps too. FLIP RIGHT inverts the right speaker's noise for the polarity test.
+function setNoise(on, announce = true) {
+  const was = S.noise;
   S.noise = on;
   $('noise').classList.toggle('active', on);
   $('noise').textContent = on ? 'STOP NOISE' : 'TEST LEVEL';
-  if (S.node) S.node.port.postMessage({ type: 'noise', on, left: S.chans !== 'R', right: S.chans !== 'L', level: S.level - 3 });
+  const flip = S.flip && S.chans === 'LR';
+  if (S.node) S.node.port.postMessage({ type: 'noise', on, left: S.chans !== 'R', right: S.chans !== 'L', level: S.level - 3, flipRight: flip });
+  if (!announce || S.view === 'handheld') return;
+  if (on && flip) status('Right speaker flipped. From your seat: the way that sounds solid and centred, with fuller bass, is right. Correctly wired speakers sound best with FLIP RIGHT off.');
+  else if (on && !was) status('Test noise playing. Hold the mic where you\'ll measure: at your listening spot, ear height, not near a speaker. Set the volume so MIC LEVEL sits in the shaded zone; the sweeps play at this same loudness.');
+}
+
+function setFlip(on) {
+  S.flip = on;
+  $('flip').classList.toggle('on', on);
+  if (S.noise) setNoise(true);
+  else if (on) status('Press TEST LEVEL to hear the noise with the right speaker flipped.');
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -301,6 +317,8 @@ async function measure() {
     } else {
       finishRun(run);
       S.runs.push(run);
+      S.unsaved = true;
+      if (U.latest) showUpdate();
       const warn = runWarnings(run);
       status(warn.length ? warn.join(' ') : `Measured ${name}.`, warn.length > 0);
       $('pos').value = '';
@@ -346,7 +364,62 @@ function finishRun(run) {
     const [l, r] = run.ch;
     run.dtMs = (r.arrival - l.arrival) / run.fs * 1000;
     run.levelDiff = bandLevel(r, 500, 2000) - bandLevel(l, 500, 2000);
+    run.polarity = polarityMatch(l, r);
   }
+}
+
+// Do the two speakers push the same way? +1 yes, -1 no (one is wired backwards), 0 can't tell. The sign of one
+// peak each is easily fooled (a two-way speaker's tweeter and woofer give lobes of opposite sign and similar size,
+// and a small mic offset or toe-in decides which one is picked), so this compares the direct sounds as a whole:
+// both low-passed below the crossover with no phase shift, lined up on their biggest low-passed lobe, then
+// correlated over a small range of lags. The lag range stays well inside half a period of the low-pass so it can't line up a
+// lobe with its opposite.
+function polarityMatch(l, r) {
+  if (l.fs !== r.fs) return 0;
+  const fs = l.fs;
+  const prep = (c) => {
+    const n = W.x.room_info(c.id, 5), ir = W.f32(W.x.room_ir_ptr(c.id), n);
+    const at = c.arrival - c.irStart;
+    const a = Math.max(0, Math.floor(at - 0.004 * fs)), b = Math.min(n, Math.ceil(at + 0.012 * fs));
+    const x = zeroPhaseLowpass(ir.slice(a, b), 700, fs);
+    // line up on the low-passed direct sound's biggest lobe (the arrival itself may be on either driver's lobe)
+    let pk = Math.round(at - a), m = 0;
+    for (let i = Math.max(0, Math.round(at - a - 0.001 * fs)); i < Math.min(x.length, Math.round(at - a + 0.003 * fs)); ++i)
+      if (Math.abs(x[i]) > m) { m = Math.abs(x[i]); pk = i; }
+    return { x, at: pk };
+  };
+  const L = prep(l), R = prep(r);
+  const pre = 0.0015 * fs, post = 0.0025 * fs, maxLag = Math.round(0.0003 * fs);
+  let best = 0;
+  for (let lag = -maxLag; lag <= maxLag; ++lag) {
+    let sxy = 0, sxx = 0, syy = 0;
+    for (let k = -Math.floor(pre); k <= Math.ceil(post); ++k) {
+      const w = 0.5 + 0.5 * Math.cos(Math.PI * (k < 0 ? k / pre : k / post));   // Hann, peaking at the arrival
+      const xi = Math.round(L.at) + k, yi = Math.round(R.at) + k + lag;
+      if (xi < 0 || yi < 0 || xi >= L.x.length || yi >= R.x.length) continue;
+      const x = L.x[xi] * w, y = R.x[yi] * w;
+      sxy += x * y; sxx += x * x; syy += y * y;
+    }
+    const rho = sxx > 0 && syy > 0 ? sxy / Math.sqrt(sxx * syy) : 0;
+    if (Math.abs(rho) > Math.abs(best)) best = rho;
+  }
+  return best >= 0.4 ? 1 : (best <= -0.4 ? -1 : 0);
+}
+
+// 2nd-order Butterworth low-pass run forwards then backwards (no phase shift)
+function zeroPhaseLowpass(x, fc, fs) {
+  const w = 2 * Math.PI * fc / fs, al = Math.sin(w) / Math.SQRT2, c = Math.cos(w), a0 = 1 + al;
+  const b0 = (1 - c) / 2 / a0, b1 = (1 - c) / a0, b2 = b0, a1 = -2 * c / a0, a2 = (1 - al) / a0;
+  const pass = (v) => {
+    let x1 = 0, x2 = 0, y1 = 0, y2 = 0;
+    for (let i = 0; i < v.length; ++i) {
+      const xi = v[i], y = b0 * xi + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2;
+      x2 = x1; x1 = xi; y2 = y1; y1 = y; v[i] = y;
+    }
+  };
+  const y = Float64Array.from(x);
+  pass(y); y.reverse(); pass(y); y.reverse();
+  return y;
 }
 
 function runWarnings(run) {
@@ -620,7 +693,6 @@ function renderRuns() {
         <span><span class="lab">ARRIVAL </span><b class="num">${(c.arrival / c.fs * 1000).toFixed(2)} ms</b></span>
         <span class="${low ? 'warn' : ''}"><span class="lab">SNR </span><b class="num">${c.snr.toFixed(0)} dB</b></span>
         <span class="wide-only ${clip ? 'warn' : ''}"><span class="lab">PEAK </span><b class="num">${c.peakDbFS.toFixed(1)} dBFS</b></span>
-        <span class="wide-only"><span class="lab">POLARITY </span><b class="num">${c.polarity > 0 ? '+' : '−'}</b></span>
         <span class="wide-only"></span>
         <span><button class="key" data-act="txt">TXT</button> <button class="key" data-act="wav">WAV</button></span>`;
       row.querySelector('.sw').onclick = () => { c.visible = !c.visible; renderRuns(); draw(); };
@@ -653,7 +725,9 @@ function verdict(run) {
   }
   const ld = run.levelDiff;
   parts.push(Math.abs(ld) < 0.25 ? 'LEVEL: <b>matched</b>' : `LEVEL: <b>right ${Math.abs(ld).toFixed(1)} dB ${ld > 0 ? 'louder' : 'quieter'}</b> (500 Hz–2 kHz)`);
-  if (run.ch[0].polarity !== run.ch[1].polarity) parts.push('<span class="warn">POLARITY: the speakers disagree (one may be wired backwards)</span>');
+  if (run.polarity === 1) parts.push('POLARITY: <b>matched</b>');
+  else if (run.polarity === -1) parts.push('<span class="warn">POLARITY: the speakers push opposite ways: one may be wired backwards. Check by ear with FLIP RIGHT POLARITY on the test noise.</span>');
+  else parts.push('POLARITY: <b>unclear</b> (check by ear with FLIP RIGHT POLARITY on the test noise)');
   if (run.notes.length) parts.push(`<span class="warn">${esc(run.notes.join(' '))}</span>`);
   return parts.map((p) => `<span>${p}</span>`).join('');
 }
@@ -696,6 +770,8 @@ function saveSession() {
   };
   const stamp = new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-');
   download(`pump-room-${stamp}.json`, JSON.stringify(doc), 'application/json');
+  S.unsaved = false;
+  if (U.latest) showUpdate();
   status(`Saved ${S.runs.length} measurement${S.runs.length === 1 ? '' : 's'}.`);
 }
 
@@ -1254,7 +1330,12 @@ function handFind() {
     if (p.why) { handInfo(p.why, true); return; }
     const lat = p.tL - HAND.grille / 343 * H.fs;
     const spacing = (p.tR - lat) / H.fs * 343;
-    if (!(spacing > 0.3 && spacing < 8)) { handInfo(`That puts the speakers ${spacing.toFixed(2)} m apart: hold the mic against the LEFT speaker and try again.`, true); return; }
+    if (spacing < 0 && spacing > -8) {
+      // the right speaker was heard first: the mic is on the right one, or left and right are swapped on the way out
+      handInfo(`The RIGHT speaker was heard first (${(-spacing * 100).toFixed(0)} cm before the left). If the mic is on the left speaker, left and right are swapped somewhere: check the cables, the output's channel setup (and Equalizer APO's) and the speakers' own settings. TEST LEVEL with SPEAKERS on LEFT shows which one plays.`, true);
+      return;
+    }
+    if (!(spacing > 0.3 && spacing < 8)) { handInfo(`That puts the speakers ${spacing.toFixed(2)} m apart: hold the mic against the LEFT speaker's grille, in front of the tweeter, and try again.`, true); return; }
     H.lat = lat; H.spacing = spacing;
     H.tail = Math.min(1.0, lat / H.fs + 0.06);   // pings only need the latency and a few metres
     handInfo(`Speakers ${(spacing * 100).toFixed(0)} cm apart, latency ${(lat / H.fs * 1000).toFixed(1)} ms. Now step 2.`);
@@ -1346,6 +1427,8 @@ function handStart() {
         continue;
       }
       S.runs.push(run);
+      S.unsaved = true;
+      if (U.latest) showUpdate();
       H.done[H.cur] = true;
       H.cur = handNext();
       renderRuns();
@@ -1478,6 +1561,48 @@ function seg(id, onPick) {
   });
 }
 
+// ---------------------------------------------------------------------------------------------------------------------
+// updates: every build carries its commit and time (room/build.sh); CI publishes the newest one's as version.json
+// next to the web app. A newer one shows a bar: on the web UPDATE reloads the page, in the desktop app (or the page
+// opened from a file) it opens the download page.
+
+const UPDATE_URL = 'https://matthettich.github.io/pump/version.json';
+const DOWNLOAD_URL = 'https://github.com/matthettich/pump/releases/tag/latest';
+const U = { checked: 0, latest: null, dismissed: '' };
+
+async function checkUpdate(force = false) {
+  if (S.sim || !ROOM_BUILD || !ROOM_BUILD.time || !window.fetch) return;
+  const now = Date.now();
+  if (!force && now - U.checked < 10 * 60 * 1000) return;
+  U.checked = now;
+  try {
+    const r = await fetch(UPDATE_URL + '?t=' + now, { cache: 'no-store' });
+    if (!r.ok) return;
+    const v = await r.json();
+    if (v && typeof v.id === 'string' && +v.time > ROOM_BUILD.time && v.id !== ROOM_BUILD.id) { U.latest = v; showUpdate(); }
+  } catch (e) { /* offline: try again later */ }
+}
+
+function showUpdate() {
+  const v = U.latest, web = location.protocol === 'https:';
+  $('update').hidden = !v || U.dismissed === v.id;
+  if (!v) return;
+  $('updateText').textContent = web
+    ? 'A new version of pump ROOM is ready.' + (S.unsaved ? ' SAVE your measurements first: updating reloads the page.' : '')
+    : 'A new version of pump ROOM is out: download it and install it over this one.';
+  $('updateGo').textContent = web ? 'UPDATE' : 'DOWNLOAD';
+}
+
+function doUpdate() {
+  const v = U.latest;
+  if (!v) return;
+  if (location.protocol !== 'https:') { window.open(DOWNLOAD_URL, '_blank'); return; }
+  if (S.busy) { status('Wait for the measurement to finish, then UPDATE.', true); return; }
+  if (S.unsaved && !confirm('Measurements you haven\'t saved will be lost. Update now?')) return;
+  setNoise(false, false);
+  location.replace(location.pathname + '?v=' + encodeURIComponent(v.id) + location.hash);   // a new URL skips the cached page
+}
+
 function init() {
   const saved = recall('theme');
   const dark = saved ? saved === 'dark' : !!(window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches);
@@ -1498,11 +1623,20 @@ function init() {
   S.bt = recall('link') === 'bt';
   seg('link', (v) => { S.bt = v === 'bt'; store('link', v); showLink(); showCorrControls(); showBtLocks(); if (S.view === 'handheld') showHand(); draw(); });
   showLink();
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && S.ctx) keepAwake(true); });
-  seg('chans', (v) => { S.chans = v; if (S.noise) setNoise(true); });
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible') return;
+    if (S.ctx) keepAwake(true);
+    checkUpdate();
+  });
+  $('updateGo').onclick = doUpdate;
+  $('updateLater').onclick = () => { if (U.latest) U.dismissed = U.latest.id; showUpdate(); };
+  setTimeout(() => checkUpdate(true), 3000);
+  setInterval(() => checkUpdate(), 30 * 60 * 1000);
+  seg('chans', (v) => { S.chans = v; $('flip').disabled = !S.node || v !== 'LR'; if (S.noise) setNoise(true, false); });
   seg('len', (v) => { S.seconds = +v; });
-  $('level').oninput = () => { S.level = +$('level').value; $('levelText').textContent = S.level + ' dB'; if (S.noise) setNoise(true); };
+  $('level').oninput = () => { S.level = +$('level').value; $('levelText').textContent = S.level + ' dB'; if (S.noise) setNoise(true, false); };
   $('noise').onclick = () => setNoise(!S.noise);
+  $('flip').onclick = () => setFlip(!S.flip);
   $('measure').onclick = () => (S.busy ? stopMeasure() : measure());
   $('calLoad').onclick = () => $('calFile').click();
   $('calFile').onchange = () => { const f = $('calFile').files[0]; if (f) loadCal(f); $('calFile').value = ''; };

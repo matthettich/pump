@@ -4,7 +4,9 @@
 //
 // Messages in:  {type:'run', out:[Float32Array L, Float32Array R], length}   play + record `length` frames
 //               {type:'stop'}                                                  abort a run (sends 'aborted')
-//               {type:'noise', on, left, right, level}                         pink noise for setting the level
+//               {type:'noise', on, left, right, level, flipRight}              pink noise for setting the level: `level` is
+//                                                                              its RMS (dBFS), flipRight inverts the right
+//                                                                              channel (the polarity listening test)
 //               {type:'sim', on}                                               simulated room instead of the mic (tests)
 //               {type:'simMic', x, y}                                          move the simulated mic (metres; speakers at
 //                                                                              x = -1.2 / +1.2, y = 0; the listener at y > 0)
@@ -17,7 +19,7 @@ class RoomIO extends AudioWorkletProcessor {
     constructor() {
         super();
         this.run = null;
-        this.noise = { on: false, left: true, right: true, gain: 0 };
+        this.noise = { on: false, left: true, right: true, flipRight: false, gain: 0 };
         this.pink = [0, 0, 0, 0, 0, 0, 0];
         this.meterPeak = 0; this.meterSum = 0; this.meterN = 0; this.outPeak = 0;
         this.meterEvery = Math.round(sampleRate * 0.05);
@@ -31,7 +33,9 @@ class RoomIO extends AudioWorkletProcessor {
         } else if (m.type === 'stop') {
             if (this.run) { this.run = null; this.port.postMessage({ type: 'aborted' }); }
         } else if (m.type === 'noise') {
-            this.noise = { on: !!m.on, left: !!m.left, right: !!m.right, gain: Math.pow(10, (m.level || -20) / 20) };
+            // pinkSample() is about -14.2 dBFS RMS: scale it to `level`
+            this.noise = { on: !!m.on, left: !!m.left, right: !!m.right, flipRight: !!m.flipRight,
+                           gain: Math.pow(10, ((m.level || -20) + 14.2) / 20) };
         } else if (m.type === 'sim') {
             this.sim = m.on ? this.makeSim() : null;
         } else if (m.type === 'simMic' && this.sim) {
@@ -115,9 +119,12 @@ class RoomIO extends AudioWorkletProcessor {
                     rr = p < r.out[1].length ? r.out[1][p] : 0;
                 }
             } else if (this.noise.on) {
-                const v = this.pinkSample() * this.noise.gain;
+                let v = this.pinkSample() * this.noise.gain;
+                // pink noise peaks ~13 dB over its RMS: at high levels, round the peaks off below full scale
+                const av = Math.abs(v);
+                if (av > 0.7) v = Math.sign(v) * (0.7 + 0.25 * Math.tanh((av - 0.7) / 0.25));
                 l = this.noise.left ? v : 0;
-                rr = this.noise.right ? v : 0;
+                rr = this.noise.right ? (this.noise.flipRight ? -v : v) : 0;
             }
             const x = this.sim ? this.simSample(l, rr) : (input ? input[i] : 0);
             if (outL) outL[i] = this.sim ? 0 : l;

@@ -1,6 +1,7 @@
 // pump ROOM as a desktop app (Mac and Windows): a window around the same page as bin/pump-room.html (room/build.sh),
 // which is copied to app/pump-room.html before packaging (room/electron/build.sh). Only the microphone and choosing
-// the output are allowed; nothing is loaded from the network.
+// the output are allowed; nothing is loaded from the network but the page's update check (a small version.json
+// from GitHub Pages; a newer build shows a bar that opens the download page).
 //
 // PUMP_ROOM_SMOKE=1: run the page's simulated room (#sim), measure both speakers, print the result and quit with 0
 // if the timing comes out right (CI runs the packaged app this way).

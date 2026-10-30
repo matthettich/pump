@@ -264,7 +264,7 @@ jobs:
       - name: Build
         run: WASI_SDK=$PWD/wasi-sdk-25.0-x86_64-linux sh room/build.sh dist/pump-room.html
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02   # v4
-        with: { name: pump-room, path: dist/pump-room.html }
+        with: { name: pump-room, path: "dist/pump-room*" }
 
   room-app-mac:
     # pump ROOM as a desktop app (Electron), from the page the room job built; smoke-tested on its simulated room
@@ -337,6 +337,7 @@ jobs:
         run: |
           cd site
           mv pump-room.html index.html
+          mv pump-room-version.json version.json   # what the app checks for updates
           touch .nojekyll
           git init -q -b gh-pages
           git config user.name "github-actions[bot]"

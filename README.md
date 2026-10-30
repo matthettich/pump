@@ -107,15 +107,21 @@ it to Applications; the first time, right-click > Open, since it isn't notarized
   with no time alignment, phase correction or HANDHELD. A wired output gives the full correction.
 - **Mic calibration:** load the mic's calibration file (frequency / dB per line: the usual .txt, .cal or .frd files
   read as they are). Without one the mic is taken as flat.
-- **TEST LEVEL** plays pink noise: set the volume so the mic meter sits in the shaded band (-30 to -12 dBFS).
+- **TEST LEVEL** plays pink noise as loud as the sweeps: with the mic where you'll measure (your listening spot, ear
+  height, not near a speaker), set the volume so the mic meter sits in the shaded band (-30 to -12 dBFS).
+  **FLIP RIGHT POLARITY** inverts the right speaker's noise: from your seat, the way that sounds solid and centred with
+  fuller bass is right, so correctly wired speakers sound best with it off.
 - **MEASURE** plays a sweep from each speaker in turn and shows the response (smoothing, window, normalize), the
   impulse view, and for both speakers how much later one arrives (and by how much to delay the other) and the level
-  difference between them.
+  difference between them, and whether they push the same way (polarity: the direct sounds compared below the
+  crossover, so tweeter and woofer lobes or a slightly off-centre mic don't fool it).
 - Turn System EQ (and any other correction) off while measuring. **SAVE** keeps the measurements for later;
   **TXT** and **WAV** export a response or an impulse response for other tools.
 - **HANDHELD** measures with the mic in your hand: hold it against the left speaker (*FIND SPEAKERS*: it learns
   the spacing and the latency), then at your head where you sit (*SET CENTER*), then *START* and carry it to each dot
   on the map: it tracks the mic by sound, says which way to move, and measures by itself when you hold still on a dot.
+  If FIND SPEAKERS hears the right speaker first, left and right are swapped somewhere on the way out, and it says so.
+- When there's a newer build, a bar under the header offers it: **UPDATE** on the web, **DOWNLOAD** in the desktop app.
 - **CORRECTION** turns the measurements ticked *IN CORRECTION* (measure a few spots around where you sit) into a
   correction: target (tilt, bass, treble), range, maximum boost and cut, *SKIP NULLS* (no chasing dips EQ can't fill),
   *PROTECT LOW END* (no boost below what the speakers can play), *TIME ALIGN*, *ALIGN PHASE* (each speaker's bass,

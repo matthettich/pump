@@ -20,10 +20,14 @@ for f in room_alloc room_release_buf room_sweep room_sweep_ptr room_sweep_band r
          room_corr_grid_size room_corr_info room_corr_profile room_text_ptr room_text_len room_corr_fir room_fir_ptr; do EXPORTS="$EXPORTS -Wl,--export=$f"; done
 "$WASI_SDK/bin/clang++" $FLAGS -mexec-model=reactor -Wl,--export=_initialize $EXPORTS -Wl,--strip-all -Wl,-z,stack-size=1048576 \
   -Wl,--initial-memory=33554432 -Wl,--max-memory=1073741824 "$O/room.o" "$O/pffft.o" -o "$O/pump-room.wasm"
+# the build's stamp for the update check: the commit and its time (version.json beside the page, which CI publishes)
+BUILD_ID=$(git -C "$H" rev-parse --short=12 HEAD 2>/dev/null || echo dev)
+BUILD_TIME=$(git -C "$H" log -1 --format=%ct 2>/dev/null || echo 0)
 mkdir -p "$(dirname "$OUT")"
-python3 - "$H" "$O/pump-room.wasm" "$OUT" <<'PY'
+python3 - "$H" "$O/pump-room.wasm" "$OUT" "$BUILD_ID" "$BUILD_TIME" <<'PY'
 import base64, json, sys, os
-h, wasm, out = sys.argv[1:4]
+h, wasm, out, build_id, build_time = sys.argv[1:6]
+build = json.dumps({'id': build_id, 'time': int(build_time)})
 r = lambda p: open(os.path.join(h, p), encoding='utf-8').read()
 b64 = lambda p: base64.b64encode(open(p, 'rb').read()).decode()
 page = r('room/app.html')
@@ -32,10 +36,12 @@ for key, value in [('@STYLE@', r('room/app.css')),
                    ('@FONT_JBM@', b64(os.path.join(h, 'common/fonts/JetBrainsMono-Regular.ttf'))),
                    ('@WASM@', b64(wasm)),
                    ('@WORKLET@', json.dumps(r('room/worklet.js'))),
+                   ('@BUILD@', build),
                    ('@SCRIPT@', r('room/app.js'))]:
     assert key in page, key
     page = page.replace(key, value)
 open(out, 'w', encoding='utf-8').write(page)
+open(os.path.join(os.path.dirname(out), 'pump-room-version.json'), 'w').write(build + '\n')
 print('built %s (%d KB)' % (out, len(page) // 1024))
 PY
 rm -rf "$O"

@@ -104,10 +104,19 @@ main, force-pushed as a single commit with plain git. GitHub Pages serves it at 
 once the repo's Settings > Pages source is "Deploy from a branch: gh-pages, / (root)" (a one-time setting the owner
 makes; sessions can't reach the Pages API). HTTPS is what the browser needs for the microphone.
 
+### Updates
+
+`room/build.sh` stamps each page with its commit and commit time (`ROOM_BUILD`) and writes the same as
+`pump-room-version.json` beside it; the `pages` job publishes that as `version.json`. The page fetches it 3 s after
+opening, when it comes back into view (at most every 10 minutes) and every 30 minutes; a newer build shows a bar under
+the header. On the web, UPDATE reloads the page under a new URL (so the cached copy isn't reused), after a warning if
+there are unsaved measurements; in the desktop app or a page opened from a file, DOWNLOAD opens the latest release.
+LATER hides the bar until the next newer build. The simulated room (`#sim`) skips the check.
+
 ## The desktop app
 
 `room/electron/` wraps the same page in Electron (`main.js`): one window, only the microphone and output choice
-allowed, no network, Save / Open through the system's file dialogs. `sh room/electron/build.sh` (after `make room-page`)
+allowed, no network but the update check, Save / Open through the system's file dialogs. `sh room/electron/build.sh` (after `make room-page`)
 packages it on a Mac (universal `pump ROOM.app`, ad-hoc signed, zipped) or on Windows (installer + zip); CI's
 `room-app-mac` and `room-app-windows` jobs do that and run the packaged app once with `PUMP_ROOM_SMOKE=1`, which
 measures the simulated room and fails the build if the timing is off. Electron (45.1.0) and its packager (26.18.0) come
