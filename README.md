@@ -97,6 +97,9 @@ window; `pump-macos.pkg` installs it in Applications, and `system-eq-macos.zip` 
 - **EQ On** in the menu turns it off and gives the Mac its untouched output back. *Open at Login* (off until you
   turn it on) starts it when you log in. *Restart After a Crash* (on) opens it again if it ever crashes, at most three
   times in ten minutes; quitting from the menu always leaves it closed (a Force Quit counts as a crash).
+- **Sleep:** System EQ rebuilds its audio a couple of seconds after the Mac (or its displays) wakes, and restarts it
+  by itself if the audio device stops. If an app is still silent, *Restart Audio* in the menu rebuilds it by hand:
+  no need to quit and reopen your apps. pump ROOM likewise restarts its audio if it stops (RESTART AUDIO by hand).
 - The first start asks for permission to record system audio (that's how it hears other apps). If you hear nothing,
   *Audio Recording Permission…* in the menu opens the right page in System Settings. Unsigned builds may ask again
   after an update.

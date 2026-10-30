@@ -170,6 +170,28 @@ async function stopAudio() {
   $('flip').disabled = true;
 }
 
+// After a sleep the audio can stop with no error: the context suspended or interrupted, the mic's track ended, or
+// its clock standing still. Checked every 2 s while audio runs: a suspended context is resumed, and audio that has
+// stopped is restarted (as RESTART AUDIO does; a run in progress then ends with a message).
+const AUDIO_WATCH = { t: -1, stuck: 0, busy: false };
+async function watchAudio() {
+  const ctx = S.ctx;
+  if (!ctx || AUDIO_WATCH.busy || ctx.state === 'closed') { AUDIO_WATCH.t = -1; AUDIO_WATCH.stuck = 0; return; }
+  const track = S.stream && S.stream.getAudioTracks()[0];
+  const ended = !!(track && track.readyState === 'ended');
+  if (ctx.state !== 'running') { try { await ctx.resume(); } catch (e) {} }
+  if (ctx.state === 'running' && ctx.currentTime !== AUDIO_WATCH.t) AUDIO_WATCH.stuck = 0;
+  else AUDIO_WATCH.stuck++;
+  AUDIO_WATCH.t = ctx.currentTime;
+  if (!ended && AUDIO_WATCH.stuck < 2) return;
+  AUDIO_WATCH.busy = true;
+  AUDIO_WATCH.t = -1; AUDIO_WATCH.stuck = 0;
+  try {
+    await startAudio();
+    if (S.ctx) status('The audio had stopped (after sleep, or a device change): it was restarted.');
+  } finally { AUDIO_WATCH.busy = false; }
+}
+
 // Phones: keep the screen on while audio runs (a sleeping screen stops the audio mid-sweep)
 async function keepAwake(on) {
   try {
@@ -2257,6 +2279,7 @@ function init() {
   $('updateGo').onclick = doUpdate;
   $('updateLater').onclick = () => { if (U.latest) U.dismissed = U.latest.id; showUpdate(); };
   setTimeout(() => checkUpdate(true), 3000);
+  setInterval(watchAudio, 2000);
   setInterval(() => checkUpdate(), 30 * 60 * 1000);
   seg('chans', (v) => { S.chans = v; $('flip').disabled = !S.node || v !== 'LR'; if (S.noise) setNoise(true, false); });
   seg('len', (v) => { S.seconds = +v; });

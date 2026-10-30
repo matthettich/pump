@@ -187,6 +187,15 @@ const btd = await page.evaluate(() => { const x = window.pumpRoom.S.design; retu
 check(btd && btd.align && btd.delays.every((v) => !v), `bluetooth: EQ only, no delay (${btd && btd.delays.join(' / ')})`);
 if (shots) await page.screenshot({ path: join(shots, 'room-bluetooth.png') });
 await page.click('#link button[data-v="wired"]');
+// audio that stops by itself (as after a sleep): a suspended context is resumed; one that won't run is restarted
+await page.evaluate(() => window.pumpRoom.S.ctx.suspend());
+await page.waitForTimeout(4500);
+check(await page.evaluate(() => window.pumpRoom.S.ctx && window.pumpRoom.S.ctx.state === 'running'), 'a suspended audio context is resumed');
+await page.evaluate(() => { const c = window.pumpRoom.S.ctx; window.__oldCtx = c; c.resume = async () => {}; return c.suspend(); });
+await page.waitForFunction(() => window.pumpRoom.S.ctx && window.pumpRoom.S.ctx !== window.__oldCtx && window.pumpRoom.S.ctx.state === 'running', null, { timeout: 12000 }).catch(() => {});
+check(await page.evaluate(() => window.pumpRoom.S.ctx !== window.__oldCtx && !document.querySelector('#measure').disabled && /restarted/.test(document.querySelector('#status').textContent)),
+  'stopped audio is restarted, and says so');
+
 check(errors.length === 0, 'no page errors' + (errors.length ? ': ' + errors.join('; ') : ''));
 await browser.close();
 console.log(fails ? `\n${fails} FAILED` : '\nall passed');

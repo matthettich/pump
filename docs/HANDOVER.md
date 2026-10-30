@@ -25,6 +25,17 @@ Last updated 2026-10-30 (pump ROOM PHONE MIC; before it: ACID, X0X, GLOSS; pump 
 - DPF prints `Unknown license string 'All rights reserved (c) wake'` while generating the AU plist. Harmless: DPF only
   knows SPDX names, "Proprietary" hit the same warning, and the string is not written into the plist.
 
+## System EQ and pump ROOM after sleep (2026-10-30)
+
+The owner's Mac: after waking, apps were silent with System EQ on until each app was quit and reopened (the tap kept
+reading the apps' old streams). System EQ now pauses the device at will-sleep (the tap stays, so nothing plays
+unprocessed or above the level hold), and 2 s after did-wake or screens-did-wake builds tap + device fresh
+(`restartAfter:`); a watchdog in `idleCheck` restarts a running device whose IO count (`Engine::ioCalls`) hasn't moved
+for 3 s; Restart Audio in the menu; a wake that went unannounced is assumed after 15 idle ticks. **Not tried on a
+Mac yet** (built by CI only): the owner should sleep and wake with music playing. pump ROOM's page resumes a
+suspended context and restarts audio whose track ended or whose clock stood still for 2 checks (`watchAudio`;
+tested in room_e2e.mjs).
+
 ## pump ROOM PHONE MIC (2026-10-30)
 
 A phone (Android Chrome, USB measurement mic) as the mic while the computer plays the sweeps: [ROOM.md](ROOM.md)

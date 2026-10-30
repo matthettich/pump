@@ -8,6 +8,11 @@
 // It follows the Mac's own output and sample rate, keeps separate EQ settings for each output (or one for all), skips
 // the EQ during silence and stops the audio device entirely while no app is playing.
 //
+// Sleep: the device is paused before the Mac sleeps (the tap stays, still muting) and the tap and device are built
+// fresh after it wakes (and when the displays wake: their speakers come and go with them). Across a sleep, the tap can keep reading apps' old audio streams and
+// hear nothing, which looked like every app going silent until it was reopened. A watchdog restarts the device if
+// its IO stops while it should be running, and Restart Audio (menu) does the same by hand.
+//
 // Audio path:   every app (except this one) -> tap -> private aggregate device [tap + output device]
 //               -> IOProc -> pump EQ (AudioUnitRender) -> pump ROOM (when Room Correction is on) -> output device
 //
@@ -157,6 +162,8 @@ struct Engine
 
     // frames of continuous silence at the tap (written by the audio thread, read by the main thread)
     std::atomic<uint64_t> silentFrames { 0 };
+    // IO callbacks so far: the watchdog's sign of life (audio thread writes, main thread reads)
+    std::atomic<uint64_t> ioCalls { 0 };
 
     Engine() : inL(kMaxFrames), inR(kMaxFrames), outL(kMaxFrames), outR(kMaxFrames), midL(kMaxFrames), midR(kMaxFrames),
                trimL(kMaxFrames), trimR(kMaxFrames) {}
@@ -199,6 +206,7 @@ struct Engine
                              const AudioTimeStamp*, AudioBufferList* outOutput, const AudioTimeStamp*, void* ctx)
     {
         Engine* e = static_cast<Engine*>(ctx);
+        e->ioCalls.fetch_add(1, std::memory_order_relaxed);
 
         // silence every output channel first
         for (UInt32 b = 0; b < outOutput->mNumberBuffers; ++b)
@@ -739,6 +747,10 @@ static NSView* keyViewIn(NSView* v)
     AudioObjectID failedOutput;          // last start that failed: don't retry until something changes
     unsigned levelTicks;                 // idle-check count (the level hold is refreshed every other one)
     Float64 failedRate;
+    BOOL asleep;                         // between the Mac's will-sleep and did-wake: don't start anything
+    uint64_t lastIoCalls;                // the watchdog: IO callbacks at the last check,
+    unsigned stalledChecks;              // and how many checks in a row saw none
+    unsigned asleepTicks;                // idle checks seen while "asleep": the Mac is clearly awake (a missed wake)
 }
 
 static NSUserDefaults* prefs() { return NSUserDefaults.standardUserDefaults; }
@@ -817,6 +829,10 @@ static NSString* currentOutputKey()
 
     [self listenForDeviceChanges];
     [self watchProcesses];
+    NSNotificationCenter* ws = NSWorkspace.sharedWorkspace.notificationCenter;
+    [ws addObserver:self selector:@selector(willSleep:) name:NSWorkspaceWillSleepNotification object:nil];
+    [ws addObserver:self selector:@selector(didWake:) name:NSWorkspaceDidWakeNotification object:nil];
+    [ws addObserver:self selector:@selector(didWake:) name:NSWorkspaceScreensDidWakeNotification object:nil];
 
     startGuardian();
     [self updateLevelHold];
@@ -856,7 +872,7 @@ static NSString* currentOutputKey()
 
 - (void)startEngine
 {
-    if (engine.au == nullptr)
+    if (engine.au == nullptr || asleep)
         return;
 
     // a different output: keep the old one's settings, bring back the new one's
@@ -970,6 +986,8 @@ static OSStatus deviceListener(AudioObjectID obj, UInt32 count, const AudioObjec
 
 - (void)devicesChanged:(BOOL)force
 {
+    if (asleep)
+        return;   // the wake builds everything fresh
     if (!wantOn)
     {
         [self updateStatus];
@@ -988,6 +1006,42 @@ static OSStatus deviceListener(AudioObjectID obj, UInt32 count, const AudioObjec
     }
     [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(startEngine) object:nil];
     [self performSelector:@selector(startEngine) withObject:nil afterDelay:0.3 inModes:@[ NSRunLoopCommonModes ]];
+}
+
+// --- sleep and wake, Restart Audio
+
+// Before sleep: pause the device (the tap stays, so nothing plays unprocessed or louder than the level hold). After a
+// wake (of the Mac, or of the displays, whose speakers may be the output): once the audio hardware has settled, build
+// the tap and device fresh in one step (start() replaces the old ones; the gap is a few milliseconds).
+- (void)willSleep:(NSNotification*)note
+{
+    asleep = YES;
+    asleepTicks = 0;
+    [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(startEngine) object:nil];
+    engine.pause();
+}
+
+- (void)didWake:(NSNotification*)note
+{
+    asleep = NO;
+    if (wantOn)
+        [self restartAfter:2.0];
+}
+
+- (void)restartAfter:(NSTimeInterval)delay
+{
+    [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(startEngine) object:nil];
+    failedOutput = kAudioObjectUnknown;   // retry even a setup that failed before
+    stalledChecks = 0;
+    [self performSelector:@selector(startEngine) withObject:nil afterDelay:delay inModes:@[ NSRunLoopCommonModes ]];
+}
+
+- (void)restartAudio:(id)sender
+{
+    if (!wantOn)
+        return;
+    NSLog(@"%@: restarting audio (menu)", kAppName);
+    [self restartAfter:0.1];
 }
 
 // --- idle: stop the audio device while nothing plays, start it the moment something does
@@ -1023,7 +1077,7 @@ static OSStatus processListener(AudioObjectID, UInt32, const AudioObjectProperty
         return std::find(procs.begin(), procs.end(), p) == procs.end();
     }), watchedProcesses.end());
 
-    if (playing && engine.paused)
+    if (playing && engine.paused && !asleep)
         engine.resume();
 }
 
@@ -1032,8 +1086,29 @@ static OSStatus processListener(AudioObjectID, UInt32, const AudioObjectProperty
     // a profile loaded in the Room Correction window, or another output's settings: keep the hold current
     if (++levelTicks % 2 == 0)
         [self updateLevelHold];
+    if (asleep)
+    {
+        if (++asleepTicks >= 15)
+            [self didWake:nil];   // the timer only runs while the Mac is awake: a wake went unannounced
+        return;
+    }
     if (engine.running && engine.paused && otherProcessPlaying())
         engine.resume();   // fallback if a resume was missed or failed
+    // the watchdog: a device that should be running but has had no IO for 3 checks in a row is restarted
+    if (engine.running && !engine.paused && !asleep)
+    {
+        const uint64_t calls = engine.ioCalls.load();
+        stalledChecks = calls == lastIoCalls ? stalledChecks + 1 : 0;
+        lastIoCalls = calls;
+        if (stalledChecks >= 3)
+        {
+            NSLog(@"%@: the audio device stopped; restarting it", kAppName);
+            [self restartAfter:0.1];
+            return;
+        }
+    }
+    else
+        stalledChecks = 0;
     if (!engine.running || engine.paused || engine.auRate <= 0.0)
         return;
     // 5 s of silence and no app with its output running: nothing can start without us hearing about it
@@ -1080,7 +1155,11 @@ static OSStatus processListener(AudioObjectID, UInt32, const AudioObjectProperty
         [menu addItemWithTitle:problem action:nil keyEquivalent:@""].enabled = NO;
     else if (engine.running && !engine.paused && engine.auRate > 0.0 &&
              engine.silentFrames.load() > (uint64_t)(10.0 * engine.auRate) && otherProcessPlaying())
-        [menu addItemWithTitle:@"Hearing nothing? Check the permission below" action:nil keyEquivalent:@""].enabled = NO;
+        [menu addItemWithTitle:@"Hearing nothing? Try Restart Audio, then the permission below" action:nil keyEquivalent:@""].enabled = NO;
+
+    NSMenuItem* again = [menu addItemWithTitle:@"Restart Audio" action:@selector(restartAudio:) keyEquivalent:@""];
+    again.target = self;
+    again.enabled = wantOn;
 
     NSMenuItem* each = [menu addItemWithTitle:@"Separate EQ for Each Output" action:@selector(togglePerDevice:)
                                 keyEquivalent:@""];
