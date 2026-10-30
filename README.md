@@ -85,6 +85,11 @@ window; `pump-macos.pkg` installs it in Applications, and `system-eq-macos.zip` 
   interface) is left alone.
 - During silence it skips the EQ, and with nothing playing it stops the audio device; it starts again the moment an
   app plays.
+- **Room Profiles** and **Headphones** (menu): every pump ROOM profile in System EQ's library, room and headphone
+  ones apart, with the active one ticked: one click switches between speaker sets, amps, rooms or headphones for the
+  current output (each output remembers its own). *Add Profiles…* adds files, *Show Profiles in Finder* is where to
+  rename or remove them, *No Profile* turns the correction off for that output. Double-clicking a `.pumproom` file
+  adds it to the library and switches to it.
 - **EQ On** in the menu turns it off and gives the Mac its untouched output back. *Open at Login* starts it with the Mac.
 - The first start asks for permission to record system audio (that's how it hears other apps). If you hear nothing,
   *Audio Recording Permission…* in the menu opens the right page in System Settings. Unsigned builds may ask again
@@ -120,15 +125,25 @@ it to Applications; the first time, right-click > Open, since it isn't notarized
 - **HANDHELD** measures with the mic in your hand: hold it against the left speaker (*FIND SPEAKERS*: it learns
   the spacing and the latency), then at your head where you sit (*SET CENTER*), then *START* and carry it to each dot
   on the map: it tracks the mic by sound, says which way to move, and measures by itself when you hold still on a dot.
+  *POINTS* 5, 9 or 13 cover one listener. **MIX** tunes a studio's mix position: 17 points over about 1.4 × 1 m
+  (the chair moving, leaning in), some held 15 cm above (▲) or below (▼) ear height, the middle counting most.
+  **+ COUCH** adds a couch or client seat: after the mix points, sit there and press *SET COUCH* for 5 more, a
+  quarter of the weight.
   If FIND SPEAKERS hears the right speaker first, left and right are swapped somewhere on the way out, and it says so.
 - When there's a newer build, a bar under the header offers it: **UPDATE** on the web, **DOWNLOAD** in the desktop app.
 - **CORRECTION** turns the measurements ticked *IN CORRECTION* (measure a few spots around where you sit) into a
   correction: target (tilt, bass, treble), range, maximum boost and cut, *SKIP NULLS* (no chasing dips EQ can't fill),
   *PROTECT LOW END* (no boost below what the speakers can play), *TIME ALIGN*, *ALIGN PHASE* (each speaker's bass,
-  mids and treble lined up in time; with *LINEAR PHASE* filters), amount. Before / after on the graph.
+  mids and treble lined up in time; with *LINEAR PHASE* filters), *SPREAD-AWARE* (with 4 or more positions: corrects
+  less where they disagree, such as room modes that change from seat to seat; the shading on the graph shows how much
+  they differ), amount. Before / after on the graph.
+- **HEADPHONES** corrects headphones from a published measurement of the model (a frequency / dB list; a target
+  column in it is used with *FILE*) or a parametric or graphic EQ file made for it (applied as it is): the usual
+  over-ear or in-ear target, or flat, with tilt, bass, treble, amount, maximum boost and how high it reaches. *SAVE
+  PROFILE* makes a headphone profile (System EQ lists it under *Headphones*); *EXPORT FOR WINDOWS* as for rooms.
 - **SAVE PROFILE** writes a `.pumproom` file for **pump ROOM**, the plugin (on your master bus or monitor chain:
-  amount, minimum or linear phase, time alignment) and for **System EQ** on the Mac (*Room Correction* in its menu,
-  *Show Room Correction…* to load the profile, per output).
+  amount, minimum or linear phase, time alignment) and for **System EQ** on the Mac: double-click it and it joins
+  *Room Profiles* in System EQ's menu.
 - **EXPORT FOR WINDOWS** makes filters (every common sample rate) and a config file for the free system-wide
   equalizer for Windows that reads `config.txt`: unzip into its config folder and add `Include: pump-room.txt`.
 - **EXPORT FOR PI** makes the same filters with a CamillaDSP config and an install script, for a Raspberry Pi with a

@@ -130,6 +130,9 @@ double room_cal_at(double f) { return cal.at(f); }
 namespace {
 std::vector<std::vector<double>> corrIn[2];   // per side: responses on the correction grid
 std::vector<std::vector<double>> gdIn[2];     // per side: group delays (ms) on the correction grid
+std::vector<double> wIn[2];                   // per side: each position's weight
+std::vector<double> spreadOut[2];             // per side: how much the positions disagree (dB)
+std::vector<double> tgtF, tgtDb;              // a base target curve (headphones), or none
 std::vector<double> gdAvg[2], gdCorr[2];      // averaged group delay, and the phase correction (ms)
 ChannelCorrection corrOut[2];
 bool corrHave[2] = { false, false };
@@ -138,10 +141,15 @@ std::string text;
 std::vector<float> fir;
 }
 
-void room_corr_begin() { for (int s = 0; s < 2; ++s) { corrIn[s].clear(); gdIn[s].clear(); corrHave[s] = false; } }
+void room_corr_begin()
+{
+    for (int s = 0; s < 2; ++s) { corrIn[s].clear(); gdIn[s].clear(); wIn[s].clear(); corrHave[s] = false; }
+    tgtF.clear(); tgtDb.clear();
+}
 
-// one measurement's response (window in ms, the mic's calibration if useCal) into a side's average (0 L, 1 R)
-int room_corr_add(int side, int id, double windowMs, int useCal)
+// one measurement's response (window in ms, the mic's calibration if useCal) into a side's average (0 L, 1 R), with
+// its weight in the average
+int room_corr_add(int side, int id, double windowMs, int useCal, double weight)
 {
     Measurement* m = slot(id);
     if (m == nullptr || side < 0 || side > 1 || !m->ensureSpectrum(windowMs)) return 0;
@@ -150,15 +158,41 @@ int room_corr_add(int side, int id, double windowMs, int useCal)
     m->response(g, 1.0 / 48.0, useCal ? &cal : nullptr, r);
     corrIn[side].emplace_back(r.begin(), r.end());
     gdIn[side].push_back(groupDelayMs(m->ir.data(), (int)m->ir.size(), m->arrival.index, m->sampleRate, g));
+    wIn[side].push_back(weight > 0.0 ? weight : 1.0);
     return (int)corrIn[side].size();
 }
 
+// a response given as a curve (n points: frequencies f, levels db), e.g. a headphone's, into a side's average; no
+// timing (its group delay counts as flat)
+int room_corr_add_curve(int side, const double* f, const double* db, int n, double weight)
+{
+    if (side < 0 || side > 1 || f == nullptr || db == nullptr || n < 2) return 0;
+    const std::vector<double> ff(f, f + n), dd(db, db + n), g = correctionGrid();
+    std::vector<double> r(g.size());
+    for (size_t i = 0; i < g.size(); ++i) r[i] = curveAt(ff, dd, g[i]);
+    corrIn[side].push_back(r);
+    gdIn[side].push_back(std::vector<double>(g.size(), 0.0));
+    wIn[side].push_back(weight > 0.0 ? weight : 1.0);
+    return (int)corrIn[side].size();
+}
+
+// the base target curve the tilt and shelves sit on (n points; n = 0: flat). Call after room_corr_begin.
+void room_corr_target(const double* f, const double* db, int n)
+{
+    tgtF.clear(); tgtDb.clear();
+    if (f == nullptr || db == nullptr || n < 2) return;
+    tgtF.assign(f, f + n); tgtDb.assign(db, db + n);
+}
+
 // p: tilt, bass dB, treble dB, fLo, fHi, max boost, max cut, protect nulls, guard low end, amount, delay L ms, delay R ms,
-//    phase on, phase from Hz, phase to Hz
+//    phase on, phase from Hz, phase to Hz, spread-aware (correct less where the positions disagree; 4 or more),
+//    smoothing (0: the measured curve as it is, for an EQ file)
 int room_corr_design(const double* p)
 {
     CorrectionSpec spec;
     spec.target.tiltDbPerOct = p[0]; spec.target.bassDb = p[1]; spec.target.trebleDb = p[2];
+    spec.target.curveF = tgtF; spec.target.curveDb = tgtDb;
+    spec.smooth = p[16] != 0.0;
     spec.fLo = p[3]; spec.fHi = p[4]; spec.maxBoostDb = p[5]; spec.maxCutDb = p[6];
     spec.protectNulls = p[7] != 0.0; spec.guardLowEnd = p[8] != 0.0; spec.amount = p[9];
     const std::vector<double> g = correctionGrid();
@@ -167,13 +201,16 @@ int room_corr_design(const double* p)
     for (int s = 0; s < 2; ++s)
     {
         corrHave[s] = !corrIn[s].empty();
-        if (corrHave[s]) { avg[s] = powerAverage(corrIn[s]); all.push_back(&avg[s]); }
+        if (corrHave[s]) { avg[s] = powerAverage(corrIn[s], wIn[s]); all.push_back(&avg[s]); }
+        spreadOut[s] = corrHave[s] ? positionSpread(g, corrIn[s], wIn[s]) : std::vector<double>(g.size(), 0.0);
     }
     const double level = targetLevel(g, all);
     std::vector<const std::vector<double>*> corrs;
     for (int s = 0; s < 2; ++s)
     {
-        corrOut[s] = corrHave[s] ? designCorrection(g, avg[s], level, spec) : ChannelCorrection();
+        CorrectionSpec sp = spec;
+        if (p[15] != 0.0 && corrIn[s].size() >= 4) sp.trust = spreadTrust(g, spreadOut[s]);
+        corrOut[s] = corrHave[s] ? designCorrection(g, avg[s], level, sp) : ChannelCorrection();
         if (corrHave[s]) corrs.push_back(&corrOut[s].correction);
         corrDelay[s] = std::max(0.0, p[10 + s]);
         corrOut[s].delayMs = corrDelay[s];
@@ -182,7 +219,10 @@ int room_corr_design(const double* p)
         gdCorr[s].assign(g.size(), 0.0);
         if (corrHave[s] && !gdIn[s].empty())
         {
-            for (const auto& v : gdIn[s]) for (size_t i = 0; i < g.size(); ++i) gdAvg[s][i] += v[i] / (double)gdIn[s].size();
+            double wsum = 0.0;
+            for (size_t k = 0; k < gdIn[s].size(); ++k) wsum += wIn[s][k];
+            for (size_t k = 0; k < gdIn[s].size(); ++k)
+                for (size_t i = 0; i < g.size(); ++i) gdAvg[s][i] += gdIn[s][k][i] * wIn[s][k] / wsum;
             PhaseSpec ps;
             ps.on = p[12] != 0.0;
             ps.fLo = p[13];
@@ -208,6 +248,7 @@ const double* room_corr_curve(int side, int which)
     case 3: return c.result.data();
     case 4: return gdAvg[side].data();    // measured group delay (ms)
     case 5: return gdCorr[side].data();   // phase correction (ms)
+    case 6: return spreadOut[side].data(); // how much the positions disagree (dB)
     default: return nullptr;
     }
 }
@@ -222,10 +263,11 @@ double room_corr_info(int side, int what)
 }
 
 // the profile text for the current design (read it with room_text_ptr / room_text_len)
-int room_corr_profile(const char* name, int len)
+int room_corr_profile(const char* name, int len, int headphones)
 {
     Profile p;
     p.name.assign(name, (size_t)std::max(0, len));
+    p.headphones = headphones != 0;
     p.preampDb = corrPreamp;
     for (int s = 0; s < 2; ++s)
     {

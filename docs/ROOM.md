@@ -97,6 +97,33 @@ The plan, what's built, and how the measurement works. Stage 1 (measurement) is 
 - **Exports:** TXT (frequency, dB, phase 0, every 1/48 octave, with the current smoothing, window and calibration:
   the usual text format other tools import) and WAV (the impulse response, 32-bit float).
 
+## Studio layouts, weights and spread
+
+HANDHELD's MIX layout is 17 points: the center at ear height, 15 cm above and below; a ring of 6 at 30 cm alternating
+above and below; an ellipse of 8 (70 × 50 cm) at ear height. Weights 1, 0.75 and 0.5 (`run.weight`, saved in sessions).
++ COUCH adds 5 points around a second center set with SET COUCH, each weighted so the couch is a quarter of the
+total. Height isn't tracked (two speakers place the mic in a plane); the app says where to hold it.
+
+`room_corr_add` takes each measurement's weight: the average is a weighted power average, the group delay a
+weighted mean. `positionSpread` is the weighted standard deviation of the positions' responses (each smoothed 1/6 to
+1/3 octave first), drawn as shading around the average. SPREAD-AWARE (4 or more positions) scales the correction by
+`spreadTrust`: all of it up to 2 dB of spread, falling to a quarter by 8 dB.
+
+## Headphones
+
+A curve rather than a measurement: `room_corr_add_curve` puts a frequency / dB list on the correction grid (no timing),
+and `room_corr_target` sets a base target curve the tilt and shelves sit on (`TargetSpec::curveF / curveDb`). The
+over-ear and in-ear targets are in app.js as a few filters each (fitted to the published curves: 0.1 and 0.05 dB RMS).
+An EQ file is applied as it is: its curve, negated, is the "measured" response with a flat target, and `smooth = 0`
+(design parameter 16) skips the smoothing that would soften its narrow filters. Profiles say `kind headphones`.
+
+## System EQ's profile library
+
+System EQ keeps profiles in `~/Library/Application Support/wake/System EQ/Profiles`. Its menu lists them (room and
+headphone apart, from each file's `kind`), ticking the one whose path is in pump ROOM's `profile_file` state; choosing
+one puts the file's text into the `profile` state through the unit's ClassInfo (the other settings kept), for the
+current output. `.pumproom` is an exported type the app owns, so opening a file adds it and switches to it.
+
 ## On the web
 
 CI's `pages` job puts the room job's page on the `gh-pages` branch (as `index.html`, with `.nojekyll`) on every push to

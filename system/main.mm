@@ -13,7 +13,9 @@
 //
 // pump ROOM (Contents/PlugIns/pump-room.component, when the app was built with it) applies a room profile made with
 // the pump ROOM app; like the EQ it keeps its settings (and profile) per output. Without a profile it passes the sound
-// through.
+// through. Profiles kept in the app's library (Application Support/wake/System EQ/Profiles) are listed in the menu,
+// room profiles and headphone profiles apart, to switch between with one click; opening a .pumproom file (a double
+// click) adds it to the library and switches to it.
 //
 // Nothing on the audio thread allocates, locks or calls Objective-C.
 
@@ -24,6 +26,7 @@
 #import <AudioToolbox/AudioToolbox.h>
 #import <AudioUnit/AUCocoaUIView.h>
 #import <ServiceManagement/ServiceManagement.h>
+#import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 #include <dlfcn.h>
 #include <algorithm>
 #include <atomic>
@@ -989,6 +992,10 @@ static OSStatus processListener(AudioObjectID, UInt32, const AudioObjectProperty
         NSMenuItem* roomOn = [menu addItemWithTitle:@"Room Correction" action:@selector(toggleRoom:) keyEquivalent:@""];
         roomOn.target = self;
         roomOn.state = engine.roomOn.load() ? NSControlStateValueOn : NSControlStateValueOff;
+        NSMenuItem* rooms = [menu addItemWithTitle:@"Room Profiles" action:nil keyEquivalent:@""];
+        rooms.submenu = [self profileMenu:NO];
+        NSMenuItem* phones = [menu addItemWithTitle:@"Headphones" action:nil keyEquivalent:@""];
+        phones.submenu = [self profileMenu:YES];
         NSMenuItem* roomShow = [menu addItemWithTitle:@"Show Room Correction…" action:@selector(showRoom:)
                                         keyEquivalent:@""];
         roomShow.target = self;
@@ -1027,6 +1034,241 @@ static OSStatus processListener(AudioObjectID, UInt32, const AudioObjectProperty
     [menu addItem:NSMenuItem.separatorItem];
     NSMenuItem* quit = [menu addItemWithTitle:@"Quit System EQ" action:@selector(terminate:) keyEquivalent:@"q"];
     quit.target = NSApp;
+}
+
+// --- the profile library: .pumproom files in Application Support/wake/System EQ/Profiles, listed in the menu (room
+// profiles and headphone profiles apart). Choosing one puts its text into pump ROOM's "profile" state for the current
+// output (each output remembers its own), so switching speakers, amps or headphones is one click.
+
+static NSURL* profilesDir()
+{
+    NSURL* dir = [stateDir() URLByAppendingPathComponent:@"Profiles" isDirectory:YES];
+    [NSFileManager.defaultManager createDirectoryAtURL:dir withIntermediateDirectories:YES attributes:nil error:nil];
+    return dir;
+}
+
+// a profile file's name and kind from its first lines (nil: not a profile)
+static NSDictionary* profileInfo(NSURL* url)
+{
+    NSFileHandle* fh = [NSFileHandle fileHandleForReadingFromURL:url error:nil];
+    if (fh == nil)
+        return nil;
+    NSData* head = [fh readDataOfLength:4096];
+    [fh closeFile];
+    NSString* text = [[NSString alloc] initWithData:head encoding:NSUTF8StringEncoding];
+    if (text == nil)
+        text = [[NSString alloc] initWithData:head encoding:NSISOLatin1StringEncoding];
+    if (text == nil)
+        return nil;
+    NSString* name = nil;
+    BOOL headphones = NO, header = NO;
+    for (NSString* raw in [text componentsSeparatedByCharactersInSet:NSCharacterSet.newlineCharacterSet])
+    {
+        NSString* line = [raw stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceCharacterSet];
+        if (line.length == 0 || [line hasPrefix:@"#"])
+            continue;
+        if (!header)
+        {
+            if (![line hasPrefix:@"pump-room-profile"])
+                return nil;
+            header = YES;
+            continue;
+        }
+        if ([line hasPrefix:@"name "])
+            name = [line substringFromIndex:5];
+        else if ([line hasPrefix:@"kind "])
+            headphones = [[line substringFromIndex:5] hasPrefix:@"headphones"];
+        else if ([line hasPrefix:@"channel "])
+            break;   // the header lines come before the curves
+    }
+    if (!header)
+        return nil;
+    if (name.length == 0)
+        name = url.URLByDeletingPathExtension.lastPathComponent;
+    return @{ @"url": url, @"name": name, @"headphones": @(headphones) };
+}
+
+- (NSArray<NSDictionary*>*)libraryProfiles
+{
+    NSArray<NSURL*>* files = [NSFileManager.defaultManager contentsOfDirectoryAtURL:profilesDir()
+                                                         includingPropertiesForKeys:nil
+                                                                            options:NSDirectoryEnumerationSkipsHiddenFiles
+                                                                              error:nil];
+    NSMutableArray* out = [NSMutableArray array];
+    for (NSURL* f in files)
+        if ([f.pathExtension.lowercaseString isEqualToString:@"pumproom"])
+            if (NSDictionary* info = profileInfo(f))
+                [out addObject:info];
+    [out sortUsingComparator:^NSComparisonResult(NSDictionary* a, NSDictionary* b) {
+        return [a[@"name"] localizedStandardCompare:b[@"name"]];
+    }];
+    return out;
+}
+
+// pump ROOM's saved state: its ClassInfo dictionary, whose data holds "states" (one {key: value} per state)
+- (NSMutableDictionary*)roomClassInfo
+{
+    if (engine.room == nullptr)
+        return nil;
+    CFPropertyListRef plist = nullptr;
+    UInt32 size = sizeof(plist);
+    if (AudioUnitGetProperty(engine.room, kAudioUnitProperty_ClassInfo, kAudioUnitScope_Global, 0, &plist, &size)
+        != noErr || plist == nullptr)
+        return nil;
+    id obj = CFBridgingRelease(plist);
+    return [obj isKindOfClass:NSDictionary.class] ? [obj mutableCopy] : nil;
+}
+
+- (NSString*)roomState:(NSString*)key
+{
+    NSDictionary* data = [self roomClassInfo][@"data"];
+    if (![data isKindOfClass:NSDictionary.class])
+        return nil;
+    for (NSDictionary* st in data[@"states"])
+        if ([st isKindOfClass:NSDictionary.class] && [st[key] isKindOfClass:NSString.class])
+            return st[key];
+    return nil;
+}
+
+- (BOOL)setRoomStates:(NSDictionary<NSString*, NSString*>*)values
+{
+    NSMutableDictionary* cls = [self roomClassInfo];
+    if (cls == nil)
+        return NO;
+    NSMutableDictionary* data = [cls[@"data"] isKindOfClass:NSDictionary.class] ? [cls[@"data"] mutableCopy]
+                                                                                : [NSMutableDictionary dictionary];
+    NSMutableArray* states = [NSMutableArray array];
+    for (NSDictionary* st in data[@"states"])
+        if ([st isKindOfClass:NSDictionary.class] && values[st.allKeys.firstObject] == nil)
+            [states addObject:st];
+    [values enumerateKeysAndObjectsUsingBlock:^(NSString* k, NSString* v, BOOL*) { [states addObject:@{ k: v }]; }];
+    data[@"states"] = states;
+    cls[@"data"] = data;
+    CFPropertyListRef ref = (__bridge CFPropertyListRef)cls;
+    return AudioUnitSetProperty(engine.room, kAudioUnitProperty_ClassInfo, kAudioUnitScope_Global, 0, &ref,
+                                sizeof(ref)) == noErr;
+}
+
+- (NSMenu*)profileMenu:(BOOL)headphones
+{
+    NSMenu* m = [NSMenu new];
+    m.autoenablesItems = NO;
+    NSString* current = [self roomState:@"profile_file"] ?: @"";
+    NSString* text = [self roomState:@"profile"] ?: @"";
+    NSUInteger n = 0;
+    for (NSDictionary* p in [self libraryProfiles])
+    {
+        if ([p[@"headphones"] boolValue] != headphones)
+            continue;
+        NSMenuItem* it = [m addItemWithTitle:p[@"name"] action:@selector(chooseProfile:) keyEquivalent:@""];
+        it.target = self;
+        it.representedObject = [p[@"url"] path];
+        it.state = [current isEqualToString:[p[@"url"] path]] && text.length > 0 ? NSControlStateValueOn
+                                                                                  : NSControlStateValueOff;
+        ++n;
+    }
+    if (n == 0)
+        [m addItemWithTitle:headphones ? @"No headphone profiles yet" : @"No room profiles yet" action:nil
+              keyEquivalent:@""].enabled = NO;
+    [m addItem:NSMenuItem.separatorItem];
+    NSMenuItem* none = [m addItemWithTitle:@"No Profile" action:@selector(clearProfile:) keyEquivalent:@""];
+    none.target = self;
+    none.enabled = text.length > 0;
+    NSMenuItem* add = [m addItemWithTitle:@"Add Profiles…" action:@selector(addProfiles:) keyEquivalent:@""];
+    add.target = self;
+    NSMenuItem* show = [m addItemWithTitle:@"Show Profiles in Finder" action:@selector(showProfiles:) keyEquivalent:@""];
+    show.target = self;
+    return m;
+}
+
+// put a profile file's text into pump ROOM for the current output, and turn Room Correction on
+- (BOOL)applyProfileAt:(NSURL*)url
+{
+    if (engine.room == nullptr)
+        return NO;
+    NSString* text = [NSString stringWithContentsOfURL:url encoding:NSUTF8StringEncoding error:nil];
+    if (text == nil || profileInfo(url) == nil)
+    {
+        NSLog(@"%@: not a pump ROOM profile: %@", kAppName, url.path);
+        return NO;
+    }
+    if (![self setRoomStates:@{ @"profile": text, @"profile_file": url.path }])
+        return NO;
+    engine.roomOn = true;
+    [prefs() setBool:NO forKey:@"roomOff"];
+    [self saveState];
+    [self reloadView];
+    return YES;
+}
+
+- (void)chooseProfile:(NSMenuItem*)item
+{
+    if (NSString* path = item.representedObject)
+        [self applyProfileAt:[NSURL fileURLWithPath:path]];
+}
+
+- (void)clearProfile:(id)sender
+{
+    [self setRoomStates:@{ @"profile": @"", @"profile_file": @"" }];
+    [self saveState];
+    [self reloadView];
+}
+
+// copy profile files into the library (a file of the same name is replaced); returns the copies
+- (NSArray<NSURL*>*)addToLibrary:(NSArray<NSURL*>*)urls
+{
+    NSMutableArray* added = [NSMutableArray array];
+    NSURL* dir = profilesDir();
+    for (NSURL* src in urls)
+    {
+        if (profileInfo(src) == nil)
+        {
+            NSLog(@"%@: not a pump ROOM profile: %@", kAppName, src.path);
+            continue;
+        }
+        NSURL* dst = [dir URLByAppendingPathComponent:src.lastPathComponent];
+        if ([dst.URLByStandardizingPath.path isEqualToString:src.URLByStandardizingPath.path])
+        {
+            [added addObject:dst];   // already in the library
+            continue;
+        }
+        [NSFileManager.defaultManager removeItemAtURL:dst error:nil];
+        NSError* err = nil;
+        if ([NSFileManager.defaultManager copyItemAtURL:src toURL:dst error:&err])
+            [added addObject:dst];
+        else
+            NSLog(@"%@: couldn't add %@: %@", kAppName, src.path, err);
+    }
+    return added;
+}
+
+- (void)addProfiles:(id)sender
+{
+    NSOpenPanel* panel = [NSOpenPanel openPanel];
+    panel.allowsMultipleSelection = YES;
+    panel.canChooseDirectories = NO;
+    panel.message = @"Profiles saved by pump ROOM (.pumproom): room and headphone profiles";
+    if (UTType* t = [UTType typeWithFilenameExtension:@"pumproom"])
+        panel.allowedContentTypes = @[ t ];
+    [NSApp activateIgnoringOtherApps:YES];
+    if ([panel runModal] != NSModalResponseOK)
+        return;
+    NSArray<NSURL*>* added = [self addToLibrary:panel.URLs];
+    if (added.count == 1)
+        [self applyProfileAt:added.firstObject];   // one file: switch to it as well
+}
+
+- (void)showProfiles:(id)sender
+{
+    [NSWorkspace.sharedWorkspace openURL:profilesDir()];
+}
+
+// a .pumproom file opened (double-clicked, or dropped on the app): into the library, and switched to
+- (void)application:(NSApplication*)app openURLs:(NSArray<NSURL*>*)urls
+{
+    NSArray<NSURL*>* added = [self addToLibrary:urls];
+    if (added.count > 0 && [self applyProfileAt:added.lastObject])
+        [self showRoom:nil];
 }
 
 - (void)toggleRoom:(id)sender

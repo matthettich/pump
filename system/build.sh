@@ -15,7 +15,8 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/PlugIns" "$APP/Contents/Resources"
 
 clang++ $ARCHS -mmacosx-version-min=14.2 -std=c++17 -fobjc-arc -O2 -Wall -Wno-unused-parameter \
     system/main.mm -o "$APP/Contents/MacOS/system-eq" \
-    -framework Cocoa -framework CoreAudio -framework AudioToolbox -framework AudioUnit -framework ServiceManagement
+    -framework Cocoa -framework CoreAudio -framework AudioToolbox -framework AudioUnit -framework ServiceManagement \
+    -framework UniformTypeIdentifiers
 
 sed "s/@VERSION@/$VERSION/g" system/Info.plist > "$APP/Contents/Info.plist"
 cp -R bin/pump-eq.component "$APP/Contents/PlugIns/"

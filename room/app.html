@@ -70,7 +70,7 @@
   <section class="results">
     <div class="screen-wrap">
       <div class="tabs">
-        <div class="seg" id="view"><button data-v="response" class="on">RESPONSE</button><button data-v="impulse">IMPULSE</button><button data-v="correction">CORRECTION</button><button data-v="handheld">HANDHELD</button></div>
+        <div class="seg" id="view"><button data-v="response" class="on">RESPONSE</button><button data-v="impulse">IMPULSE</button><button data-v="correction">CORRECTION</button><button data-v="handheld">HANDHELD</button><button data-v="headphones">HEADPHONES</button></div>
         <div class="spacer"></div>
         <div class="seg" id="smooth" title="Smoothing">
           <button data-v="0">OFF</button><button data-v="48">1/48</button><button data-v="24">1/24</button><button data-v="12" class="on">1/12</button><button data-v="6">1/6</button><button data-v="3">1/3</button><button data-v="1">1/1</button>
@@ -109,6 +109,7 @@
             <button class="key toggle on" id="cLow" title="No boost below the speakers' own low-end roll-off">PROTECT LOW END</button>
             <button class="key toggle on" id="cAlign" title="Delay the nearer speaker so both arrive together">TIME ALIGN</button>
             <button class="key toggle" id="cPhase" title="Line up each speaker's bass, mids and treble in time (its roll-off and crossover make the low end arrive late). Needs linear-phase filters">ALIGN PHASE</button>
+            <button class="key toggle on" id="cSpread" title="Correct less where the positions disagree (room modes that change from seat to seat): with 4 or more positions">SPREAD-AWARE</button>
           </div>
           <div class="readout" id="cInfo"></div>
         </div>
@@ -121,16 +122,44 @@
         <button class="key" id="cPi" title="Filters, a CamillaDSP config and an install script for a Raspberry Pi between your sources and speakers">EXPORT FOR PI</button>
       </div>
     </div>
+    <div class="panel corr" id="hpPanel" hidden>
+      <div class="cap">HEADPHONES</div>
+      <div class="corr-cols">
+        <div>
+          <div class="keys2" style="margin-top:0"><button class="key" id="hpLoad">LOAD FILE…</button><button class="key" id="hpClear" disabled>CLEAR</button></div>
+          <input type="file" id="hpFile" accept=".txt,.csv,.frd,.tsv,text/plain,text/csv" hidden>
+          <div class="calbox" id="hpInfo" style="margin-top:8px">Load your headphones' frequency response, or an EQ file made for them.</div>
+          <div class="row"><span>TARGET</span><div class="seg" id="hpTarget" title="What the headphones should measure like: the usual over-ear or in-ear target, the one in the file, or flat"><button data-v="over" class="on">OVER</button><button data-v="in">IN-EAR</button><button data-v="file">FILE</button><button data-v="flat">FLAT</button></div></div>
+        </div>
+        <div>
+          <label class="row"><span>TILT</span><input type="range" id="hpTilt" min="-1.5" max="1" step="0.1" value="0"><b class="num" id="hpTiltT"></b></label>
+          <label class="row"><span>BASS</span><input type="range" id="hpBass" min="-6" max="8" step="0.5" value="0"><b class="num" id="hpBassT"></b></label>
+          <label class="row"><span>TREBLE</span><input type="range" id="hpTreble" min="-6" max="4" step="0.5" value="0"><b class="num" id="hpTrebleT"></b></label>
+          <label class="row"><span>AMOUNT</span><input type="range" id="hpAmount" min="0" max="100" step="5" value="100"><b class="num" id="hpAmountT"></b></label>
+        </div>
+        <div>
+          <label class="row"><span>MAX BOOST</span><input type="range" id="hpBoost" min="0" max="15" step="0.5" value="8"><b class="num" id="hpBoostT"></b></label>
+          <div class="row"><span>UP TO</span><div class="seg" id="hpHi" title="Above this the correction fades out: measurements of the top octave vary with how the headphones sit"><button data-v="8000">8K</button><button data-v="12000" class="on">12K</button><button data-v="20000">20K</button></div></div>
+          <div class="readout" id="hpOut"></div>
+        </div>
+      </div>
+      <div class="corr-save">
+        <label class="row"><span>NAME</span><input type="text" id="hpName" value="My headphones" maxlength="60"></label>
+        <button class="key hot" id="hpSave" disabled title="A .pumproom headphone file for System EQ (its Headphones menu) and pump ROOM (the plugin)">SAVE PROFILE</button>
+        <button class="key" id="hpWin" disabled title="Filters and a config file for the system-wide equalizer on Windows">EXPORT FOR WINDOWS</button>
+      </div>
+      <p class="hint">Headphones can't be measured with a measurement mic in the open: they need an ear simulator. Load a published measurement of your model (a frequency / dB list, ideally from the same kind of ear simulator the targets assume) or a parametric or graphic EQ file made for it. A file with a target column uses that target with FILE. EQ files are applied as they are, with your tilt, bass and treble on top.</p>
+    </div>
     <div class="panel corr" id="handPanel" hidden>
       <div class="cap">HANDHELD</div>
       <div class="hand-cols">
         <div class="hand-steps">
           <div class="hstep" id="hs1"><b>1</b><span>Hold the mic against the <b>left</b> speaker's grille, in front of the tweeter, and press <b>FIND SPEAKERS</b>.</span></div>
-          <div class="hstep" id="hs2"><b>2</b><span>Sit where you listen. Hold the mic where your head is, at ear height, and press <b>SET CENTER</b>.</span></div>
-          <div class="hstep" id="hs3"><b>3</b><span>Press <b>START</b> and move the mic to each dot. Hold still on a dot: it measures by itself, then shows the next.</span></div>
+          <div class="hstep" id="hs2"><b>2</b><span id="hs2t">Sit where you listen. Hold the mic where your head is, at ear height, and press <b>SET CENTER</b>.</span></div>
+          <div class="hstep" id="hs3"><b>3</b><span id="hs3t">Press <b>START</b> and move the mic to each dot. Hold still on a dot: it measures by itself, then shows the next.</span></div>
         </div>
         <div>
-          <div class="row"><span>POINTS</span><div class="seg" id="hPoints"><button data-v="5">5</button><button data-v="9" class="on">9</button><button data-v="13">13</button></div></div>
+          <div class="row"><span>POINTS</span><div class="seg" id="hPoints" title="5, 9 or 13 points around one listener; MIX: a studio's mix position (a wider area, three heights); + COUCH: MIX and a couch or client seat"><button data-v="5">5</button><button data-v="9" class="on">9</button><button data-v="13">13</button><button data-v="mix">MIX</button><button data-v="couch">+ COUCH</button></div></div>
           <div class="keys2"><button class="key" id="hCal">FIND SPEAKERS</button><button class="key" id="hCenter" disabled>SET CENTER</button></div>
           <div class="keys2"><button class="key hot" id="hStart" disabled>START</button><button class="key" id="hRestart" disabled>START OVER</button></div>
           <div class="readout" id="hInfo"></div>

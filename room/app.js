@@ -81,8 +81,9 @@ const S = {
   view: 'response', smooth: 12, windowMs: 500, norm: true, useCal: true,
   busy: false, noise: false, flip: false, unsaved: false, pending: null, bt: false, wake: null,
   corr: { tilt: 0, bass: 0, treble: 0, amount: 100, fLo: 20, fHi: 20000, boost: 6, cut: 15, nulls: true, low: true, align: true,
-          phase: false, pLo: 60, pHi: 3000, linear: false },
+          phase: false, pLo: 60, pHi: 3000, linear: false, spread: true },
   design: null,
+  hp: { file: null, target: 'over', tilt: 0, bass: 0, treble: 0, amount: 100, boost: 8, fHi: 12000 }, hpDesign: null,
   sim: /(^|[#&?])sim\b/.test(location.hash + location.search),
 };
 const GRID = { lo: 20, hi: 20000, perOct: 96 };
@@ -540,6 +541,7 @@ function draw() {
   if (S.view === 'response') drawResponse(w, h, shown);
   else if (S.view === 'impulse') drawImpulse(w, h, shown);
   else if (S.view === 'handheld') drawHand(w, h);
+  else if (S.view === 'headphones') drawHeadphones(w, h);
   else drawCorrection(w, h);
 }
 
@@ -760,7 +762,7 @@ function saveSession() {
     correction: S.corr,
     runs: S.runs.map((run) => ({
       name: run.name, time: run.time, fs: run.fs, seconds: run.seconds, level: run.level, noiseDb: run.noiseDb, notes: run.notes, use: run.use, bt: !!run.bt,
-      pos: run.pos || null,
+      pos: run.pos || null, weight: run.weight || 1, group: run.group || null, height: run.height || 0,
       ch: run.ch.map((c) => {
         const seg = irSegment(c);
         return { side: c.side, arrival: c.arrival, polarity: c.polarity, signalDb: c.signalDb, peakDbFS: c.peakDbFS,
@@ -792,7 +794,9 @@ async function openSession(file) {
       const run = { name: String(r.name || 'Position'), time: String(r.time || new Date().toISOString()), fs,
                     seconds: +r.seconds || 0, level: +r.level || 0, noiseDb: +r.noiseDb || -120, ch: [],
                     notes: Array.isArray(r.notes) ? r.notes.map(String) : [], use: r.use !== false, bt: r.bt === true,
-                    pos: r.pos && isFinite(+r.pos.x) && isFinite(+r.pos.y) ? { x: +r.pos.x, y: +r.pos.y } : undefined };
+                    pos: r.pos && isFinite(+r.pos.x) && isFinite(+r.pos.y) ? { x: +r.pos.x, y: +r.pos.y } : undefined,
+                    weight: +r.weight > 0 ? +r.weight : 1, group: r.group === 'mix' || r.group === 'couch' ? r.group : undefined,
+                    height: +r.height === 1 || +r.height === -1 ? +r.height : 0 };
       for (const ch of r.ch) {
         if (typeof ch.ir !== 'string') continue;
         const data = unb64(ch.ir);
@@ -888,11 +892,11 @@ function designCorrection() {
   const runs = S.runs.filter((r) => r.use);
   W.x.room_corr_begin();
   let added = 0;
-  for (const run of runs) for (const c of run.ch) added += W.x.room_corr_add(c.side === 'L' ? 0 : 1, c.id, S.windowMs, S.useCal && S.cal ? 1 : 0) ? 1 : 0;
+  for (const run of runs) for (const c of run.ch) added += W.x.room_corr_add(c.side === 'L' ? 0 : 1, c.id, S.windowMs, S.useCal && S.cal ? 1 : 0, run.weight || 1) ? 1 : 0;
   if (!added) { S.design = null; return null; }
   const c = S.corr, bt = btRuns(), dt = c.align && !bt ? meanDt(runs) : 0;
   const params = [c.tilt, c.bass, c.treble, c.fLo, bt ? Math.min(c.fHi, BT.fHi) : c.fHi, c.boost, c.cut, c.nulls ? 1 : 0, c.low ? 1 : 0, c.amount / 100,
-                  dt > 0 ? dt : 0, dt < 0 ? -dt : 0, c.phase && !bt ? 1 : 0, c.pLo, c.pHi];
+                  dt > 0 ? dt : 0, dt < 0 ? -dt : 0, c.phase && !bt ? 1 : 0, c.pLo, c.pHi, c.spread ? 1 : 0, 1];
   const p = W.x.room_alloc(params.length * 8);
   W.f64(p, params.length).set(params);
   const n = W.x.room_corr_design(p);
@@ -902,7 +906,7 @@ function designCorrection() {
     const get = (k) => { const q = W.x.room_corr_curve(s, k); return q ? W.f64(q, n).slice() : null; };
     const m = get(0);
     d.sides.push(m ? { measured: m, target: get(1), correction: get(2), result: get(3), guard: W.x.room_corr_info(s, 1), delay: W.x.room_corr_info(s, 2),
-                       gd: get(4), gdCorr: get(5) } : null);
+                       gd: get(4), gdCorr: get(5), spread: get(6) } : null);
   }
   S.design = d;
   return d;
@@ -916,9 +920,19 @@ function drawCorrection(w, h) {
     $('empty').textContent = S.runs.length ? 'Tick IN CORRECTION on at least one measurement.' : 'Measure first: the correction is built from your measurements.';
     return;
   }
+  const c = S.corr;
+  drawDesign(w, h, d, { fLo: c.fLo, fHi: c.fHi, boost: c.boost, cut: c.cut, pLo: c.pLo, pHi: c.pHi, linear: c.linear,
+    showPhase: c.phase && !btRuns(), sides: [0, 1],
+    title: `AVERAGE OF ${d.positions} POSITION${d.positions === 1 ? '' : 'S'} (FAINT${d.positions >= 2 ? ', SHADED: HOW MUCH THEY DIFFER' : ''}) · CORRECTED (BOLD) · TARGET (DASHED)` });
+}
+
+// the design's curves: measured, corrected and target on top, the correction under them, and (showPhase) the arrival
+// by frequency at the bottom. cfg: the band, limits and phase settings it was designed with, which sides to draw,
+// the title.
+function drawDesign(w, h, d, cfg) {
   $('empty').style.display = 'none';
   const F = corrFreqs();
-  const showPhase = S.corr.phase && !btRuns();
+  const showPhase = cfg.showPhase;
   const split = Math.round(h * (showPhase ? 0.5 : 0.66)), split2 = showPhase ? Math.round(h * 0.73) : h;
   const top = { x0: 46, x1: w - 14, y0: 14, y1: split - 10 }, bot = { x0: 46, x1: w - 14, y0: split + 8, y1: showPhase ? split2 - 10 : h - 26 };
   const ph = { x0: 46, x1: w - 14, y0: split2 + 8, y1: h - 26 };
@@ -932,7 +946,7 @@ function drawCorrection(w, h) {
   for (const sd of d.sides) if (sd) for (let i = 0; i < F.length; ++i) if (F[i] > 25 && F[i] < 18000) hiDb = Math.max(hiDb, sd.measured[i] + off, sd.target[i] + off);
   const yTop = Math.ceil((hiDb + 3) / 5) * 5, yBot = yTop - 40;
   const ly = (db) => top.y0 + (top.y1 - top.y0) * (yTop - db) / (yTop - yBot);
-  const cMax = Math.max(6, Math.ceil(Math.max(S.corr.boost, S.corr.cut) / 3) * 3);
+  const cMax = Math.max(6, Math.ceil(Math.max(cfg.boost, cfg.cut) / 3) * 3);
   const cy = (db) => bot.y0 + (bot.y1 - bot.y0) * (cMax - db) / (2 * cMax);
   const colours = [css(theme.ink), css(theme.second)];
 
@@ -948,8 +962,8 @@ function drawCorrection(w, h) {
   for (let db = -cMax; db <= cMax; db += cMax / 2) { const y = Math.round(cy(db)) + 0.5; g2.globalAlpha = db === 0 ? 1 : 0.6; g2.beginPath(); g2.moveTo(bot.x0, y); g2.lineTo(bot.x1, y); g2.stroke(); g2.globalAlpha = 1; g2.fillText((db > 0 ? '+' : '') + db, bot.x0 - 6, y); }
   // the band corrected
   g2.fillStyle = theme.grid;
-  if (S.corr.fLo > 20) for (const fr of [top, bot]) g2.fillRect(fr.x0, fr.y0, lx(S.corr.fLo) - fr.x0, fr.y1 - fr.y0);
-  if (S.corr.fHi < 20000) for (const fr of [top, bot]) g2.fillRect(lx(S.corr.fHi), fr.y0, fr.x1 - lx(S.corr.fHi), fr.y1 - fr.y0);
+  if (cfg.fLo > 20) for (const fr of [top, bot]) g2.fillRect(fr.x0, fr.y0, lx(cfg.fLo) - fr.x0, fr.y1 - fr.y0);
+  if (cfg.fHi < 20000) for (const fr of [top, bot]) g2.fillRect(lx(cfg.fHi), fr.y0, fr.x1 - lx(cfg.fHi), fr.y1 - fr.y0);
 
   const line = (fr, arr, y, colour, width, dash, alpha) => {
     g2.save(); g2.beginPath(); g2.rect(fr.x0, fr.y0, fr.x1 - fr.x0, fr.y1 - fr.y0); g2.clip();
@@ -958,8 +972,17 @@ function drawCorrection(w, h) {
     for (let i = 0; i < F.length; ++i) { const X = lx(F[i]), Y = y(arr[i]); if (i) g2.lineTo(X, Y); else g2.moveTo(X, Y); }
     g2.stroke(); g2.restore();
   };
+  // how much the positions disagree: a band of ± one standard deviation around each speaker's average
+  if (d.positions >= 2) d.sides.forEach((sd, s) => {
+    if (!sd || !sd.spread || !cfg.sides.includes(s)) return;
+    g2.save(); g2.beginPath(); g2.rect(top.x0, top.y0, top.x1 - top.x0, top.y1 - top.y0); g2.clip();
+    g2.beginPath();
+    for (let i = 0; i < F.length; ++i) { const X = lx(F[i]), Y = ly(sd.measured[i] + off + sd.spread[i]); if (i) g2.lineTo(X, Y); else g2.moveTo(X, Y); }
+    for (let i = F.length - 1; i >= 0; --i) g2.lineTo(lx(F[i]), ly(sd.measured[i] + off - sd.spread[i]));
+    g2.closePath(); g2.fillStyle = css(s ? theme.second : theme.ink, 0.09); g2.fill(); g2.restore();
+  });
   d.sides.forEach((sd, s) => {
-    if (!sd) return;
+    if (!sd || !cfg.sides.includes(s)) return;
     const shift = (a) => a.map((v) => v + off);
     line(top, shift(sd.measured), ly, colours[s], 1.25, null, 0.35);
     line(top, shift(sd.result), ly, colours[s], 2);
@@ -981,8 +1004,8 @@ function drawCorrection(w, h) {
     g2.strokeStyle = theme.grid; g2.fillStyle = css(theme.ink2); g2.font = font(10, true); g2.textAlign = 'right'; g2.textBaseline = 'middle';
     for (const ms of [-gMax, 0, gMax]) { const y = Math.round(gy(ms)) + 0.5; g2.beginPath(); g2.moveTo(ph.x0, y); g2.lineTo(ph.x1, y); g2.stroke(); g2.fillText((ms > 0 ? '+' : '') + ms + (ms === gMax ? ' ms' : ''), ph.x0 - 6, y); }
     g2.fillStyle = theme.grid;
-    g2.fillRect(ph.x0, ph.y0, lx(S.corr.pLo) - ph.x0, ph.y1 - ph.y0);
-    g2.fillRect(lx(S.corr.pHi), ph.y0, ph.x1 - lx(S.corr.pHi), ph.y1 - ph.y0);
+    g2.fillRect(ph.x0, ph.y0, lx(cfg.pLo) - ph.x0, ph.y1 - ph.y0);
+    g2.fillRect(lx(cfg.pHi), ph.y0, ph.x1 - lx(cfg.pHi), ph.y1 - ph.y0);
     d.sides.forEach((sd, s) => {
       if (!sd) return;
       const g0 = rel(sd.gd);
@@ -993,9 +1016,9 @@ function drawCorrection(w, h) {
   g2.strokeStyle = css(theme.ink); g2.lineWidth = 1.5;
   for (const fr of showPhase ? [top, bot, ph] : [top, bot]) g2.strokeRect(fr.x0 + 0.75, fr.y0 + 0.75, fr.x1 - fr.x0 - 1.5, fr.y1 - fr.y0 - 1.5);
   g2.font = font(11); g2.fillStyle = css(theme.ink2); g2.textAlign = 'left'; g2.textBaseline = 'top';
-  g2.fillText(`AVERAGE OF ${d.positions} POSITION${d.positions === 1 ? '' : 'S'} (FAINT) · CORRECTED (BOLD) · TARGET (DASHED)`, top.x0 + 8, top.y0 + 6);
+  g2.fillText(cfg.title, top.x0 + 8, top.y0 + 6);
   g2.fillText('CORRECTION', bot.x0 + 8, bot.y0 + 6);
-  if (showPhase) g2.fillText(S.corr.linear ? 'ARRIVAL BY FREQUENCY (MEASURED FAINT, CORRECTED BOLD)' : 'ARRIVAL BY FREQUENCY: CORRECTED ONLY WITH LINEAR-PHASE FILTERS', ph.x0 + 8, ph.y0 + 6);
+  if (showPhase) g2.fillText(cfg.linear ? 'ARRIVAL BY FREQUENCY (MEASURED FAINT, CORRECTED BOLD)' : 'ARRIVAL BY FREQUENCY: CORRECTED ONLY WITH LINEAR-PHASE FILTERS', ph.x0 + 8, ph.y0 + 6);
 }
 
 function showCorrInfo(d) {
@@ -1021,6 +1044,13 @@ function showCorrInfo(d) {
     });
     if (!S.corr.linear) parts.push('<span class="warn">Phase correction is only in LINEAR PHASE exports (and the plugin in linear phase).</span>');
   }
+  if (d.positions >= 4) {
+    // where the positions disagree most (below 500 Hz, where the room rules)
+    const F = corrFreqs();
+    let worst = 0, wf = 0;
+    d.sides.forEach((sd) => { if (sd && sd.spread) for (let i = 0; i < F.length; ++i) if (F[i] >= 30 && F[i] <= 500 && sd.spread[i] > worst) { worst = sd.spread[i]; wf = F[i]; } });
+    if (worst > 3) parts.push(`POSITIONS DIFFER MOST: <b>±${worst.toFixed(1)} dB at ${fmtHz(wf)}</b>` + (S.corr.spread ? ' (corrected less there)' : ' (turn on SPREAD-AWARE to correct less there)'));
+  }
   if (!d.sides[0] || !d.sides[1]) parts.push('<span class="warn">Only one speaker measured.</span>');
   el.innerHTML = parts.join('<br>');
 }
@@ -1035,7 +1065,7 @@ function showCorrControls() {
   set('cBoost', c.boost, '+' + c.boost.toFixed(1) + ' dB');
   set('cCut', c.cut, '-' + c.cut + ' dB');
   for (const [id, v] of [['cLo', c.fLo], ['cHi', c.fHi]]) $(id).querySelectorAll('button').forEach((b) => b.classList.toggle('on', +b.dataset.v === v));
-  for (const [id, k] of [['cNulls', 'nulls'], ['cLow', 'low'], ['cAlign', 'align'], ['cPhase', 'phase']]) $(id).classList.toggle('on', c[k]);
+  for (const [id, k] of [['cNulls', 'nulls'], ['cLow', 'low'], ['cAlign', 'align'], ['cPhase', 'phase'], ['cSpread', 'spread']]) $(id).classList.toggle('on', c[k]);
   showBtLocks();
   $('cLat').querySelectorAll('button').forEach((b) => b.classList.toggle('on', (b.dataset.v === 'linear') === c.linear));
 }
@@ -1045,10 +1075,10 @@ function initCorrection() {
   slider('cTilt', 'tilt'); slider('cBass', 'bass'); slider('cTreble', 'treble'); slider('cAmount', 'amount'); slider('cBoost', 'boost'); slider('cCut', 'cut');
   seg('cLo', (v) => { S.corr.fLo = +v; draw(); });
   seg('cHi', (v) => { S.corr.fHi = +v; draw(); });
-  for (const [id, k] of [['cNulls', 'nulls'], ['cLow', 'low'], ['cAlign', 'align'], ['cPhase', 'phase']]) $(id).onclick = () => { S.corr[k] = !S.corr[k]; showCorrControls(); draw(); };
+  for (const [id, k] of [['cNulls', 'nulls'], ['cLow', 'low'], ['cAlign', 'align'], ['cPhase', 'phase'], ['cSpread', 'spread']]) $(id).onclick = () => { S.corr[k] = !S.corr[k]; showCorrControls(); draw(); };
   seg('cLat', (v) => { S.corr.linear = v === 'linear'; showCorrControls(); draw(); });
   $('cSave').onclick = saveProfile;
-  $('cWin').onclick = exportWindows;
+  $('cWin').onclick = () => exportWindows();
   $('cPi').onclick = exportPi;
   showCorrControls();
 }
@@ -1062,30 +1092,28 @@ function profileName() { return ($('cName').value || 'My room').trim().slice(0, 
 function saveProfile() {
   if (!designCorrection()) return;
   const [p, len] = W.putText(profileName());
-  const n = W.x.room_corr_profile(p, len);
+  const n = W.x.room_corr_profile(p, len, 0);
   W.x.room_release_buf(p);
   const text = new TextDecoder().decode(new Uint8Array(W.x.memory.buffer, W.x.room_text_ptr(), n));
   download(`${fileName(profileName())}.pumproom`, text, 'text/plain');
-  status('Profile saved: load it in pump ROOM (the plugin) or in System EQ.');
+  status('Profile saved. On a Mac, double-click it: System EQ adds it to Room Profiles in its menu and switches to it. Or load it in pump ROOM (the plugin).');
 }
 
 // filters at the usual rates (minimum phase: no latency; preamp and delays inside), a config file that picks the one
 // for the device's rate, and a read-me, zipped
-function exportWindows() {
-  const d = designCorrection();
+function exportWindows(d = designCorrection(), name = profileName(), linear = S.corr.linear, kind = filterKind()) {
   if (!d) return;
   const files = [], rates = [44100, 48000, 88200, 96000, 192000];
   for (const fs of rates) {
     const ch = [0, 1].map((s) => {
       const side = d.sides[s] ? s : (s ? 0 : 1);   // one speaker measured: its filter on both
-      const n = W.x.room_corr_fir(side, fs, S.corr.linear ? 1 : 0);
+      const n = W.x.room_corr_fir(side, fs, linear ? 1 : 0);
       return W.f32(W.x.room_fir_ptr(), n).slice();
     });
     files.push({ name: `pump-room-${fs}.wav`, data: wav(ch, fs) });
   }
-  const name = profileName();
   const conf = [`# pump ROOM correction: ${name} (${new Date().toISOString().slice(0, 10)})`,
-    `# ${filterKind()}. The preamp (${d.preamp.toFixed(2)} dB) and the time alignment are inside the filters.`,
+    `# ${kind}. The preamp (${d.preamp.toFixed(2)} dB) and the time alignment are inside the filters.`,
     'Channel: L R',
     ...rates.map((fs, i) => `${i ? 'ElseIf' : 'If'}: sampleRate == ${fs}\nConvolution: pump-room-${fs}.wav`),
     'EndIf:', ''].join('\r\n');
@@ -1113,7 +1141,7 @@ function exportPi() {
   for (const fs of rates)
     for (const s of [0, 1]) {
       const side = d.sides[s] ? s : (s ? 0 : 1);
-      const n = W.x.room_corr_fir(side, fs, S.corr.linear ? 1 : 0);
+      const n = W.x.room_corr_fir(side, fs, linear ? 1 : 0);
       files.push({ name: `coeffs/pump-room-${s ? 'R' : 'L'}-${fs}.wav`, data: wav([W.f32(W.x.room_fir_ptr(), n).slice()], fs) });
     }
   const yml = [
@@ -1283,7 +1311,7 @@ function zip(files) {
 // Height isn't tracked (two speakers place the mic in a plane): the user keeps it at ear height.
 
 const H = {
-  lat: null, spacing: null, fs: 0, ctx: null, center: null, targets: [], done: [], cur: -1,
+  lat: null, spacing: null, fs: 0, ctx: null, center: null, couch: null, targets: [], done: [], cur: -1,
   mic: null, trail: [], running: false, points: 9, info: '', infoErr: false, tail: 1.0, stopReq: false,
 };
 const HAND = { tolerance: 0.08, still: 0.04, moved: 0.12, grille: 0.03, pingS: 0.25, measureS: 1.0 };
@@ -1324,7 +1352,7 @@ async function handRun(fn) {
 
 function handFind() {
   return handRun(async () => {
-    H.fs = S.fs; H.ctx = S.ctx; H.lat = null; H.spacing = null; H.center = null; H.targets = []; H.done = []; H.cur = -1; H.mic = null; H.trail = [];
+    H.fs = S.fs; H.ctx = S.ctx; H.lat = null; H.spacing = null; H.center = null; H.couch = null; H.targets = []; H.done = []; H.cur = -1; H.mic = null; H.trail = [];
     handInfo('Listening to both speakers…');
     const p = await handPing(1.0);
     if (p.why) { handInfo(p.why, true); return; }
@@ -1345,36 +1373,66 @@ function handFind() {
 function handCenter() {
   return handRun(async () => {
     if (H.ctx !== S.ctx) { handInfo('Audio restarted since step 1: find the speakers again.', true); return; }
+    const couch = H.points === 'couch' && H.center && !H.couch;
     handInfo('Finding the mic…');
     const p = await handPing(H.tail);
     if (p.why) { handInfo(p.why, true); return; }
     const pos = handPos(p.tL, p.tR);
-    if (pos.y < 0.3) { handInfo('The mic seems to be between the speakers or behind them: hold it at your listening spot and try again.', true); return; }
-    H.center = { x: pos.x, y: pos.y };
+    if (pos.y < 0.3) { handInfo(`The mic seems to be between the speakers or behind them: hold it at ${couch ? 'the couch' : 'your listening spot'} and try again.`, true); return; }
     H.mic = pos; H.trail = [pos];
-    H.targets = handPattern(H.points).map(([dx, dy]) => ({ x: pos.x + dx, y: pos.y + dy }));
-    H.done = H.targets.map(() => false);
-    H.cur = 0;
+    if (couch) {
+      if (Math.hypot(pos.x - H.center.x, pos.y - H.center.y) < 0.9) { handInfo('That is close to the mix position: sit on the couch, mic where your head is, and press SET COUCH again.', true); return; }
+      H.couch = { x: pos.x, y: pos.y };
+      const add = handLayout('couchOnly').map((t) => ({ ...t, x: pos.x + t.dx, y: pos.y + t.dy }));
+      H.targets = H.targets.concat(add);
+      H.done = H.done.concat(add.map(() => false));
+      H.cur = handNext();
+      handInfo(`Couch ${pos.dL.toFixed(2)} m from the left speaker, ${pos.dR.toFixed(2)} m from the right. Press ${H.done.some(Boolean) ? 'CONTINUE' : 'START'}.`);
+      return;
+    }
+    H.center = { x: pos.x, y: pos.y };
+    H.couch = null;
+    handCenterPattern(false);
     handInfo(`Center ${pos.dL.toFixed(2)} m from the left speaker, ${pos.dR.toFixed(2)} m from the right. Press START.`);
   });
 }
 
-// points around the center (metres: x to the right, y away from the speakers)
-function handPattern(n) {
-  const ring = (count, r, start) => Array.from({ length: count }, (_, i) => { const a = (start + i * 360 / count) * Math.PI / 180; return [r * Math.cos(a), r * Math.sin(a)]; });
-  if (n <= 5) return [[0, 0], ...ring(4, 0.3, 0)];
-  if (n <= 9) return [[0, 0], ...ring(8, 0.35, 0)];
-  return [[0, 0], ...ring(6, 0.25, 0), ...ring(6, 0.5, 30)];
+// Points around the center (metres: x to the right, y away from the speakers), each with its height (h: +1 is 15 cm
+// above ear height, -1 below), its weight in the average (w) and its group. 5, 9 or 13 points: one listener, all
+// at ear height and weighted the same. MIX: a studio's mix position, wider (the chair moving, leaning in) and at
+// three heights, the middle counting most. MIX + COUCH adds a couch or client seat (couchOnly), set on its own and
+// weighted to a quarter of the whole.
+const HAND_UP = 0.15;
+function handLayout(n) {
+  const pt = (dx, dy, h = 0, w = 1, group = 'mix') => ({ dx, dy, h, w, group });
+  const ring = (count, rx, ry, start, h, w) => Array.from({ length: count }, (_, i) => {
+    const a = (start + i * 360 / count) * Math.PI / 180;
+    return pt(rx * Math.cos(a), ry * Math.sin(a), typeof h === 'function' ? h(i) : h, w);
+  });
+  const mix = () => [pt(0, 0), pt(0, 0, 1), pt(0, 0, -1),
+    ...ring(6, 0.3, 0.3, 0, (i) => (i % 2 ? -1 : 1), 0.75),
+    ...ring(8, 0.7, 0.5, 22.5, 0, 0.5)];
+  if (n === 'couchOnly') {
+    const wm = mix().reduce((a, t) => a + t.w, 0), w = wm / 3 / 5;   // the couch: a quarter of the total weight
+    return [pt(0, 0, 0, w, 'couch'), pt(-0.45, 0, 0, w, 'couch'), pt(0.45, 0, 0, w, 'couch'), pt(0, -0.25, 0, w, 'couch'), pt(0, 0.2, 0, w, 'couch')];
+  }
+  if (n === 'mix' || n === 'couch') return mix();
+  const one = (k, r, start) => ring(k, r, r, start, 0, 1);
+  if (+n <= 5) return [pt(0, 0), ...one(4, 0.3, 0)];
+  if (+n <= 9) return [pt(0, 0), ...one(8, 0.35, 0)];
+  return [pt(0, 0), ...one(6, 0.25, 0), ...one(6, 0.5, 30)];
 }
 
-function handCenterPattern() {
+function handCenterPattern(redraw = true) {
   if (!H.center) return;
-  H.targets = handPattern(H.points).map(([dx, dy]) => ({ x: H.center.x + dx, y: H.center.y + dy }));
+  H.couch = null;
+  H.targets = handLayout(H.points).map((t) => ({ ...t, x: H.center.x + t.dx, y: H.center.y + t.dy }));
   H.done = H.targets.map(() => false);
   H.cur = 0;
-  showHand();
-  draw();
+  if (redraw) { showHand(); draw(); }
 }
+
+const heightWords = (h) => (h > 0 ? `${HAND_UP * 100} cm ABOVE ear height` : `${HAND_UP * 100} cm BELOW ear height`);
 
 function handNext() {
   const at = H.mic || H.center;
@@ -1402,12 +1460,18 @@ function handStart() {
       const off = Math.hypot(pos.x - t.x, pos.y - t.y);
       const still = last && Math.hypot(pos.x - last.x, pos.y - last.y) < HAND.still;
       last = pos;
-      if (off > HAND.tolerance) { handInfo(handDirection(pos, t)); draw(); continue; }
-      if (!still) { handInfo('On the point: hold still…'); draw(); continue; }
-      handInfo('Measuring here: hold still…');
+      const hTip = t.h ? `Mic ${heightWords(t.h)}. ` : '';
+      if (off > HAND.tolerance) { handInfo(hTip + handDirection(pos, t)); draw(); continue; }
+      if (!still) { handInfo(`On the point: ${t.h ? 'mic ' + heightWords(t.h) + ', ' : ''}hold still…`); draw(); continue; }
+      handInfo(`Measuring here${t.h ? ' (' + heightWords(t.h).toLowerCase() + ')' : ''}: hold still…`);
       draw();
       const cap = await capture({ sides: ['L', 'R'], seconds: HAND.measureS, level: S.level, preS: 0.3, tailS: H.tail + 0.6, searchS: H.tail + 0.1 });
-      const run = runFrom(cap, `Hand ${H.done.filter(Boolean).length + 1}`, HAND.measureS, S.level);
+      const studio = H.points === 'mix' || H.points === 'couch';
+      const nGroup = H.targets.filter((x, i) => H.done[i] && x.group === t.group).length + 1;
+      const label = !studio ? `Hand ${H.done.filter(Boolean).length + 1}` : `${t.group === 'couch' ? 'Couch' : 'Mix'} ${nGroup}${t.h > 0 ? ' ▲' : (t.h < 0 ? ' ▼' : '')}`;
+      const run = runFrom(cap, label, HAND.measureS, S.level);
+      run.weight = t.w || 1;
+      if (studio) { run.group = t.group; run.height = t.h || 0; }
       const ok = run.ch.length === 2;
       let why = run.notes.join(' ');
       if (ok) {
@@ -1434,7 +1498,9 @@ function handStart() {
       renderRuns();
       $('save').disabled = false;
       const n = H.done.filter(Boolean).length;
-      handInfo(H.cur < 0 ? `All ${n} points measured. Open CORRECTION.` : `Point ${n} of ${H.targets.length} kept. Next dot.`);
+      const couchNext = H.cur < 0 && H.points === 'couch' && !H.couch;
+      handInfo(couchNext ? `The ${n} mix points are done. Sit on the couch, mic where your head is, and press SET COUCH.`
+        : (H.cur < 0 ? `All ${n} points measured. Open CORRECTION.` : `Point ${n} of ${H.targets.length} kept. Next dot${H.targets[H.cur].h ? ': mic ' + heightWords(H.targets[H.cur].h) : ''}.`));
       draw();
     }
   });
@@ -1447,7 +1513,7 @@ function handDirection(pos, t) {
   return 'Move ' + (parts.join(', ') || 'a little') + '.';
 }
 
-function handReset() { H.center = null; H.targets = []; H.done = []; H.cur = -1; H.mic = null; H.trail = []; handInfo(H.lat !== null ? 'Set the center again (step 2).' : ''); draw(); }
+function handReset() { H.center = null; H.couch = null; H.targets = []; H.done = []; H.cur = -1; H.mic = null; H.trail = []; handInfo(H.lat !== null ? 'Set the center again (step 2).' : ''); draw(); }
 
 function showHand() {
   const ready = H.lat !== null && H.ctx === S.ctx && S.ctx !== null;
@@ -1455,8 +1521,18 @@ function showHand() {
   const step = !ready ? 1 : (!H.center ? 2 : (finished ? 4 : 3));
   for (const k of [1, 2, 3]) { $('hs' + k).classList.toggle('now', k === step); $('hs' + k).classList.toggle('done', k < step); }
   $('hCal').disabled = S.busy || !S.node || S.bt;
+  const couchStep = H.points === 'couch' && !!H.center && !H.couch;
+  $('hCenter').textContent = couchStep ? 'SET COUCH' : 'SET CENTER';
   $('hCenter').disabled = S.busy || !ready;
   $('hStart').disabled = (S.busy && !H.running) || !H.center || (H.cur < 0 && !H.running);
+  const studio = H.points === 'mix' || H.points === 'couch';
+  $('hs2t').innerHTML = studio
+    ? 'Sit at the mix position. Hold the mic where your head is, at ear height, and press <b>SET CENTER</b>.'
+    : 'Sit where you listen. Hold the mic where your head is, at ear height, and press <b>SET CENTER</b>.';
+  $('hs3t').innerHTML = studio
+    ? 'Press <b>START</b> and move the mic to each dot. ▲ dots: hold the mic 15 cm above ear height; ▼ 15 cm below. Hold still on a dot: it measures by itself.' +
+      (H.points === 'couch' ? ' When the mix dots are done, sit on the couch and press <b>SET COUCH</b>, then <b>CONTINUE</b>.' : '')
+    : 'Press <b>START</b> and move the mic to each dot. Hold still on a dot: it measures by itself, then shows the next.';
   $('hStart').textContent = H.running ? 'STOP' : (H.done.some(Boolean) ? 'CONTINUE' : 'START');
   $('hRestart').disabled = S.busy || !H.center;
   const n = H.done.filter(Boolean).length;
@@ -1470,11 +1546,11 @@ function showHand() {
 
 function drawHand(w, h) {
   $('empty').style.display = 'none';
-  const sp = H.spacing || 2.4, cy0 = H.center ? H.center.y : 2.5;
+  const sp = H.spacing || 2.4, cy0 = H.targets.length ? Math.max(...H.targets.map((t) => t.y)) - 0.3 : (H.center ? H.center.y : 2.5);
   // left: the whole room from above; right (once there's a center): the points, close up
   const split = H.center && w > 560 ? Math.round(w * 0.42) : w;
   const room = { x0: 0, x1: split, y0: 22, y1: h - 8 };
-  const X = Math.max(sp / 2 + 0.6, 1.4), y0 = -0.35, y1 = cy0 + 0.9;
+  const X = Math.max(sp / 2 + 0.6, 1.4, ...H.targets.map((t) => Math.abs(t.x) + 0.4)), y0 = -0.35, y1 = cy0 + 0.9;
   const scale = Math.min((room.x1 - room.x0 - 30) / (2 * X), (room.y1 - room.y0 - 20) / (y1 - y0));
   const ox = (room.x0 + room.x1) / 2, oy = room.y0 + 10 - y0 * scale;
   const px = (x) => ox + x * scale, py = (y) => oy + y * scale;
@@ -1501,6 +1577,13 @@ function drawHand(w, h) {
       g2.strokeStyle = css(i === H.cur ? theme.ink : theme.ink2); g2.lineWidth = i === H.cur ? (bold ? 3.5 : 2.5) : 1.25; g2.stroke();
       if (H.done[i] && r > 8) { g2.fillStyle = css(theme.neonInk); g2.font = font(Math.min(16, r)); g2.textAlign = 'center'; g2.textBaseline = 'middle'; g2.fillText('✓', pxs(t.x), pys(t.y)); }
     });
+    // heights: points at the same spot drawn as one dot, with ▲ / ▼ beside it for the raised and lowered ones
+    if (r > 8) H.targets.forEach((t, i) => {
+      if (!t.h) return;
+      g2.fillStyle = css(H.done[i] ? theme.ink2 : (i === H.cur ? theme.ink : theme.ink2)); g2.font = font(Math.min(14, r));
+      g2.textAlign = 'center'; g2.textBaseline = 'middle';
+      g2.fillText(t.h > 0 ? '▲' : '▼', pxs(t.x) + (t.h > 0 ? r + 8 : -(r + 8)), pys(t.y) - r * 0.6);
+    });
     if (H.trail.length > 1) {
       g2.strokeStyle = css(theme.second, 0.35); g2.lineWidth = 2; g2.beginPath();
       H.trail.forEach((p, i) => (i ? g2.lineTo(pxs(p.x), pys(p.y)) : g2.moveTo(pxs(p.x), pys(p.y)))); g2.stroke();
@@ -1523,13 +1606,18 @@ function drawHand(w, h) {
   const zone = { x0: split + 12, x1: w - 12, y0: 22, y1: h - 12 };
   g2.strokeStyle = css(theme.ink); g2.lineWidth = 1.5;
   g2.beginPath(); g2.moveTo(split + 0.5, 6); g2.lineTo(split + 0.5, h - 6); g2.stroke();
-  const half = 0.75, zs = Math.min(zone.x1 - zone.x0, zone.y1 - zone.y0) / (2 * half);
+  // the close-up follows the group being measured (the mix position, or the couch)
+  const curT = H.targets[H.cur];
+  const zc = curT && curT.group === 'couch' && H.couch ? H.couch : H.center;
+  const grp = H.targets.filter((t) => (zc === H.couch ? t.group === 'couch' : t.group !== 'couch'));
+  const half = Math.max(0.75, Math.ceil((Math.max(0, ...grp.map((t) => Math.max(Math.abs(t.x - zc.x), Math.abs(t.y - zc.y)))) + 0.15) * 10) / 10);
+  const zs = Math.min(zone.x1 - zone.x0, zone.y1 - zone.y0) / (2 * half);
   const zx0 = (zone.x0 + zone.x1) / 2, zy0 = (zone.y0 + zone.y1) / 2;
-  const qx = (x) => zx0 + (x - H.center.x) * zs, qy = (y) => zy0 + (y - H.center.y) * zs;
+  const qx = (x) => zx0 + (x - zc.x) * zs, qy = (y) => zy0 + (y - zc.y) * zs;
   g2.strokeStyle = theme.grid; g2.lineWidth = 1;
   for (let d = -half; d <= half + 1e-9; d += 0.1) {
-    g2.beginPath(); g2.moveTo(qx(H.center.x + d), qy(H.center.y - half)); g2.lineTo(qx(H.center.x + d), qy(H.center.y + half)); g2.stroke();
-    g2.beginPath(); g2.moveTo(qx(H.center.x - half), qy(H.center.y + d)); g2.lineTo(qx(H.center.x + half), qy(H.center.y + d)); g2.stroke();
+    g2.beginPath(); g2.moveTo(qx(zc.x + d), qy(zc.y - half)); g2.lineTo(qx(zc.x + d), qy(zc.y + half)); g2.stroke();
+    g2.beginPath(); g2.moveTo(qx(zc.x - half), qy(zc.y + d)); g2.lineTo(qx(zc.x + half), qy(zc.y + d)); g2.stroke();
   }
   g2.save(); g2.beginPath(); g2.rect(zone.x0, zone.y0, zone.x1 - zone.x0, zone.y1 - zone.y0); g2.clip();
   marks(zone, qx, qy, HAND.tolerance * zs, true);
@@ -1545,7 +1633,197 @@ function drawHand(w, h) {
   }
   g2.restore();
   g2.fillStyle = css(theme.ink2); g2.font = font(11); g2.textAlign = 'left'; g2.textBaseline = 'top';
-  g2.fillText('CLOSE UP · GRID 10 CM · SPEAKERS ▲', split + 12, 8);
+  g2.fillText(`CLOSE UP${zc === H.couch ? ': COUCH' : ''} · GRID 10 CM · SPEAKERS ↑`, split + 12, 8);
+}
+
+
+// ---------------------------------------------------------------------------------------------------------------------
+// headphones: no measuring here (that needs an ear simulator): a published measurement of the model, or an EQ file made
+// for it, corrected to a target with the same design and exports as the room
+
+// The usual targets for a measurement on the common ear simulator, described as filters (kind, Hz, dB, Q, evaluated at
+// 96 kHz) plus an offset: over-ear within 0.1 dB RMS of the published curve, in-ear within 0.05 dB.
+const HP_TARGETS = {
+  over: { offset: -24.862, filters: [['LS', 66.5, 25.0, 0.97], ['PK', 32.9, -3.28, 1.107], ['PK', 149.0, 2.46, 1.381], ['PK', 99.3, 4.94, 0.851],
+    ['PK', 213.6, 16.0, 0.2], ['PK', 1406.3, 12.15, 0.2], ['PK', 2486.0, 5.13, 1.024], ['PK', 4066.0, 13.73, 0.563], ['PK', 8887.7, 12.89, 0.62], ['HS', 19041.5, -4.3, 2.911]] },
+  in: { offset: -22.059, filters: [['LS', 63.9, 25.0, 0.578], ['PK', 222.0, -6.76, 0.67], ['PK', 30.2, -0.78, 1.078], ['PK', 209.2, 24.95, 0.2],
+    ['PK', 2789.3, 18.18, 0.46], ['PK', 4999.1, 7.99, 0.59], ['PK', 8094.5, 10.17, 0.702], ['HS', 19260.9, -5.42, 2.01]] },
+};
+
+// one biquad's level (dB) at f: peaking (PK), low shelf (LS) or high shelf (HS), the usual cookbook forms
+function biquadDb(kind, fc, gain, q, f, fs = 96000) {
+  const w = 2 * Math.PI * fc / fs, A = Math.pow(10, gain / 40), al = Math.sin(w) / (2 * q), c = Math.cos(w);
+  let b, a;
+  if (kind === 'PK') { b = [1 + al * A, -2 * c, 1 - al * A]; a = [1 + al / A, -2 * c, 1 - al / A]; }
+  else {
+    const sA = 2 * Math.sqrt(A) * al;
+    if (kind === 'LS') { b = [A * ((A + 1) - (A - 1) * c + sA), 2 * A * ((A - 1) - (A + 1) * c), A * ((A + 1) - (A - 1) * c - sA)]; a = [(A + 1) + (A - 1) * c + sA, -2 * ((A - 1) + (A + 1) * c), (A + 1) + (A - 1) * c - sA]; }
+    else { b = [A * ((A + 1) + (A - 1) * c + sA), -2 * A * ((A - 1) + (A + 1) * c), A * ((A + 1) + (A - 1) * c - sA)]; a = [(A + 1) - (A - 1) * c + sA, 2 * ((A - 1) - (A + 1) * c), (A + 1) - (A - 1) * c - sA]; }
+  }
+  const ph = 2 * Math.PI * Math.min(f, fs * 0.49) / fs, cr = Math.cos(ph), ci = -Math.sin(ph), c2r = Math.cos(2 * ph), c2i = -Math.sin(2 * ph);
+  const nr = b[0] + b[1] * cr + b[2] * c2r, ni = b[1] * ci + b[2] * c2i, dr = a[0] + a[1] * cr + a[2] * c2r, di = a[1] * ci + a[2] * c2i;
+  return 10 * Math.log10((nr * nr + ni * ni) / Math.max(1e-30, dr * dr + di * di));
+}
+const filtersDb = (filters, f) => filters.reduce((acc, [k, fc, g, q]) => acc + biquadDb(k, fc, g, q, f), 0);
+
+// What a loaded file is: a frequency response (kind 'fr', with the file's own target if it has one) or an EQ to apply
+// (kind 'eq'). Parametric ("Filter 1: ON PK Fc 105 Hz Gain 3 dB Q 0.7"), graphic ("GraphicEQ: 20 -3; 21 -3.1; ...")
+// or a table of frequency and dB (columns named raw / target are used when there is a header).
+function parseHeadphoneFile(text) {
+  text = String(text).replace(/^﻿/, '');
+  const filters = [];
+  const re = /Filter\s*\d*\s*:\s*ON\s+(PK|PEQ|LSC|LSQ|LS|HSC|HSQ|HS)\s+Fc\s+([\d.]+)\s*Hz(?:\s+Gain\s+([-+\d.]+)\s*dB)?(?:\s+Q\s+([\d.]+))?/gi;
+  let m;
+  while ((m = re.exec(text))) {
+    const k = m[1].toUpperCase(), kind = k.startsWith('L') ? 'LS' : (k.startsWith('H') ? 'HS' : 'PK');
+    const fc = +m[2], g = +(m[3] || 0), q = +(m[4] || (kind === 'PK' ? 1 : 0.707));
+    if (fc > 0 && fc < 48000 && isFinite(g) && Math.abs(g) <= 30 && q > 0 && q < 50) filters.push([kind, fc, g, q]);
+  }
+  if (filters.length) {
+    const f = Array.from(corrFreqs()), db = f.map((x) => filtersDb(filters, x));
+    return { kind: 'eq', f, db, note: `${filters.length} filter${filters.length === 1 ? '' : 's'}` };
+  }
+  const ge = /GraphicEQ\s*:\s*([^\n\r]*)/i.exec(text);
+  if (ge) {
+    const pts = ge[1].split(';').map((x) => x.trim().split(/\s+/).map(Number)).filter((x) => x.length >= 2 && x[0] > 0 && isFinite(x[1]));
+    pts.sort((a, b) => a[0] - b[0]);
+    if (pts.length >= 3) return { kind: 'eq', f: pts.map((x) => x[0]), db: pts.map((x) => x[1]), note: `graphic EQ, ${pts.length} points` };
+  }
+  // a table
+  let fCol = 0, dbCol = 1, tCol = -1;
+  const rows = [];
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line || line[0] === '#' || line[0] === '*') continue;
+    const cells = line.split(/[,;\t]|\s+/).filter((x) => x !== '');
+    const nums = cells.map((x) => Number(x));
+    if (!isFinite(nums[0])) {
+      if (!rows.length) {   // a header: find the columns by name
+        const names = cells.map((x) => x.toLowerCase());
+        const fi = names.findIndex((x) => x.startsWith('freq')), ri = names.indexOf('raw'), ti = names.indexOf('target');
+        if (fi >= 0) fCol = fi;
+        if (ri >= 0) dbCol = ri; else if (names.length > 1) dbCol = fCol === 0 ? 1 : 0;
+        tCol = ti;
+      }
+      continue;
+    }
+    if (cells.length <= Math.max(fCol, dbCol)) continue;
+    const f = nums[fCol], d = nums[dbCol];
+    if (!(f > 0) || !isFinite(d)) continue;
+    rows.push([f, d, tCol >= 0 && isFinite(nums[tCol]) ? nums[tCol] : null]);
+  }
+  rows.sort((a, b) => a[0] - b[0]);
+  const clean = rows.filter((r, i) => i === 0 || r[0] > rows[i - 1][0]);
+  if (clean.length < 10) return null;
+  const out = { kind: 'fr', f: clean.map((r) => r[0]), db: clean.map((r) => r[1]), note: `${clean.length} points, ${fmtHz(clean[0][0])} to ${fmtHz(clean[clean.length - 1][0])}` };
+  if (tCol >= 0 && clean.every((r) => r[2] !== null)) out.target = clean.map((r) => r[2]);
+  return out;
+}
+
+async function loadHeadphones(file) {
+  if (file.size > 8 * 1024 * 1024) { status('That file is too large to be a headphone measurement.', true); return; }
+  const parsed = parseHeadphoneFile(await file.text());
+  if (!parsed) { status(`${file.name}: no frequency response or EQ found in it.`, true); return; }
+  const name = file.name.replace(/\.[^.]+$/, '').replace(/\s*(ParametricEQ|GraphicEQ|FixedBandEQ)\s*$/i, '').trim();
+  S.hp.file = { name: file.name, ...parsed };
+  if (parsed.kind === 'fr' && S.hp.target === 'file' && !parsed.target) S.hp.target = 'over';
+  if (parsed.kind === 'fr' && parsed.target && S.hp.target !== 'flat') S.hp.target = 'file';
+  $('hpName').value = name.slice(0, 60) || 'My headphones';
+  status(parsed.kind === 'eq' ? `Loaded the EQ for ${name}: applied as it is, with your tilt, bass and treble on top.`
+    : `Loaded ${name}'s response: corrected to the ${S.hp.target === 'file' ? 'target in the file' : S.hp.target === 'in' ? 'in-ear target' : S.hp.target === 'over' ? 'over-ear target' : 'flat target'}.`);
+  showHp(); draw();
+}
+
+function designHeadphones() {
+  const h = S.hp, file = h.file;
+  if (!file) { S.hpDesign = null; return null; }
+  const put = (arr) => { const p = W.x.room_alloc(arr.length * 8); W.f64(p, arr.length).set(arr); return p; };
+  W.x.room_corr_begin();
+  const pf = put(file.f), pd = put(file.kind === 'eq' ? file.db.map((v) => -v) : file.db);
+  W.x.room_corr_add_curve(0, pf, pd, file.f.length, 1);
+  W.x.room_corr_add_curve(1, pf, pd, file.f.length, 1);
+  W.x.room_release_buf(pf); W.x.room_release_buf(pd);
+  // the base target: none for an EQ file (it already is the correction)
+  let tf = null, td = null;
+  const tgt = file.kind === 'eq' ? 'flat' : h.target;
+  if (tgt === 'over' || tgt === 'in') { tf = Array.from(corrFreqs()); const t = HP_TARGETS[tgt]; td = tf.map((x) => t.offset + filtersDb(t.filters, x)); }
+  else if (tgt === 'file' && file.target) { tf = file.f; td = file.target; }
+  if (tf) { const a = put(tf), b = put(td); W.x.room_corr_target(a, b, tf.length); W.x.room_release_buf(a); W.x.room_release_buf(b); }
+  const eq = file.kind === 'eq';
+  const params = [h.tilt, h.bass, h.treble, 20, eq ? 20000 : h.fHi, eq ? 20 : h.boost, eq ? 24 : 15, eq ? 0 : 1, 0, h.amount / 100, 0, 0, 0, 60, 3000, 0, eq ? 0 : 1];
+  const p = W.x.room_alloc(params.length * 8);
+  W.f64(p, params.length).set(params);
+  const n = W.x.room_corr_design(p);
+  W.x.room_release_buf(p);
+  const d = { n, preamp: W.x.room_corr_info(0, 0), sides: [], positions: 1 };
+  for (let s = 0; s < 2; ++s) {
+    const get = (k) => { const q = W.x.room_corr_curve(s, k); return q ? W.f64(q, n).slice() : null; };
+    d.sides.push({ measured: get(0), target: get(1), correction: get(2), result: get(3), guard: 0, delay: 0, gd: get(4), gdCorr: get(5), spread: null });
+  }
+  S.hpDesign = d;
+  return d;
+}
+
+function drawHeadphones(w, h) {
+  const d = designHeadphones();
+  showHpOut(d);
+  if (!d) { $('empty').style.display = 'flex'; $('empty').textContent = 'Load a headphone measurement or EQ file (LOAD FILE…).'; return; }
+  const eq = S.hp.file.kind === 'eq';
+  drawDesign(w, h, d, { fLo: 20, fHi: eq ? 20000 : S.hp.fHi, boost: eq ? 15 : S.hp.boost, cut: 15, pLo: 60, pHi: 3000, linear: false, showPhase: false, sides: [0],
+    title: eq ? 'THE EQ FILE AS A RESPONSE (FAINT) · CORRECTED (BOLD) · TARGET (DASHED)' : 'HEADPHONE RESPONSE (FAINT) · CORRECTED (BOLD) · TARGET (DASHED)' });
+}
+
+function showHpOut(d) {
+  for (const id of ['hpSave', 'hpWin']) $(id).disabled = !d;
+  if (!d) { $('hpOut').innerHTML = ''; return; }
+  let lo = 1e9, hi = -1e9;
+  for (const v of d.sides[0].correction) { lo = Math.min(lo, v); hi = Math.max(hi, v); }
+  $('hpOut').innerHTML = `PREAMP <b>${d.preamp.toFixed(1)} dB</b><br>CORRECTION <b>${lo.toFixed(1)} / +${Math.max(0, hi).toFixed(1)} dB</b>`;
+}
+
+function showHp() {
+  const h = S.hp, f = h.file;
+  $('hpInfo').innerHTML = f ? `<b>${esc(f.name)}</b><br>${f.kind === 'eq' ? 'EQ file' : 'Frequency response'}: ${esc(f.note)}${f.target ? ', with its target' : ''}` : 'Load your headphones\' frequency response, or an EQ file made for them.';
+  $('hpClear').disabled = !f;
+  const eq = f && f.kind === 'eq';
+  $('hpTarget').querySelectorAll('button').forEach((b) => {
+    b.classList.toggle('on', b.dataset.v === (eq ? 'flat' : h.target));
+    b.disabled = eq || (b.dataset.v === 'file' && !(f && f.target));
+  });
+  $('hpTarget').title = eq ? 'An EQ file is already the correction to a target: it is applied as it is' : 'What the headphones should measure like';
+  const set = (id, text) => { $(id + 'T').textContent = text; };
+  $('hpTilt').value = h.tilt; set('hpTilt', (h.tilt > 0 ? '+' : '') + h.tilt.toFixed(1) + ' dB/oct');
+  $('hpBass').value = h.bass; set('hpBass', (h.bass > 0 ? '+' : '') + h.bass.toFixed(1) + ' dB');
+  $('hpTreble').value = h.treble; set('hpTreble', (h.treble > 0 ? '+' : '') + h.treble.toFixed(1) + ' dB');
+  $('hpAmount').value = h.amount; set('hpAmount', h.amount + ' %');
+  $('hpBoost').value = h.boost; set('hpBoost', '+' + h.boost.toFixed(1) + ' dB');
+  $('hpBoost').disabled = !!eq;
+  $('hpHi').querySelectorAll('button').forEach((b) => { b.classList.toggle('on', +b.dataset.v === h.fHi); b.disabled = !!eq; });
+}
+
+function hpName() { return ($('hpName').value || 'My headphones').trim().slice(0, 60) || 'My headphones'; }
+
+function saveHpProfile() {
+  if (!designHeadphones()) return;
+  const [p, len] = W.putText(hpName());
+  const n = W.x.room_corr_profile(p, len, 1);
+  W.x.room_release_buf(p);
+  const text = new TextDecoder().decode(new Uint8Array(W.x.memory.buffer, W.x.room_text_ptr(), n));
+  download(`${fileName(hpName())}.pumproom`, text, 'text/plain');
+  status('Headphone profile saved. On a Mac, double-click it: System EQ adds it to Headphones in its menu and switches to it. Or load it in pump ROOM (the plugin).');
+}
+
+function initHeadphones() {
+  const slider = (id, key) => { $(id).oninput = () => { S.hp[key] = +$(id).value; showHp(); draw(); }; };
+  slider('hpTilt', 'tilt'); slider('hpBass', 'bass'); slider('hpTreble', 'treble'); slider('hpAmount', 'amount'); slider('hpBoost', 'boost');
+  seg('hpTarget', (v) => { S.hp.target = v; showHp(); draw(); });
+  seg('hpHi', (v) => { S.hp.fHi = +v; showHp(); draw(); });
+  $('hpLoad').onclick = () => $('hpFile').click();
+  $('hpFile').onchange = () => { const f = $('hpFile').files[0]; if (f) loadHeadphones(f); $('hpFile').value = ''; };
+  $('hpClear').onclick = () => { S.hp.file = null; showHp(); draw(); };
+  $('hpSave').onclick = saveHpProfile;
+  $('hpWin').onclick = () => exportWindows(designHeadphones(), hpName(), false, 'Minimum phase (no latency): headphone correction');
+  showHp();
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -1645,16 +1923,19 @@ function init() {
     S.view = v;
     $('corrPanel').hidden = v !== 'correction';
     $('handPanel').hidden = v !== 'handheld';
-    $('smooth').style.visibility = v === 'correction' || v === 'handheld' ? 'hidden' : '';
+    $('hpPanel').hidden = v !== 'headphones';
+    $('smooth').style.visibility = v === 'correction' || v === 'handheld' || v === 'headphones' ? 'hidden' : '';
+    if (v === 'headphones') showHp();
     if (v === 'handheld') showHand();
     draw();
   });
-  seg('hPoints', (v) => { H.points = +v; if (H.center && !H.running && !H.done.some(Boolean)) handCenterPattern(); });
+  seg('hPoints', (v) => { H.points = v === 'mix' || v === 'couch' ? v : +v; if (H.center && !H.running && !H.done.some(Boolean)) handCenterPattern(); else showHand(); });
   $('hCal').onclick = handFind;
   $('hCenter').onclick = handCenter;
   $('hStart').onclick = handStart;
   $('hRestart').onclick = () => { if (!S.busy) handReset(); showHand(); };
   initCorrection();
+  initHeadphones();
   seg('smooth', (v) => { S.smooth = +v; draw(); });
   seg('win', (v) => {
     S.windowMs = +v;
@@ -1673,7 +1954,7 @@ function init() {
   new ResizeObserver(() => draw()).observe(canvas);
   if (document.fonts) document.fonts.ready.then(draw);
   if (S.sim) status('Test mode: a simulated room stands in for the speakers and mic. START AUDIO, then MEASURE.');
-  window.pumpRoom = { S, W, H, measure, startAudio, applyCal, saveSession, openSession, draw, designCorrection, saveProfile, exportWindows, exportPi };   // for tests
+  window.pumpRoom = { S, W, H, handFind, handCenter, handStart, parseHeadphoneFile, designHeadphones, HP_TARGETS, filtersDb, measure, startAudio, applyCal, saveSession, openSession, draw, designCorrection, saveProfile, exportWindows, exportPi };   // for tests
 }
 
 init();

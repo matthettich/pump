@@ -507,6 +507,11 @@ static void testProfile()
     const char* one = "pump-room-profile 1\n# a comment\nname Left only\nchannel L 1.5\n20 0\n1000 -2\n20000 0\nend\n";
     Profile r; std::string w;
     CHECK(parseProfile(one, std::strlen(one), r, w) && r.channels == 1 && r.side('R') == nullptr && std::fabs(curveAt(r.ch[0].f, r.ch[0].correction, 1000) + 2) < 1e-9, "one channel, comments");
+    CHECK(!q.headphones && text.find("kind") == std::string::npos, "a room profile says no kind");
+    Profile hp = p; hp.headphones = true;
+    const std::string ht = writeProfile(hp);
+    Profile hq; std::string hw;
+    CHECK(parseProfile(ht.data(), ht.size(), hq, hw) && hq.headphones && hq.channels == 2, "a headphone profile reads back as one");
 }
 
 // The plugin's engine: an impulse through it comes out as the designed filters, after one block; AMOUNT and the
@@ -659,6 +664,52 @@ static void testPhase()
     CHECK(rw < 0.5, "with reflections 4.4 dB down: within %.2f ms of the speaker 300 Hz..3 kHz", rw);
 }
 
+static void testCorrectionPositions()
+{
+    printf("correction: weighted positions, spread, spread-aware, a base target curve\n");
+    const double fs = 48000;
+    const std::vector<double> g = correctionGrid();
+    // weights: a -6 dB curve at weight 3 and a 0 dB one at weight 1 average (in power) to 10 log10((3/4 + 1/4) ... )
+    std::vector<double> a(g.size(), -6.0), b(g.size(), 0.0);
+    const std::vector<double> avg = powerAverage({ a, b }, { 3.0, 1.0 });
+    const double want = 10.0 * std::log10(0.75 * std::pow(10.0, -0.6) + 0.25);
+    CHECK(std::fabs(avg[100] - want) < 1e-9, "weighted power average %.3f dB (want %.3f)", avg[100], want);
+    const std::vector<double> eq = powerAverage({ a, b });
+    CHECK(std::fabs(eq[100] - 10.0 * std::log10(0.5 * std::pow(10.0, -0.6) + 0.5)) < 1e-9, "no weights: plain average");
+    // spread: a mode at 80 Hz that moves from +12 to -6 dB between positions, the rest the same everywhere
+    std::vector<std::vector<double>> pos;
+    const double modes[6] = { 12, 6, 0, -6, 9, 3 };
+    for (double m : modes)
+    {
+        Path p; p.filters = { Bq::peak(fs, 80, 4, m), Bq::peak(fs, 3000, 1, -6) };
+        pos.push_back(curveOf(p, fs, -20));
+    }
+    const std::vector<double> sp = positionSpread(g, pos);
+    CHECK(at(g, sp, 80) > 4.0 && at(g, sp, 3000) < 0.05, "spread %.1f dB at the moving mode, %.2f dB at the steady dip", at(g, sp, 80), at(g, sp, 3000));
+    const std::vector<double> mean = powerAverage(pos);
+    CorrectionSpec s;
+    const ChannelCorrection full = designCorrection(g, mean, targetLevel(g, { &mean }), s);
+    s.trust = spreadTrust(g, sp);
+    const ChannelCorrection aware = designCorrection(g, mean, targetLevel(g, { &mean }), s);
+    CHECK(std::fabs(at(g, aware.correction, 80)) < 0.75 * std::fabs(at(g, full.correction, 80)),
+          "spread-aware: the moving mode corrected less (%.1f vs %.1f dB)", at(g, aware.correction, 80), at(g, full.correction, 80));
+    CHECK(std::fabs(at(g, aware.correction, 3000) - at(g, full.correction, 3000)) < 0.1,
+          "spread-aware: the steady dip corrected the same (%.1f vs %.1f dB)", at(g, aware.correction, 3000), at(g, full.correction, 3000));
+    // a base target curve: a flat response is corrected onto it
+    CorrectionSpec t;
+    t.target.curveF = { 20, 1000, 3000, 20000 };
+    t.target.curveDb = { 4, 0, 8, 0 };
+    std::vector<double> flat(g.size(), -25.0);
+    const ChannelCorrection ct = designCorrection(g, flat, targetLevel(g, { &flat }), t);
+    const double rise = at(g, ct.result, 3000) - at(g, ct.result, 1000);
+    double mx = -99; for (double v : ct.correction) mx = std::max(mx, v);
+    CHECK(rise > 5.0 && mx <= 6.001, "the result follows the base curve: +%.1f dB from 1 to 3 kHz, boosts within 6 dB (%.2f)", rise, mx);
+    t.maxBoostDb = 12;
+    const ChannelCorrection ct2 = designCorrection(g, flat, targetLevel(g, { &flat }), t);
+    const double rise2 = at(g, ct2.result, 3000) - at(g, ct2.result, 1000);
+    CHECK(std::fabs(rise2 - 8.0) < 0.6, "with room to boost it reaches the curve: +%.1f dB", rise2);
+}
+
 int main()
 {
     testSweep();
@@ -675,6 +726,7 @@ int main()
     testCorrectionRoom();
     testCorrectionLowEnd();
     testCorrectionLimits();
+    testCorrectionPositions();
     testFir();
     testProfile();
     testEngine();

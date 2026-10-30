@@ -43,22 +43,32 @@ inline double curveAt(const std::vector<double>& f, const std::vector<double>& v
     return v[i - 1] + t * (v[i] - v[i - 1]);
 }
 
-// Power average of several responses in dB (same grid).
-inline std::vector<double> powerAverage(const std::vector<std::vector<double>>& curves)
+// Power average of several responses in dB (same grid), each weighted by `weights` (all 1 when empty or short):
+// the positions near where you sit can count for more than the outer ones.
+inline std::vector<double> powerAverage(const std::vector<std::vector<double>>& curves,
+                                        const std::vector<double>& weights = {})
 {
     if (curves.empty()) return {};
     const size_t n = curves[0].size();
     std::vector<double> out(n, -300.0);
     for (size_t i = 0; i < n; ++i)
     {
-        double s = 0.0;
-        int k = 0;
-        for (const auto& c : curves)
-            if (i < c.size()) { s += std::pow(10.0, c[i] / 10.0); ++k; }
-        if (k > 0) out[i] = 10.0 * std::log10(std::max(s / k, 1e-30));
+        double s = 0.0, k = 0.0;
+        for (size_t c = 0; c < curves.size(); ++c)
+        {
+            const double w = c < weights.size() ? std::max(0.0, weights[c]) : 1.0;
+            if (i < curves[c].size() && w > 0.0) { s += w * std::pow(10.0, curves[c][i] / 10.0); k += w; }
+        }
+        if (k > 0.0) out[i] = 10.0 * std::log10(std::max(s / k, 1e-30));
     }
     return out;
 }
+
+// How much the positions disagree, per frequency: the weighted standard deviation (dB) of their responses, each
+// smoothed first (1/6 octave in the bass to 1/3 in the treble) so comb ripple from reflections doesn't count. What
+// changes a lot from spot to spot (room modes, seat-to-seat nulls) is a poor thing to correct with EQ.
+inline std::vector<double> positionSpread(const std::vector<double>& f, const std::vector<std::vector<double>>& curves,
+                                          const std::vector<double>& weights = {});
 
 // Fractional-octave smoothing that widens with frequency: `lowOct` up to fA, `highOct` from fB, in between
 // log-linear. `power` averages powers (for responses); otherwise dB values (for corrections).
@@ -89,6 +99,37 @@ inline std::vector<double> smoothVariable(const std::vector<double>& f, const st
     return out;
 }
 
+inline std::vector<double> positionSpread(const std::vector<double>& f, const std::vector<std::vector<double>>& curves,
+                                          const std::vector<double>& weights)
+{
+    const size_t n = f.size();
+    std::vector<double> out(n, 0.0);
+    if (curves.size() < 2) return out;
+    std::vector<std::vector<double>> sm;
+    for (const auto& c : curves) if (c.size() == n) sm.push_back(smoothVariable(f, c, 1.0 / 6.0, 1.0 / 3.0));
+    if (sm.size() < 2) return out;
+    for (size_t i = 0; i < n; ++i)
+    {
+        double s = 0.0, s2 = 0.0, k = 0.0;
+        for (size_t c = 0; c < sm.size(); ++c)
+        {
+            const double w = c < weights.size() ? std::max(0.0, weights[c]) : 1.0;
+            s += w * sm[c][i]; s2 += w * sm[c][i] * sm[c][i]; k += w;
+        }
+        if (k > 0.0) { const double m = s / k; out[i] = std::sqrt(std::max(0.0, s2 / k - m * m)); }
+    }
+    return out;
+}
+
+// How far to trust the average at each frequency, from the positions' spread (dB): fully up to 2 dB, falling to a
+// quarter by 8 dB; then smoothed over a third of an octave.
+inline std::vector<double> spreadTrust(const std::vector<double>& f, const std::vector<double>& spreadDb)
+{
+    std::vector<double> t(spreadDb.size(), 1.0);
+    for (size_t i = 0; i < t.size(); ++i) t[i] = std::clamp(1.0 - (spreadDb[i] - 2.0) / 8.0, 0.25, 1.0);
+    return smoothVariable(f, t, 1.0 / 3.0, 1.0 / 3.0, 200.0, 5000.0, false);
+}
+
 // average of a dB curve between f1 and f2 (power average)
 inline double bandAverage(const std::vector<double>& f, const std::vector<double>& v, double f1, double f2)
 {
@@ -109,11 +150,15 @@ struct TargetSpec {
     double trebleDb = 0.0;       // a high shelf centred at trebleHz
     double trebleHz = 6000.0;
 
-    // the target's shape (0 dB at 1 kHz with no shelves); second-order-like shelves
+    // a base curve the tilt and shelves sit on (dB on curveF; empty: flat), e.g. a headphone target
+    std::vector<double> curveF, curveDb;
+
+    // the target's shape (0 dB at 1 kHz with no shelves and no base curve); second-order-like shelves
     double at(double f) const
     {
         const double r = f / bassHz, q = trebleHz / f;
-        return tiltDbPerOct * std::log2(f / 1000.0) + bassDb / (1.0 + r * r) + trebleDb / (1.0 + q * q);
+        const double base = curveF.empty() ? 0.0 : curveAt(curveF, curveDb, f) - curveAt(curveF, curveDb, 1000.0);
+        return base + tiltDbPerOct * std::log2(f / 1000.0) + bassDb / (1.0 + r * r) + trebleDb / (1.0 + q * q);
     }
 };
 
@@ -125,6 +170,10 @@ struct CorrectionSpec {
     bool protectNulls = true;           // boosts only fill the 1/3-octave deficit
     bool guardLowEnd = true;            // no boost below the speaker's roll-off
     double amount = 1.0;                // 0..1 of the correction (the plugin's AMOUNT)
+    std::vector<double> trust;          // per grid point, 0..1: how much of the correction to apply (spreadTrust);
+                                        // empty: all of it
+    bool smooth = true;                 // false: the measured curve is used as it is (an EQ file, already a smooth
+                                        // curve: no smoothing that would soften its narrow filters)
 };
 
 struct ChannelCorrection {
@@ -157,8 +206,8 @@ inline ChannelCorrection designCorrection(const std::vector<double>& f, const st
     c.f = f;
     if (n < 2 || measured.size() != n) return c;
     // the detail cuts follow (1/12 octave in the bass widening to 1/3 above 5 kHz) and the broad picture boosts follow
-    const std::vector<double> detail = smoothVariable(f, measured, 1.0 / 12.0, 1.0 / 3.0);
-    const std::vector<double> broad = smoothVariable(f, measured, 1.0 / 3.0, 1.0);
+    const std::vector<double> detail = spec.smooth ? smoothVariable(f, measured, 1.0 / 12.0, 1.0 / 3.0) : measured;
+    const std::vector<double> broad = spec.smooth ? smoothVariable(f, measured, 1.0 / 3.0, 1.0) : measured;
     // the target's shape, lined up so its 200 Hz..2 kHz average is the measured level
     std::vector<double> shape(n);
     for (size_t i = 0; i < n; ++i) shape[i] = spec.target.at(f[i]);
@@ -198,6 +247,7 @@ inline ChannelCorrection designCorrection(const std::vector<double>& f, const st
             }
         }
         v = std::clamp(v, -spec.maxCutDb, spec.maxBoostDb);
+        if (i < spec.trust.size()) v *= std::clamp(spec.trust[i], 0.0, 1.0);
         // the band, faded over a third of an octave outside it
         double w = 1.0;
         if (f[i] < spec.fLo) w = std::max(0.0, 1.0 - std::log2(spec.fLo / f[i]) * 3.0);
@@ -206,7 +256,7 @@ inline ChannelCorrection designCorrection(const std::vector<double>& f, const st
         corr[i] = v * w;
     }
     // the correction itself smoothed (no sharp steps where a limit or the null rule switched)
-    c.correction = smoothVariable(f, corr, 1.0 / 24.0, 1.0 / 3.0, 200.0, 5000.0, false);
+    c.correction = spec.smooth ? smoothVariable(f, corr, 1.0 / 24.0, 1.0 / 3.0, 200.0, 5000.0, false) : corr;
     for (double& v : c.correction) v *= std::clamp(spec.amount, 0.0, 1.0);
     c.result.resize(n);
     for (size_t i = 0; i < n; ++i) c.result[i] = detail[i] + c.correction[i];
@@ -402,6 +452,7 @@ inline std::vector<float> designFir(const std::vector<double>& f, const std::vec
 //
 //   pump-room-profile 1
 //   name <text to the end of the line>
+//   kind headphones             (optional: a headphone correction; without it, speakers in a room)
 //   preamp <dB>
 //   channel L <delay ms>        (then R)
 //   <Hz> <correction dB> <measured dB> <target dB> [<phase correction: group delay, ms>]   one line per point
@@ -419,6 +470,7 @@ struct ProfileChannel {
 
 struct Profile {
     std::string name;
+    bool headphones = false;   // a headphone correction (System EQ lists these apart from the room profiles)
     double preampDb = 0.0;
     ProfileChannel ch[2];
     int channels = 0;
@@ -459,6 +511,7 @@ inline bool parseProfile(const char* text, size_t len, Profile& p, std::string& 
             continue;
         }
         if (line.rfind("name ", 0) == 0) { p.name = line.substr(5, 200); continue; }
+        if (line.rfind("kind ", 0) == 0) { p.headphones = line.compare(5, 10, "headphones") == 0; continue; }
         const char* q = line.c_str();
         const char* qe = q + line.size();
         if (line.rfind("preamp ", 0) == 0)
@@ -515,6 +568,7 @@ inline std::string writeProfile(const Profile& p)
     std::string name = p.name;
     for (char& c : name) if (c == '\n' || c == '\r') c = ' ';
     s += "name " + name + "\n";
+    if (p.headphones) s += "kind headphones\n";
     char buf[160];
     std::snprintf(buf, sizeof buf, "preamp %.3f\n", p.preampDb);
     s += dotDecimals(buf);
