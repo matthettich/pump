@@ -170,7 +170,9 @@ jobs:
       - name: System EQ (menu-bar app)
         # pump EQ on everything the Mac plays; bundles the signed bin/pump-eq.component from the step above
         run: |
-          sh system/build.sh "0.1.$GITHUB_RUN_NUMBER"
+          set -o pipefail
+          sh system/build.sh "0.1.$GITHUB_RUN_NUMBER" 2>&1 | tee system-eq.log \
+            || { grep -E "error|Error" system-eq.log | head -12 | while IFS= read -r l; do echo "::error::$l"; done; exit 1; }
           mkdir -p dist/system-eq-macos
           cp -R "bin/System EQ.app" dist/system-eq-macos/
           cp docs/INSTALL-system-eq.txt dist/system-eq-macos/INSTALL.txt

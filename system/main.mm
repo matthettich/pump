@@ -45,6 +45,11 @@
 #include <vector>
 
 static NSString* const kAppName = @"System EQ";
+
+// the crash guardian (defined at the end of the file, used by the app delegate)
+static NSURL* cleanExitURL(pid_t pid);
+static BOOL restartOnCrash();
+static void startGuardian();
 static const UInt32 kMaxFrames = 4096;
 
 // ---------------------------------------------------------------------------------------------------------------------
