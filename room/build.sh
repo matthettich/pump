@@ -68,7 +68,7 @@ def md_html(md):
 r = lambda p: open(os.path.join(h, p), encoding='utf-8').read()
 b64 = lambda p: base64.b64encode(open(p, 'rb').read()).decode()
 page = r('room/app.html')
-for key, value in [('@STYLE@', r('room/app.css')),
+for key, value in [('@STYLE@', r('room/app.css') + r('room/remote.css')),
                    ('@FONT_STM@', b64(os.path.join(h, 'common/fonts/ShareTechMono-Regular.ttf'))),
                    ('@FONT_JBM@', b64(os.path.join(h, 'common/fonts/JetBrainsMono-Regular.ttf'))),
                    ('@WASM@', b64(wasm)),
@@ -76,7 +76,9 @@ for key, value in [('@STYLE@', r('room/app.css')),
                    ('@BUILD@', build),
                    ('@PIGUIDE@', md_html(r('docs/PI-BOX.md'))),
                    ('@PIGUIDE_MD@', json.dumps(r('docs/PI-BOX.md')).replace('</', '<\\/')),
-                   ('@SCRIPT@', r('room/app.js'))]:
+                   ('@SCRIPT@', r('room/app.js')),
+                   ('@QRCODE@', r('room/third_party/qrcode.js').replace('</', '<\\/')),
+                   ('@REMOTE@', r('room/remote.js'))]:
     assert key in page, key
     page = page.replace(key, value)
 open(out, 'w', encoding='utf-8').write(page)

@@ -1,0 +1,17 @@
+# pump ROOM pairing relay (README.md). One stateful object per pairing code, on the free plan's storage type.
+name = "pump-room-relay"
+main = "worker.mjs"
+compatibility_date = "2026-10-01"
+
+[[durable_objects.bindings]]
+name = "PAIR"
+class_name = "PairRoom"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["PairRoom"]
+
+[vars]
+# ICE servers handed to both pages, as JSON: [] is enough when the computer and phone share a Wi-Fi network that
+# lets devices see each other. Add a STUN server here if pairing connects but the direct link never opens.
+ICE_SERVERS = "[]"

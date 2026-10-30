@@ -2,7 +2,7 @@
 
 The pick-up doc: where things stand, what is verified and what is not, and what is open. Conventions and the layout
 are in [DEVELOPING.md](DEVELOPING.md) and the plan is in [ROADMAP.md](ROADMAP.md); this file does not repeat them.
-Last updated 2026-10-29 (three new instruments: ACID, X0X, GLOSS; before them: pump ROOM, GUI pass, COIL modulation, LIFE sound, AU crash fix).
+Last updated 2026-10-30 (pump ROOM PHONE MIC; before it: ACID, X0X, GLOSS; pump ROOM, GUI pass, COIL modulation, LIFE sound, AU crash fix).
 
 ## State
 
@@ -24,6 +24,23 @@ Last updated 2026-10-29 (three new instruments: ACID, X0X, GLOSS; before them: p
   It ignores comments that merely mention MACHINE. Negative-tested against six injected violations.
 - DPF prints `Unknown license string 'All rights reserved (c) wake'` while generating the AU plist. Harmless: DPF only
   knows SPDX names, "Proprietary" hit the same warning, and the string is not written into the plist.
+
+## pump ROOM PHONE MIC (2026-10-30)
+
+A phone (Android Chrome, USB measurement mic) as the mic while the computer plays the sweeps: [ROOM.md](ROOM.md)
+stage 5 has how it works. Built as a separate mode on the owner's request: `room/remote.js` + `remote.css`, two script
+slots in `app.html` and the USE A PHONE AS THE MIC button; app.js is untouched, and the runs are ordinary runs.
+
+| What | Where | Verified by |
+|---|---|---|
+| Pairing relay (rooms per code, ICE servers from `ICE_SERVERS`) | `relay/core.mjs`, `worker.mjs` + `wrangler.toml` (hosted), `local.mjs` (tests) | the phone test pairs through `local.mjs` |
+| The link (WebRTC data channel, blobs with backpressure), the computer's dialog and playback, the phone page and its recorder worklet, `analysePhoneRun` (two pings, resampling, cuts), test mode | `room/remote.js` | `tools/room_phone_e2e.mjs`: clocks to the ppm at +150 / -400, L/R timing to 0.001 ms, one speaker, calibration from the phone, MEASURE unchanged, correction alignment, reconnect |
+| QR codes | `room/third_party/qrcode.js` (MIT, unmodified; notice in THIRD_PARTY_NOTICES.md) | the test checks the drawing |
+
+**To make it live:** deploy `relay/` (the owner's account: log in with the host's command-line tool, deploy from that
+folder) and put its `wss://` address in `RELAY_URL` (remote.js). Until then the dialog says the relay isn't set up.
+`tools/room_e2e.mjs` was stale (the export items moved into the EXPORT menu; the Pi export has 14 files): fixed, and
+it passes on this build. Neither page test runs in CI.
 
 ## NEXT: pump ROOM, the owner's first real measurement (2026-10-29 or later)
 

@@ -79,6 +79,35 @@ The plan, what's built, and how the measurement works. Stage 1 (measurement) is 
 - **Levels:** the noise floor from the silence before the first sweep; each sweep's SNR, its peak at the mic
   (clipping above -1 dBFS) and dropouts are reported.
 
+5. **Phone as the mic (PHONE MIC)** — built (2026-10-30). `room/remote.js` (+ `remote.css`), a mode of its own:
+   the rest of the page is unchanged by it. USE A PHONE AS THE MIC on the computer shows a QR code; the phone opens
+   the same page with `#phone=CODE` and becomes the mic (a USB measurement mic plugged into it), with TEST LEVEL,
+   MEASURE, its level meter and SEND MIC FILE. The computer plays the sweeps through its output (wired to the
+   speakers) and does all the analysis; the runs join the list as ordinary runs ("Phone n"), so averaging, the
+   correction and every export take them. The SWEEP settings (speakers, length, level, FLIP) and LINK apply.
+   - **Pairing:** a small relay (`relay/`, a serverless worker; `RELAY_URL` in remote.js; `#relay=` overrides it)
+     passes the WebRTC offer, answer and candidates; then a data channel connects the two pages directly over the
+     local network and both leave the relay. No audio goes through the relay. The code is kept on the computer
+     (localStorage), so a phone left on the page reconnects by itself after a disconnect or a reload.
+   - **A run:** silence (0.5 s), a 0.25 s ping from the first speaker, a sweep from each speaker (with 2 s of decay),
+     the same ping again. The phone starts recording, waits 0.5 s, says it's ready, and records until the run must
+     have ended (3 s of slack for the network and output latency); the recording comes back as float32 over the
+     data channel.
+   - **Timing across two clocks** (`analysePhoneRun`): the first sweep is found anywhere in the first seconds; the
+     two pings (same speaker, same spot, same length) give the ratio of the phone's clock to the computer's; the
+     recording is resampled onto the computer's clock (32-tap windowed sinc); each sweep is cut out where it landed
+     and its arrival corrected for the cut's fraction of a sample. Two identical pings matter: a clock difference
+     stretches a sweep, which shifts its response by an amount that grows with the sweep's length (150 ppm on a 2 s
+     sweep: 14 samples; on the ping, under 2), so a long sweep against a short ping misreads the clocks. Arrival
+     differences between the speakers are then as on one device. Absolute arrivals start at a set lead before the
+     first speaker's sound (not the system latency), so HANDHELD isn't offered with the phone.
+   - Tested: `tools/room_phone_e2e.mjs` (two headless Chromium pages, the local relay, the simulated room on the
+     phone's side with a random start and its clock 150 ppm fast or 400 ppm slow): the clocks found to the ppm, the
+     right speaker 0.583 ms after the left (0.583), one speaker alone, a calibration file sent from the phone, MEASURE
+     on the computer unchanged beside it, the correction's time alignment from the phone runs, reconnecting.
+   - **Not tried yet:** a real phone and computer (Android Chrome with a USB mic; Wi-Fi networks that keep devices
+     apart, where the direct link won't open: an ICE server in the relay's `ICE_SERVERS` may help).
+
 ## Files
 
 - **Profiles** (`.pumproom`, text): `pump-room-profile 1`, then `name`, `preamp <dB>`, and per speaker
@@ -191,7 +220,9 @@ from npm at build time, pinned in build.sh. Not notarized yet: the first open on
   silence). Its delay changes between connections and its clock drifts, so a correction that uses any Bluetooth run
   is EQ only: no time alignment, no phase alignment, UP TO capped at 16 kHz (codecs often stop there); the verdict
   says timing isn't measured, and HANDHELD (which tracks the mic by timing) is off.
-- The mic is opened with echo cancellation, noise suppression and automatic gain off.
+- The mic is opened with echo cancellation, noise suppression and automatic gain off (PHONE MIC's too).
+- PHONE MIC: both pages run their audio at 48 kHz. The QR code points to the web page (the computer's own address
+  when it's on https, else the GitHub Pages one), so it works from the desktop app and a file too.
 - `#sim` at the end of the page's address replaces the speakers and mic with a simulated room (two speakers at 2.9
   and 3.1 m, a mode at 110 Hz, reflections, 12 ms latency). `node tools/room_e2e.mjs` runs the built page that way
   in headless Chromium (Playwright) and checks the timing, a calibration file and a save / reopen.

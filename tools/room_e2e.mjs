@@ -81,7 +81,7 @@ const dir = mkdtempSync(join(tmpdir(), 'pump-room-'));
   check(text.startsWith('pump-room-profile 1') && /channel L /.test(text) && /channel R /.test(text), `profile saved (${p.suggestedFilename()}, ${text.length} bytes)`);
   const gdCol = text.split('\n').filter((l) => /^[0-9]/.test(l)).map((l) => Math.abs(+l.split(' ')[4] || 0));
   check(Math.max(...gdCol) > 0.2, `profile carries the phase correction (largest ${Math.max(...gdCol).toFixed(2)} ms)`);
-  const [z] = await Promise.all([page.waitForEvent('download'), page.click('#cWin')]);
+  const [z] = await Promise.all([page.waitForEvent('download'), page.click('#cExport').then(() => page.click('#cWin'))]);
   const zf = join(dir, 'win.zip');
   await z.saveAs(zf);
   const zb = (await import('node:fs')).readFileSync(zf);
@@ -93,7 +93,7 @@ const dir = mkdtempSync(join(tmpdir(), 'pump-room-'));
     i += 30 + nl + size;
   }
   check(names.length === 7 && names.includes('pump-room.txt') && names.includes('pump-room-48000.wav'), `Windows export: ${names.join(', ')}`);
-  const [pz] = await Promise.all([page.waitForEvent('download'), page.click('#cPi')]);
+  const [pz] = await Promise.all([page.waitForEvent('download'), page.click('#cExport').then(() => page.click('#cPi'))]);
   const pf = join(dir, 'pi.zip');
   await pz.saveAs(pf);
   const pb = (await import('node:fs')).readFileSync(pf);
@@ -107,7 +107,7 @@ const dir = mkdtempSync(join(tmpdir(), 'pump-room-'));
     if (nm === 'pump-room.yml') yml = pb.toString('utf8', i + 30 + nl, i + 30 + nl + size);
     i += 30 + nl + size;
   }
-  check(pn.length === 13 && pn.includes('coeffs/pump-room-R-48000.wav') && pn.includes('install.sh'), `Pi export: ${pn.length} files`);
+  check(pn.length === 14 && pn.includes('coeffs/pump-room-R-48000.wav') && pn.includes('install.sh'), `Pi export: ${pn.length} files`);
   check(/filename: \/etc\/pump-room\/coeffs\/pump-room-L-\$samplerate\$\.wav/.test(yml) && /channels: \[1\]/.test(yml), 'CamillaDSP config names the filters per rate');
   // the shipped install script parses as shell
   const sh = join(dir, 'install.sh');

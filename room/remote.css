@@ -1,0 +1,21 @@
+/* PHONE MIC (remote.js): the computer's dialog, and the page on the phone */
+#phoneMic.on { background: var(--ink); color: var(--on); }
+.phone-dlg { width: min(640px, 100%); }
+.ph-pair { display: flex; gap: 16px; align-items: flex-start; margin-top: 10px; }
+.ph-pair canvas { width: 240px; height: 240px; flex: none; border: var(--line) solid var(--ink); image-rendering: pixelated; }
+.ph-pair p { margin: 0 0 8px; }
+.ph-code b { font-family: "JBM", monospace; font-weight: normal; font-size: 20px; letter-spacing: .2em; background: var(--neon); color: var(--neonInk); padding: 0 6px; }
+.ph-url { font-size: 11px; word-break: break-all; }
+.phone-dlg .calbox { margin-top: 10px; }
+.phone-dlg .readout { margin-top: 10px; }
+.calbox.warn { color: var(--red); border-color: var(--red); }
+@media (max-width: 600px) { .ph-pair { flex-direction: column; align-items: center; } }
+
+/* the phone: only its own panel under the header */
+body.phone-mode > main, body.phone-mode > footer.status { display: none; }
+.phone-page { margin: 12px; }
+.phone-page .ph-status.on { border-style: solid; border-color: var(--ink); color: var(--ink); }
+.phone-page .key.wide { height: 44px; font-size: 14px; }
+.phone-page .keys2 .key { height: 44px; font-size: 14px; }
+.phone-page .row > span { width: 92px; }
+.phone-page .meter { height: 18px; }

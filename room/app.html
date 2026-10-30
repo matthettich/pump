@@ -33,6 +33,7 @@
     <label class="row"><span>OUTPUT</span><select id="out" disabled><option>System output</option></select></label>
     <div class="row"><span>LINK</span><div class="seg" id="link" title="How the sweeps get to the speakers"><button data-v="wired" class="on">WIRED</button><button data-v="bt">BLUETOOTH</button></div></div>
     <div class="calbox" id="linkNote" hidden></div>
+    <button class="key wide" id="phoneMic" title="Measure with a phone and a USB measurement mic, while this computer plays the sweeps">USE A PHONE AS THE MIC</button>
     <div class="row"><span>RATE</span><b class="num" id="rate">—</b></div>
     <div class="meter" title="Microphone level">
       <div class="meter-target"></div><div class="meter-bar" id="meterBar"></div><div class="meter-hold" id="meterHold"></div>
@@ -209,6 +210,12 @@ const ROOM_WORKLET = @WORKLET@;
 </script>
 <script>
 @SCRIPT@
+</script>
+<script>
+@QRCODE@
+</script>
+<script>
+@REMOTE@
 </script>
 </body>
 </html>

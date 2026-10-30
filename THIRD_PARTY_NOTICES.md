@@ -22,6 +22,12 @@ documentation files, to deal in the Software without restriction, subject to inc
 permission notice in all copies or substantial portions of the Software. Full text:
 third_party/NeuralAmpModelerCore/LICENSE. It includes nlohmann/json (MIT, Copyright (c) 2013-2025 Niels Lohmann).
 
+## QR code generator for JavaScript (MIT), used by pump ROOM's PHONE MIC
+Copyright (c) 2009 Kazuhiko Arase. https://github.com/kazuhikoarase/qrcode-generator (js/dist/qrcode.js, unmodified)
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
+documentation files, to deal in the Software without restriction, subject to including the copyright notice and this
+permission notice in all copies or substantial portions of the Software. Full text: room/third_party/qrcode-LICENSE.txt.
+
 ## Eigen (Mozilla Public License 2.0), used by the NAM core
 https://eigen.tuxfamily.org. Source: the NAM core's Dependencies/eigen submodule (unmodified). Full text:
 https://www.mozilla.org/MPL/2.0/.

@@ -116,6 +116,10 @@ it to Applications; the first time, right-click > Open, since it isn't notarized
   the speakers are reached over Bluetooth, set **LINK** to **BLUETOOTH**: the response is measured with a longer lead-in
   and search (Bluetooth adds a delay that changes each time it connects), and the correction is EQ only, up to 16 kHz,
   with no time alignment, phase correction or HANDHELD. A wired output gives the full correction.
+- **A phone as the mic:** **USE A PHONE AS THE MIC** shows a code to scan with an Android phone (Chrome) that has a
+  USB measurement mic plugged in. The phone becomes the mic, with its own TEST LEVEL and MEASURE buttons, while the
+  computer plays the sweeps through its wired output and does the rest: the results are the same as with a mic on the
+  computer, time alignment included. The phone and computer need to be on the same Wi-Fi network.
 - **Mic calibration:** load the mic's calibration file (frequency / dB per line: the usual .txt, .cal or .frd files
   read as they are). Without one the mic is taken as flat.
 - **TEST LEVEL** plays pink noise as loud as the sweeps: with the mic where you'll measure (your listening spot, ear
