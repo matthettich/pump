@@ -90,6 +90,10 @@ window; `pump-macos.pkg` installs it in Applications, and `system-eq-macos.zip` 
   current output (each output remembers its own). *Add Profiles…* adds files, *Show Profiles in Finder* is where to
   rename or remove them, *No Profile* turns the correction off for that output. Double-clicking a `.pumproom` file
   adds it to the library and switches to it.
+- **Level hold:** turning *Room Correction* off, choosing *No Profile* or switching profiles never gets louder.
+  Everything plays at the lowest preamp of your profiles (the menu shows it); quitting System EQ is the way back to
+  full level, and turning the EQ off asks first when that would be louder. *Reset Level Hold…* works it out again
+  from the library. Room Profiles on Windows does the same: quitting it (it asks) gives full level back.
 - **EQ On** in the menu turns it off and gives the Mac its untouched output back. *Open at Login* starts it with the Mac.
 - The first start asks for permission to record system audio (that's how it hears other apps). If you hear nothing,
   *Audio Recording Permission…* in the menu opens the right page in System Settings. Unsigned builds may ask again

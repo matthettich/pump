@@ -10,6 +10,7 @@
 //    library and switches to it; a second copy of the app hands the file to the running one.
 //  - Separate Profile for Each Output (on by default): each output device keeps its own choice, and the active file
 //    follows Windows' default output.
+//  - The level hold: turning correction off (No Profile) or switching profiles never gets louder; quitting does.
 //  - When the config folder can't be written, Allow Changes... asks once (an administrator prompt) to let users edit it.
 //
 // Settings: %APPDATA%\wake\pump ROOM\room-profiles.ini.
@@ -47,7 +48,7 @@ const wchar_t* kClass = L"pumpRoomProfiles";
 const wchar_t* kTitle = L"Room Profiles";
 const UINT WM_TRAY = WM_APP + 1, WM_DEVICE = WM_APP + 2, WM_BUILT = WM_APP + 3;
 const UINT ID_ROOM = 1000, ID_PHONES = 2000, ID_NONE = 3001, ID_ADD = 3002, ID_FOLDER = 3003, ID_PERDEVICE = 3004,
-           ID_LOGIN = 3005, ID_ALLOW = 3006, ID_QUIT = 3007, ID_SETUP = 3008;
+           ID_LOGIN = 3005, ID_ALLOW = 3006, ID_QUIT = 3007, ID_SETUP = 3008, ID_RESETLEVEL = 3009;
 
 HWND gWnd = nullptr;
 NOTIFYICONDATAW gIcon = {};
@@ -233,7 +234,7 @@ DeviceWatch* gWatch = nullptr;
 
 // --- the library
 
-struct Entry { std::wstring file, name; bool headphones = false; };
+struct Entry { std::wstring file, name; bool headphones = false; double preamp = 0.0; };
 
 std::vector<Entry> library()
 {
@@ -253,6 +254,7 @@ std::vector<Entry> library()
         e.file = fd.cFileName;
         e.name = p.name.empty() ? e.file.substr(0, e.file.size() - 9) : widen(p.name);
         e.headphones = p.headphones;
+        e.preamp = std::min(0.0, p.preampDb);
         out.push_back(e);
     } while (FindNextFileW(h, &fd));
     FindClose(h);
@@ -359,16 +361,31 @@ std::wstring describe(DWORD code)
     return s;
 }
 
+// The level hold: everything plays at the lowest preamp of the library's profiles (kept in the settings, so it
+// never rises by itself). With a profile the active file makes up the difference between the profile's own preamp and
+// the held level; with none it holds that level. Only quitting Room Profiles gives the full level back.
+double heldLevel()
+{
+    double held = std::min(0.0, _wtof(iniGet(L"state", L"heldLevelDb", L"0").c_str()));
+    for (const Entry& e : library()) held = std::min(held, e.preamp);
+    held = std::max(held, -60.0);
+    wchar_t buf[32];
+    swprintf(buf, 32, L"%.3f", held);
+    iniSet(L"state", L"heldLevelDb", buf);
+    return held;
+}
+
 // write the profile in `file` (in the library; empty: none) as the active one, on a worker thread
 void applyFile(const std::wstring& file, bool announce)
 {
     if (gApo.empty()) { gProblem = L"The system-wide equalizer for Windows isn't installed."; return; }
     if (gBusy.exchange(true)) return;
     const std::wstring lib = gLib, apo = gApo;
-    std::thread([file, lib, apo, announce]() {
+    const double held = heldLevel();
+    std::thread([file, lib, apo, announce, held]() {
         auto* r = new Built();
         r->file = file;
-        std::string active = pump::apo::emptyActive();
+        std::string active = pump::apo::emptyActive(held);
         if (!file.empty())
         {
             std::string text, why;
@@ -379,7 +396,8 @@ void applyFile(const std::wstring& file, bool announce)
             {
                 r->name = widen(p.name.empty() ? narrow(file) : p.name);
                 const std::string folder = pump::apo::folderName(p.name.empty() ? narrow(file) : p.name);
-                const pump::apo::ApoFiles out = pump::apo::buildApoFiles(p, folder);
+                const double own = std::min(0.0, p.preampDb);
+                const pump::apo::ApoFiles out = pump::apo::buildApoFiles(p, folder, std::min(0.0, held - own));
                 makeDirs(apo + L"\\pump-room\\" + widen(folder));
                 for (const auto& f : out.files)
                     if (!r->code) r->code = writeFile(apo + L"\\" + widen(f.first), f.second.data(), f.second.size());
@@ -565,6 +583,14 @@ void showMenu()
     AppendMenuW(menu, MF_STRING | (perDevice() ? MF_CHECKED : 0), ID_PERDEVICE, L"Separate Profile for Each Output");
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(menu, MF_STRING | (loginOn() ? MF_CHECKED : 0), ID_LOGIN, L"Open at Login");
+    {
+        const double held = std::min(0.0, _wtof(iniGet(L"state", L"heldLevelDb", L"0").c_str()));
+        wchar_t buf[96];
+        swprintf(buf, 96, L"Level held at %.1f dB (quit for full level)", held);
+        AppendMenuW(menu, MF_STRING | MF_GRAYED, 0, buf);
+        AppendMenuW(menu, MF_STRING | (held < 0.0 ? 0 : MF_GRAYED), ID_RESETLEVEL, L"Reset Level Hold\x2026");
+    }
+    AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(menu, MF_STRING, ID_QUIT, L"Quit Room Profiles");
 
     POINT pt;
@@ -590,7 +616,37 @@ void showMenu()
     else if (cmd == ID_LOGIN) setLogin(!loginOn());
     else if (cmd == ID_ALLOW) allowChanges();
     else if (cmd == ID_SETUP) { DWORD err = 0; if (ensureInclude(&err)) { gProblem.clear(); iniSet(L"state", L"applied", L"\x01"); applyChoice(true); } else gProblem = describe(err); }
-    else if (cmd == ID_QUIT) DestroyWindow(gWnd);
+    else if (cmd == ID_RESETLEVEL)
+    {
+        if (MessageBoxW(gWnd, L"The level is held at the lowest preamp of your profiles, so turning correction off or switching "
+                              L"profiles never gets louder. Resetting works it out again from the profiles in your library, which "
+                              L"can make playback louder. Turn your speakers down first.",
+                        L"Reset the level hold?", MB_OKCANCEL | MB_ICONWARNING | MB_SETFOREGROUND) == IDOK)
+        {
+            iniSet(L"state", L"heldLevelDb", L"0");
+            iniSet(L"state", L"applied", L"\x01");
+            applyChoice(false);
+        }
+    }
+    else if (cmd == ID_QUIT)
+    {
+        // quitting is the one way back to full level: say so when that is louder
+        const double held = std::min(0.0, _wtof(iniGet(L"state", L"heldLevelDb", L"0").c_str()));
+        if (!gApo.empty() && held < -0.5)
+        {
+            wchar_t msg[320];
+            swprintf(msg, 320, L"Quitting Room Profiles turns room correction off and plays %.1f dB louder (full level). "
+                               L"Turn your speakers down first, or choose No Profile to hear without correction at the same level.", -held);
+            if (MessageBoxW(gWnd, msg, L"Quit Room Profiles?", MB_OKCANCEL | MB_ICONWARNING | MB_SETFOREGROUND) != IDOK) return;
+        }
+        if (!gApo.empty())
+        {
+            const std::string q = pump::apo::quitActive();
+            writeFile(gApo + L"\\" + widen(pump::apo::kActiveFile), q.data(), q.size());
+            iniSet(L"state", L"applied", L"\x01");   // start again: the choice is applied once more
+        }
+        DestroyWindow(gWnd);
+    }
 }
 
 LRESULT CALLBACK wndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp)

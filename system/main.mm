@@ -13,7 +13,8 @@
 //
 // pump ROOM (Contents/PlugIns/pump-room.component, when the app was built with it) applies a room profile made with
 // the pump ROOM app; like the EQ it keeps its settings (and profile) per output. Without a profile it passes the sound
-// through. Profiles kept in the app's library (Application Support/wake/System EQ/Profiles) are listed in the menu,
+// through. Turning correction off or switching profiles never gets louder: everything plays at the lowest preamp of
+// the profiles (the level hold), and only quitting gives the full level back. Profiles kept in the app's library (Application Support/wake/System EQ/Profiles) are listed in the menu,
 // room profiles and headphone profiles apart, to switch between with one click; opening a .pumproom file (a double
 // click) adds it to the library and switches to it.
 //
@@ -130,7 +131,12 @@ struct Engine
     double outputRate = 0.0;              // the output device's rate when we started
 
     // audio-thread buffers (allocated once)
-    std::vector<float> inL, inR, outL, outR, midL, midR;   // mid: the EQ's output, ROOM's input
+    std::vector<float> inL, inR, outL, outR, midL, midR, trimL, trimR;   // mid: the EQ's output, ROOM's input
+    // The level hold: a gain after the room stage, so that turning Room Correction off, choosing No Profile or
+    // switching profiles never makes the Mac louder. Every state plays at the lowest preamp held (the most a profile
+    // has cut); only quitting gives the full level back. Set from the main thread; ramped here.
+    std::atomic<float> trimTarget { 1.0f };
+    float trimNow = 1.0f;
     Float64 sampleTime = 0.0;
     std::atomic<bool> running { false };   // tap + device exist (EQ on)
     bool paused = false;                   // device stopped while nothing plays (main thread)
@@ -138,7 +144,8 @@ struct Engine
     // frames of continuous silence at the tap (written by the audio thread, read by the main thread)
     std::atomic<uint64_t> silentFrames { 0 };
 
-    Engine() : inL(kMaxFrames), inR(kMaxFrames), outL(kMaxFrames), outR(kMaxFrames), midL(kMaxFrames), midR(kMaxFrames) {}
+    Engine() : inL(kMaxFrames), inR(kMaxFrames), outL(kMaxFrames), outR(kMaxFrames), midL(kMaxFrames), midR(kMaxFrames),
+               trimL(kMaxFrames), trimR(kMaxFrames) {}
 
     // --- the AudioUnit's input: the tap samples of the current slice
     static OSStatus renderInput(void* refCon, AudioUnitRenderActionFlags*, const AudioTimeStamp*, UInt32,
@@ -284,6 +291,28 @@ struct Engine
                 }
             }
 
+            // the level hold (a gain ramped toward its target so a change never clicks)
+            {
+                const float target = e->trimTarget.load(std::memory_order_relaxed);
+                float g = e->trimNow;
+                if (g != 1.0f || target != 1.0f)
+                {
+                    // down fast (5 ms: a quieter state never lets a louder one through), up slowly (50 ms)
+                    const float fs = (float)(e->auRate > 0.0 ? e->auRate : 48000.0);
+                    const float down = 1.0f / (0.005f * fs), up = 1.0f / (0.05f * fs);
+                    for (UInt32 i = 0; i < n; ++i)
+                    {
+                        if (g < target) g = std::min(target, g + up * std::max(g, 0.05f));
+                        else if (g > target) g = std::max(target, g - down * g);
+                        e->trimL[i] = resL[i] * g;
+                        e->trimR[i] = resR[i] * g;
+                    }
+                    e->trimNow = g;
+                    resL = e->trimL.data();
+                    resR = e->trimR.data();
+                }
+            }
+
             writeChannel(outOutput, e->outLeft, resL, n, done);
             writeChannel(outOutput, e->outRight, resR, n, done);
             done += n;
@@ -381,6 +410,7 @@ struct Engine
     // --- start: tap everything but this process, build the aggregate, run (main thread)
     NSString* start()
     {
+        trimNow = trimTarget.load();   // start at the held level, not full level
         stop();
 
         output = defaultOutputDevice();
@@ -693,6 +723,7 @@ static NSView* keyViewIn(NSView* v)
     std::vector<AudioObjectID> watchedProcesses;
     AudioObjectID listenedOutput;        // the output whose rate / alive flag we listen to
     AudioObjectID failedOutput;          // last start that failed: don't retry until something changes
+    unsigned levelTicks;                 // idle-check count (the level hold is refreshed every other one)
     Float64 failedRate;
 }
 
@@ -773,6 +804,7 @@ static NSString* currentOutputKey()
     [self listenForDeviceChanges];
     [self watchProcesses];
 
+    [self updateLevelHold];
     wantOn = ![prefs() boolForKey:@"off"];
     if (wantOn)
         [self startEngine];
@@ -851,6 +883,21 @@ static NSString* currentOutputKey()
 
 - (void)toggle:(id)sender
 {
+    // turning System EQ off removes the level hold too: say so when that makes the Mac louder
+    const double held = std::min(0.0, [prefs() doubleForKey:@"heldLevelDb"]);
+    if (wantOn && held < -0.5)
+    {
+        NSAlert* a = [NSAlert new];
+        a.messageText = [NSString stringWithFormat:@"Turning the EQ off plays %.1f dB louder", -held];
+        a.informativeText = @"System EQ holds the level down so room correction never clips. With the EQ off, the Mac plays at "
+                            @"full level. Turn your speakers down first, or keep the EQ on and choose No Profile to hear "
+                            @"without correction at the same level.";
+        [a addButtonWithTitle:@"Turn Off"];
+        [a addButtonWithTitle:@"Cancel"];
+        [NSApp activateIgnoringOtherApps:YES];
+        if ([a runModal] != NSAlertFirstButtonReturn)
+            return;
+    }
     wantOn = !wantOn;
     [prefs() setBool:!wantOn forKey:@"off"];
     if (wantOn)
@@ -965,6 +1012,9 @@ static OSStatus processListener(AudioObjectID, UInt32, const AudioObjectProperty
 
 - (void)idleCheck
 {
+    // a profile loaded in the Room Correction window, or another output's settings: keep the hold current
+    if (++levelTicks % 2 == 0)
+        [self updateLevelHold];
     if (engine.running && engine.paused && otherProcessPlaying())
         engine.resume();   // fallback if a resume was missed or failed
     if (!engine.running || engine.paused || engine.auRate <= 0.0)
@@ -1062,6 +1112,7 @@ static NSDictionary* profileInfo(NSURL* url)
         return nil;
     NSString* name = nil;
     BOOL headphones = NO, header = NO;
+    double preamp = 0.0;
     for (NSString* raw in [text componentsSeparatedByCharactersInSet:NSCharacterSet.newlineCharacterSet])
     {
         NSString* line = [raw stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceCharacterSet];
@@ -1078,6 +1129,8 @@ static NSDictionary* profileInfo(NSURL* url)
             name = [line substringFromIndex:5];
         else if ([line hasPrefix:@"kind "])
             headphones = [[line substringFromIndex:5] hasPrefix:@"headphones"];
+        else if ([line hasPrefix:@"preamp "])
+            preamp = std::min(0.0, std::max(-60.0, [[line substringFromIndex:7] doubleValue]));
         else if ([line hasPrefix:@"channel "])
             break;   // the header lines come before the curves
     }
@@ -1085,7 +1138,7 @@ static NSDictionary* profileInfo(NSURL* url)
         return nil;
     if (name.length == 0)
         name = url.URLByDeletingPathExtension.lastPathComponent;
-    return @{ @"url": url, @"name": name, @"headphones": @(headphones) };
+    return @{ @"url": url, @"name": name, @"headphones": @(headphones), @"preamp": @(preamp) };
 }
 
 - (NSArray<NSDictionary*>*)libraryProfiles
@@ -1149,6 +1202,54 @@ static NSDictionary* profileInfo(NSURL* url)
                                 sizeof(ref)) == noErr;
 }
 
+// the preamp (dB, <= 0) of a profile's text; 0 when it has none
+static double preampOf(NSString* text)
+{
+    for (NSString* raw in [text componentsSeparatedByCharactersInSet:NSCharacterSet.newlineCharacterSet])
+    {
+        NSString* line = [raw stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceCharacterSet];
+        if ([line hasPrefix:@"preamp "])
+            return std::min(0.0, std::max(-60.0, [[line substringFromIndex:7] doubleValue]));
+        if ([line hasPrefix:@"channel "])
+            break;
+    }
+    return 0.0;
+}
+
+// The level everything plays at: the lowest preamp held so far (kept in the preferences, so it never rises by
+// itself), including every profile in the library and the one loaded now. Playing with a profile, the trim makes up
+// the difference between its own preamp and the held level; with none, or Room Correction off, the trim is the held
+// level itself. Quitting the app removes the tap, and with it the hold.
+- (void)updateLevelHold
+{
+    double held = std::min(0.0, [prefs() doubleForKey:@"heldLevelDb"]);
+    for (NSDictionary* p in [self libraryProfiles])
+        held = std::min(held, [p[@"preamp"] doubleValue]);
+    NSString* text = [self roomState:@"profile"] ?: @"";
+    const BOOL active = text.length > 0 && engine.room != nullptr;
+    const double own = active ? preampOf(text) : 0.0;
+    held = std::min(held, own);
+    [prefs() setDouble:held forKey:@"heldLevelDb"];
+    const double trimDb = (active && engine.roomOn.load()) ? held - own : held;
+    engine.trimTarget = (float)std::pow(10.0, trimDb / 20.0);
+}
+
+- (void)resetLevelHold:(id)sender
+{
+    NSAlert* a = [NSAlert new];
+    a.messageText = @"Reset the level hold?";
+    a.informativeText = @"The level is held at the lowest preamp of your profiles, so turning correction off or switching "
+                        @"profiles never gets louder. Resetting works it out again from the profiles in your library, which "
+                        @"can make playback louder. Turn your speakers down first.";
+    [a addButtonWithTitle:@"Reset"];
+    [a addButtonWithTitle:@"Cancel"];
+    [NSApp activateIgnoringOtherApps:YES];
+    if ([a runModal] != NSAlertFirstButtonReturn)
+        return;
+    [prefs() setDouble:0.0 forKey:@"heldLevelDb"];
+    [self updateLevelHold];
+}
+
 - (NSMenu*)profileMenu:(BOOL)headphones
 {
     NSMenu* m = [NSMenu new];
@@ -1178,6 +1279,13 @@ static NSDictionary* profileInfo(NSURL* url)
     add.target = self;
     NSMenuItem* show = [m addItemWithTitle:@"Show Profiles in Finder" action:@selector(showProfiles:) keyEquivalent:@""];
     show.target = self;
+    [m addItem:NSMenuItem.separatorItem];
+    const double held = std::min(0.0, [prefs() doubleForKey:@"heldLevelDb"]);
+    [m addItemWithTitle:[NSString stringWithFormat:@"Level held at %.1f dB (quit for full level)", held] action:nil
+          keyEquivalent:@""].enabled = NO;
+    NSMenuItem* reset = [m addItemWithTitle:@"Reset Level Hold…" action:@selector(resetLevelHold:) keyEquivalent:@""];
+    reset.target = self;
+    reset.enabled = held < 0.0;
     return m;
 }
 
@@ -1196,6 +1304,7 @@ static NSDictionary* profileInfo(NSURL* url)
         return NO;
     engine.roomOn = true;
     [prefs() setBool:NO forKey:@"roomOff"];
+    [self updateLevelHold];
     [self saveState];
     [self reloadView];
     return YES;
@@ -1210,6 +1319,7 @@ static NSDictionary* profileInfo(NSURL* url)
 - (void)clearProfile:(id)sender
 {
     [self setRoomStates:@{ @"profile": @"", @"profile_file": @"" }];
+    [self updateLevelHold];
     [self saveState];
     [self reloadView];
 }
@@ -1276,6 +1386,7 @@ static NSDictionary* profileInfo(NSURL* url)
     const bool on = !engine.roomOn.load();
     engine.roomOn = on;
     [prefs() setBool:!on forKey:@"roomOff"];
+    [self updateLevelHold];
 }
 
 - (void)togglePerDevice:(id)sender
@@ -1583,6 +1694,7 @@ static NSDictionary* profileInfo(NSURL* url)
     [self saveState];                 // the old output keeps what it had
     const BOOL loaded = [self loadStateFor:key];
     stateKey = key;
+    [self updateLevelHold];
     if (loaded)
         [self reloadView];
     else

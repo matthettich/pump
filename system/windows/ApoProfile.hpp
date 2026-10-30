@@ -9,6 +9,7 @@
 
 #include "../../common/dsp/RoomCorrect.hpp"
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <string>
 #include <utility>
@@ -64,12 +65,19 @@ struct ApoFiles {
 };
 
 // The filters and the active file for a profile. One-channel profiles use their filter on both sides.
-inline ApoFiles buildApoFiles(const room::Profile& p, const std::string& folder)
+// trimDb: the level hold's make-up (<= 0), so every profile plays at the held level (Preamp line before the filters)
+inline ApoFiles buildApoFiles(const room::Profile& p, const std::string& folder, double trimDb = 0.0)
 {
     ApoFiles out;
     const std::string dir = "pump-room\\" + folder + "\\";
     std::string conf = "# pump ROOM profile: " + p.name + (p.headphones ? " (headphones)" : "") + "\r\n";
     conf += "# Written by Room Profiles: choose another profile from its menu rather than editing this file.\r\n";
+    if (trimDb < 0.0)
+    {
+        char buf[96];
+        std::snprintf(buf, sizeof buf, "Preamp: %.2f dB\r\n", trimDb);
+        conf += room::dotDecimals(buf);
+    }
     conf += "Channel: L R\r\n";
     bool first = true;
     for (int fs : kRates)
@@ -95,10 +103,23 @@ inline ApoFiles buildApoFiles(const room::Profile& p, const std::string& folder)
     return out;
 }
 
-// the active file for no profile
-inline std::string emptyActive()
+// the active file for no profile: the held level (heldDb <= 0), so turning correction off never gets louder
+inline std::string emptyActive(double heldDb = 0.0)
 {
-    return "# pump ROOM: no profile (choose one from Room Profiles' menu)\r\n";
+    std::string s = "# pump ROOM: no profile (choose one from Room Profiles' menu)\r\n";
+    if (heldDb < 0.0)
+    {
+        char buf[96];
+        std::snprintf(buf, sizeof buf, "Preamp: %.2f dB\r\n", heldDb);
+        s += "# the level hold: no louder than with a profile\r\n" + room::dotDecimals(buf);
+    }
+    return s;
+}
+
+// the active file when Room Profiles quits: nothing, full level
+inline std::string quitActive()
+{
+    return "# pump ROOM: Room Profiles isn't running (full level, no correction)\r\n";
 }
 
 // config.txt with the include line added at the end (unchanged when it is there already, even commented differently)

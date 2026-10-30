@@ -124,6 +124,13 @@ headphone apart, from each file's `kind`), ticking the one whose path is in pump
 one puts the file's text into the `profile` state through the unit's ClassInfo (the other settings kept), for the
 current output. `.pumproom` is an exported type the app owns, so opening a file adds it and switches to it.
 
+The level hold: `heldLevelDb` (preferences) is the lowest preamp seen in the library or loaded, and never rises by
+itself. A gain after the room stage (`trimTarget`, ramped: 5 ms down, 50 ms up; the engine starts at it) is
+`held − own preamp` while a profile plays and `held` when there is none or Room Correction is off, so every state
+plays at the same level. Removing the tap (quitting, EQ off) is the only way to full level; EQ off asks first.
+Room Profiles writes the same make-up as a `Preamp:` line in the active file (and `held` alone for No Profile);
+its Quit writes an empty active file, asking first.
+
 ## Room Profiles (Windows)
 
 `system/windows/room-profiles.cpp`, built by `system/windows/build.sh` (MinGW, like the plugins). The platform-free

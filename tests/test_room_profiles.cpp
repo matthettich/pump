@@ -65,6 +65,11 @@ int main()
     const std::vector<float> oL = readChannel(o.files[0].second, 0, &fs), oR = readChannel(o.files[0].second, 1, &fs);
     CHECK(oL == oR && o.active.find("(headphones)") != std::string::npos, "a one-channel profile on both sides; headphones named");
 
+    const apo::ApoFiles held = apo::buildApoFiles(p, folder, -3.5);
+    CHECK(held.active.find("Preamp: -3.50 dB\r\nChannel: L R") != std::string::npos && out.active.find("Preamp") == std::string::npos,
+          "the level hold's make-up comes before the filters (none when 0)");
+    CHECK(apo::emptyActive(-6.25).find("Preamp: -6.25 dB") != std::string::npos && apo::emptyActive().find("Preamp") == std::string::npos &&
+          apo::quitActive().find("Preamp") == std::string::npos, "no profile keeps the held level; quitting doesn't");
     bool changed = false;
     const std::string cfg = "Preamp: -3 dB\r\nInclude: example.txt";
     const std::string c1 = apo::withInclude(cfg, &changed);
