@@ -1,0 +1,26 @@
+Room Profiles for Windows
+=========================
+
+Room Profiles switches pump ROOM's room and headphone corrections on everything Windows plays, from a menu by the
+clock. The free system-wide equalizer for Windows (the one that reads config.txt in its config folder) does the
+processing: install it first, with your outputs ticked in its device selector.
+
+1. Copy pump-room-profiles.exe somewhere to keep it (for example a "Room Profiles" folder in Documents) and open it.
+   An icon with three sliders appears by the clock (it may be under the ^ arrow: drag it out to keep it in view).
+2. The first time, it adds one line to the equalizer's config.txt. If Windows doesn't allow that, its menu shows
+   "Allow Changes...": choose it and say yes to the administrator prompt, once.
+3. Add profiles: double-click a .pumproom file that pump ROOM saved, or choose Add Profiles... in either submenu.
+
+The menu (click the icon):
+  Room Profiles  >  your room profiles, the active one ticked; No Profile; Add Profiles...; Show Profiles Folder
+  Headphones     >  the same, for headphone profiles
+  Output: ...       the output Windows is playing to
+  Separate Profile for Each Output   each output keeps its own choice, and switching outputs in Windows switches
+                    the profile with it (on by default)
+  Open at Login     start Room Profiles with Windows
+
+Profiles live in %APPDATA%\wake\pump ROOM\Profiles: rename or delete them there (Show Profiles Folder). Choosing
+one writes its filters (every common sample rate, no latency) into the equalizer's config folder, in pump-room\, and
+points pump-room-active.txt at them; the equalizer picks the change up at once.
+
+To stop using it, choose No Profile, or delete the line "Include: pump-room-active.txt" from config.txt.

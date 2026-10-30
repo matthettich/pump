@@ -144,6 +144,10 @@ it to Applications; the first time, right-click > Open, since it isn't notarized
 - **SAVE PROFILE** writes a `.pumproom` file for **pump ROOM**, the plugin (on your master bus or monitor chain:
   amount, minimum or linear phase, time alignment) and for **System EQ** on the Mac: double-click it and it joins
   *Room Profiles* in System EQ's menu.
+- **Room Profiles** (Windows, `room-profiles-windows.zip`) is the same menu on Windows: a tray app with *Room
+  Profiles* and *Headphones* submenus that switches what the free system-wide equalizer for Windows applies (it
+  writes the filters and one included file; the equalizer reloads at once). Double-click a `.pumproom` file to add it;
+  each output can keep its own profile. Setup: `ROOM-PROFILES-windows.txt` in the zip.
 - **EXPORT FOR WINDOWS** makes filters (every common sample rate) and a config file for the free system-wide
   equalizer for Windows that reads `config.txt`: unzip into its config folder and add `Include: pump-room.txt`.
 - **EXPORT FOR PI** makes the same filters with a CamillaDSP config and an install script, for a Raspberry Pi with a

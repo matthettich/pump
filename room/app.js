@@ -1096,7 +1096,7 @@ function saveProfile() {
   W.x.room_release_buf(p);
   const text = new TextDecoder().decode(new Uint8Array(W.x.memory.buffer, W.x.room_text_ptr(), n));
   download(`${fileName(profileName())}.pumproom`, text, 'text/plain');
-  status('Profile saved. On a Mac, double-click it: System EQ adds it to Room Profiles in its menu and switches to it. Or load it in pump ROOM (the plugin).');
+  status('Profile saved. Double-click it: System EQ (Mac) or Room Profiles (Windows) adds it to Room Profiles in its menu and switches to it. Or load it in pump ROOM (the plugin).');
 }
 
 // filters at the usual rates (minimum phase: no latency; preamp and delays inside), a config file that picks the one
@@ -1810,7 +1810,7 @@ function saveHpProfile() {
   W.x.room_release_buf(p);
   const text = new TextDecoder().decode(new Uint8Array(W.x.memory.buffer, W.x.room_text_ptr(), n));
   download(`${fileName(hpName())}.pumproom`, text, 'text/plain');
-  status('Headphone profile saved. On a Mac, double-click it: System EQ adds it to Headphones in its menu and switches to it. Or load it in pump ROOM (the plugin).');
+  status('Headphone profile saved. Double-click it: System EQ (Mac) or Room Profiles (Windows) adds it to Headphones in its menu and switches to it. Or load it in pump ROOM (the plugin).');
 }
 
 function initHeadphones() {

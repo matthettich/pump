@@ -124,6 +124,17 @@ headphone apart, from each file's `kind`), ticking the one whose path is in pump
 one puts the file's text into the `profile` state through the unit's ClassInfo (the other settings kept), for the
 current output. `.pumproom` is an exported type the app owns, so opening a file adds it and switches to it.
 
+## Room Profiles (Windows)
+
+`system/windows/room-profiles.cpp`, built by `system/windows/build.sh` (MinGW, like the plugins). The platform-free
+part is `ApoProfile.hpp` (tested by `tests/test_room_profiles.cpp`): a profile becomes one stereo float WAV per common
+rate (minimum phase, preamp and delays inside, as EXPORT FOR WINDOWS) and an active file that picks the one for the
+device's rate. The app adds `Include: pump-room-active.txt` to the equalizer's config.txt once and switches by
+rewriting that file (written beside it and swapped in, so it is never read half-written). Choices are kept per output
+device id (`room-profiles.ini`) and reapplied when Windows' default output changes. `.pumproom` is registered for the
+current user; a second start hands its files to the running copy (WM_COPYDATA). When the config folder can't be
+written, *Allow Changes…* grants users modify rights on it (icacls, one administrator prompt).
+
 ## On the web
 
 CI's `pages` job puts the room job's page on the `gh-pages` branch (as `index.html`, with `.nojekyll`) on every push to

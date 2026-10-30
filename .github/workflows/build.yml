@@ -89,6 +89,14 @@ jobs:
           cd dist && zip -qr pump-windows.zip pump-windows
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02   # v4
         with: { name: pump-windows, path: dist/pump-windows.zip }
+      - name: Room Profiles (the tray app that switches pump ROOM profiles)
+        run: |
+          CXX=x86_64-w64-mingw32-g++-posix CC=x86_64-w64-mingw32-gcc-posix sh system/windows/build.sh
+          mkdir -p dist/room-profiles-windows
+          cp bin/pump-room-profiles.exe docs/ROOM-PROFILES-windows.txt THIRD_PARTY_NOTICES.md dist/room-profiles-windows/
+          cd dist && zip -qr room-profiles-windows.zip room-profiles-windows
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02   # v4
+        with: { name: room-profiles-windows, path: dist/room-profiles-windows.zip }
 
   macos:
     runs-on: macos-14
@@ -370,5 +378,5 @@ jobs:
           else
             gh release delete latest --yes --cleanup-tag 2>/dev/null || true
             gh release create latest $files --prerelease --title "…pump (latest build)" \
-              --notes "Newest build from main ($GITHUB_SHA). pump MACHINE is GPL-3.0 (pump-MACHINE-NOTICE.md in each package; source: this commit). Mac: pump-macos.pkg (installer; if macOS blocks it, System Settings > Privacy & Security > Open Anyway) or pump-macos.zip. The .pkg also installs System EQ (pump EQ on everything the Mac plays) in Applications; system-eq-macos.zip has the app on its own. Windows: pump-windows.zip. pump ROOM, the room measurement app: pump-room-macos.zip (Mac app), pump-room-windows-setup.exe or pump-room-windows.zip (Windows), or pump-room.html in Chrome / Edge on either system. Install steps are in INSTALL.txt inside each zip."
+              --notes "Newest build from main ($GITHUB_SHA). pump MACHINE is GPL-3.0 (pump-MACHINE-NOTICE.md in each package; source: this commit). Mac: pump-macos.pkg (installer; if macOS blocks it, System Settings > Privacy & Security > Open Anyway) or pump-macos.zip. The .pkg also installs System EQ (pump EQ on everything the Mac plays) in Applications; system-eq-macos.zip has the app on its own. Windows: pump-windows.zip; room-profiles-windows.zip has Room Profiles (switch pump ROOM profiles from the tray). pump ROOM, the room measurement app: pump-room-macos.zip (Mac app), pump-room-windows-setup.exe or pump-room-windows.zip (Windows), or pump-room.html in Chrome / Edge on either system. Install steps are in INSTALL.txt inside each zip."
           fi
