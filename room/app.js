@@ -231,6 +231,7 @@ function fromWorklet(m) {
     $('meterText').textContent = db < -100 ? '—' : db.toFixed(1) + ' dBFS';
   } else if (m.type === 'progress') {
     $('prog').style.width = (100 * m.done / m.length).toFixed(1) + '%';
+    S.runProgress = m.done / m.length;
   } else if (m.type === 'done') {
     $('prog').style.width = '100%';
     if (S.pending) { S.pending.resolve(m); S.pending = null; }
@@ -1318,7 +1319,7 @@ function zip(files) {
 
 const H = {
   lat: null, spacing: null, fs: 0, ctx: null, center: null, couch: null, targets: [], done: [], cur: -1,
-  mic: null, trail: [], running: false, points: 9, info: '', infoErr: false, tail: 1.0, stopReq: false,
+  mic: null, trail: [], running: false, points: 9, phase: 'away', pop: null, anim: false, info: '', infoErr: false, tail: 1.0, stopReq: false,
 };
 const HAND = { tolerance: 0.08, still: 0.04, moved: 0.12, grille: 0.03, pingS: 0.25, measureS: 1.0 };
 
@@ -1345,6 +1346,37 @@ async function handPing(tailS) {
   return t.L !== undefined && t.R !== undefined && !why ? { tL: t.L, tR: t.R } : { why: why || 'A speaker was not heard.' };
 }
 
+// The dot being measured reacts: it lights up and breathes when the mic reaches it ('on'), a ring fills around it
+// while it measures ('measuring'), and it bursts with a tick when the point is kept (or flashes red when it isn't).
+// While any of that shows, the map is redrawn every frame.
+// each dot its own colour, from the suite's colour wheel (common/ui/Theme.hpp: COIL's springs, SING's words), in the
+// same order: the fill is the wheel's bright shade, the outline and tick its deep one (light theme) or a lighter tint
+const WHEEL_NEON = [0xFF7466, 0xFFD04A, 0xC8FF4D, 0x5CFFB4, 0x4DF3FF, 0x73B4FF, 0xB9A0FF, 0xFF6FB5,
+                    0xFFB24F, 0xDCEB5A, 0x8CFF5A, 0x3DF5D0, 0x5CCBFF, 0x949FFF, 0xDD77FF, 0xFF92C2];
+const WHEEL_INK = [0x8C2318, 0x6B4700, 0x3B5C00, 0x006E44, 0x00636D, 0x1443AC, 0x4528B5, 0x8C1257,
+                   0x934000, 0x4E5700, 0x235C00, 0x006652, 0x00527A, 0x262C99, 0x650C8A, 0x8A1450];
+const dotColour = (i) => rgb(WHEEL_NEON.at(((i % 16) + 16) % 16));
+const dotInk = (i) => theme.dark ? mix(dotColour(i), rgb(0xffffff), 0.18) : rgb(WHEEL_INK.at(((i % 16) + 16) % 16));
+
+function handPhase(phase) {
+  if (phase === 'measuring' && H.phase !== 'measuring') S.runProgress = 0;
+  H.phase = phase;
+  handAnimate();
+}
+function handPop(i, ok) { H.pop = { i, ok, t: performance.now() }; handAnimate(); }
+function handAnimate() {
+  if (H.anim) return;
+  const live = () => S.view === 'handheld' && (H.phase !== 'away' || (H.pop && performance.now() - H.pop.t < 900));
+  if (!live()) return;
+  H.anim = true;
+  const tick = () => {
+    draw();
+    if (live()) requestAnimationFrame(tick);
+    else { H.anim = false; if (H.pop && performance.now() - H.pop.t >= 900) H.pop = null; draw(); }
+  };
+  requestAnimationFrame(tick);
+}
+
 function handInfo(text, err = false) { H.info = text; H.infoErr = err; showHand(); }
 
 async function handRun(fn) {
@@ -1353,7 +1385,7 @@ async function handRun(fn) {
   S.busy = true;
   showHand();
   try { await fn(); } catch (e) { handInfo(e.message === 'Stopped' || e.message === 'Audio stopped' ? 'Stopped.' : 'Failed: ' + e.message, true); }
-  finally { S.busy = false; H.running = false; showHand(); renderRuns(); draw(); }
+  finally { S.busy = false; H.running = false; H.phase = 'away'; showHand(); renderRuns(); draw(); }
 }
 
 function handFind() {
@@ -1467,8 +1499,9 @@ function handStart() {
       const still = last && Math.hypot(pos.x - last.x, pos.y - last.y) < HAND.still;
       last = pos;
       const hTip = t.h ? `Mic ${heightWords(t.h)}. ` : '';
-      if (off > HAND.tolerance) { handInfo(hTip + handDirection(pos, t)); draw(); continue; }
-      if (!still) { handInfo(`On the point: ${t.h ? 'mic ' + heightWords(t.h) + ', ' : ''}hold still…`); draw(); continue; }
+      if (off > HAND.tolerance) { handPhase('away'); handInfo(hTip + handDirection(pos, t)); draw(); continue; }
+      if (!still) { handPhase('on'); handInfo(`On the point: ${t.h ? 'mic ' + heightWords(t.h) + ', ' : ''}hold still…`); draw(); continue; }
+      handPhase('measuring');
       handInfo(`Measuring here${t.h ? ' (' + heightWords(t.h).toLowerCase() + ')' : ''}: hold still…`);
       draw();
       const cap = await capture({ sides: ['L', 'R'], seconds: HAND.measureS, level: S.level, preS: 0.3, tailS: H.tail + 0.6, searchS: H.tail + 0.1 });
@@ -1492,6 +1525,8 @@ function handStart() {
       }
       if (why) {
         run.ch.forEach((c) => W.x.room_free(c.id));
+        handPhase('away');
+        handPop(H.cur, false);
         handInfo(`Not kept: ${why}`, true);
         last = null;
         continue;
@@ -1500,6 +1535,8 @@ function handStart() {
       S.unsaved = true;
       if (U.latest) showUpdate();
       H.done[H.cur] = true;
+      handPhase('away');
+      handPop(H.cur, true);
       H.cur = handNext();
       renderRuns();
       $('save').disabled = false;
@@ -1576,12 +1613,52 @@ function drawHand(w, h) {
     g2.strokeStyle = css(theme.ink2); g2.lineWidth = 1; g2.setLineDash([3, 3]);
     g2.beginPath(); g2.moveTo(px(-sp / 2), py(0)); g2.lineTo(px(H.center.x), py(H.center.y)); g2.lineTo(px(sp / 2), py(0)); g2.stroke(); g2.setLineDash([]);
   }
+  const now = performance.now();
   const marks = (P, pxs, pys, r, bold) => {
+    // the current dot's state, under its outline
+    const cur = H.targets[H.cur];
+    if (cur && H.phase !== 'away') {
+      const cx = pxs(cur.x), cy = pys(cur.y), beat = 0.5 + 0.5 * Math.sin(now / 160), col = dotColour(H.cur);
+      if (H.phase === 'on') {
+        // reached: it lights up and breathes, a ring ripples outward
+        g2.beginPath(); g2.arc(cx, cy, r, 0, Math.PI * 2); g2.fillStyle = css(col, 0.35 + 0.4 * beat); g2.fill();
+        const ripple = (now % 900) / 900;
+        g2.beginPath(); g2.arc(cx, cy, r * (1 + 0.8 * ripple), 0, Math.PI * 2);
+        g2.strokeStyle = css(col, 1 - ripple); g2.lineWidth = bold ? 3 : 2; g2.stroke();
+      } else if (H.phase === 'measuring') {
+        // measuring: solid, with a ring filling clockwise as the sweeps play
+        g2.beginPath(); g2.arc(cx, cy, r, 0, Math.PI * 2); g2.fillStyle = css(col, 0.75 + 0.2 * beat); g2.fill();
+        const p = Math.max(0.02, Math.min(1, S.runProgress || 0));
+        g2.beginPath(); g2.arc(cx, cy, r + (bold ? 7 : 4), -Math.PI / 2, -Math.PI / 2 + p * Math.PI * 2);
+        g2.strokeStyle = css(theme.ink); g2.lineWidth = bold ? 4 : 2.5; g2.lineCap = 'round'; g2.stroke(); g2.lineCap = 'butt';
+      }
+    }
+    // a point just kept bursts outward (or flashes red when it wasn't kept)
+    if (H.pop && H.targets[H.pop.i]) {
+      const a = Math.min(1, (now - H.pop.t) / 700), t0 = H.targets[H.pop.i], cx = pxs(t0.x), cy = pys(t0.y);
+      if (a < 1) {
+        const col = H.pop.ok ? dotColour(H.pop.i) : theme.red;
+        for (const k of [0, 0.25]) {
+          const b = Math.max(0, a - k) / (1 - k);
+          if (b <= 0) continue;
+          g2.beginPath(); g2.arc(cx, cy, r * (1 + 1.6 * b), 0, Math.PI * 2);
+          g2.strokeStyle = css(col, 1 - b); g2.lineWidth = (bold ? 4 : 2.5) * (1 - b) + 0.5; g2.stroke();
+        }
+        if (H.pop.ok) for (let j = 0; j < 8; ++j) {
+          const ang = j * Math.PI / 4, d = r * (1.2 + 1.4 * a);
+          g2.beginPath(); g2.arc(cx + Math.cos(ang) * d, cy + Math.sin(ang) * d, (bold ? 3 : 2) * (1 - a), 0, Math.PI * 2);
+          g2.fillStyle = css(col, 1 - a); g2.fill();
+        }
+      }
+    }
     H.targets.forEach((t, i) => {
+      const col = dotColour(i), ink = dotInk(i);
       g2.beginPath(); g2.arc(pxs(t.x), pys(t.y), r, 0, Math.PI * 2);
-      if (H.done[i]) { g2.fillStyle = css(theme.neon); g2.fill(); }
-      g2.strokeStyle = css(i === H.cur ? theme.ink : theme.ink2); g2.lineWidth = i === H.cur ? (bold ? 3.5 : 2.5) : 1.25; g2.stroke();
-      if (H.done[i] && r > 8) { g2.fillStyle = css(theme.neonInk); g2.font = font(Math.min(16, r)); g2.textAlign = 'center'; g2.textBaseline = 'middle'; g2.fillText('✓', pxs(t.x), pys(t.y)); }
+      if (H.done[i]) { g2.fillStyle = css(col); g2.fill(); }
+      else if (i !== H.cur || H.phase === 'away') { g2.fillStyle = css(col, i === H.cur ? 0.45 : (theme.dark ? 0.16 : 0.28)); g2.fill(); }
+      g2.strokeStyle = css(i === H.cur ? theme.ink : ink);
+      g2.lineWidth = i === H.cur ? (bold ? 3.5 : 2.5) : (bold ? 2 : 1.25); g2.stroke();
+      if (H.done[i] && r > 8) { g2.fillStyle = css(rgb(WHEEL_INK.at(i % 16))); g2.font = font(Math.min(16, r)); g2.textAlign = 'center'; g2.textBaseline = 'middle'; g2.fillText('✓', pxs(t.x), pys(t.y)); }
     });
     // heights: points at the same spot drawn as one dot, with ▲ / ▼ beside it for the raised and lowered ones
     if (r > 8) H.targets.forEach((t, i) => {
