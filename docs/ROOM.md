@@ -117,6 +117,17 @@ over-ear and in-ear targets are in app.js as a few filters each (fitted to the p
 An EQ file is applied as it is: its curve, negated, is the "measured" response with a flat target, and `smooth = 0`
 (design parameter 16) skips the smoothing that would soften its narrow filters. Profiles say `kind headphones`.
 
+## Other software and devices (EXPORT)
+
+Export only: each reads the current design and writes files; nothing else changes.
+- *Graphic EQ* (Wavelet): `GraphicEQ:` line, 127 points at 20 Hz × 1.0563^k, the speakers averaged, preamp in it.
+- *Parametric EQ*: `fitPeq` fits up to N bands (LS / PK / HS) to the correction on a 1/12-octave grid to the band's
+  top, at 48 kHz, by Levenberg-Marquardt (bands added where the error is largest, then all refined), with a small
+  cost on every gain so bands don't fight, boosts capped near the correction's own, cancelling pairs dropped. Limits:
+  gain −15..+12 dB, Q 0.3..8 (shelves 0.5..1). Written as `Preamp:` + `Filter N: ON PK Fc … Hz Gain … dB Q …`
+  (shelves LSC / HSC); a room gets both-speaker (averaged), L and R files. EQ files read in are evaluated at 48 kHz too.
+- *Convolution*: a stereo float WAV per rate (44.1–192 kHz) in a folder, zipped, with a README per player.
+
 ## System EQ's profile library
 
 System EQ keeps profiles in `~/Library/Application Support/wake/System EQ/Profiles`. Its menu lists them (room and

@@ -81,9 +81,9 @@ const S = {
   view: 'response', smooth: 12, windowMs: 500, norm: true, useCal: true,
   busy: false, noise: false, flip: false, unsaved: false, pending: null, bt: false, wake: null,
   corr: { tilt: 0, bass: 0, treble: 0, amount: 100, fLo: 20, fHi: 20000, boost: 6, cut: 15, nulls: true, low: true, align: true,
-          phase: false, pLo: 60, pHi: 3000, linear: false, spread: true },
+          phase: false, pLo: 60, pHi: 3000, linear: false, spread: true, fit: false, bands: 10 },
   design: null,
-  hp: { file: null, target: 'over', tilt: 0, bass: 0, treble: 0, amount: 100, boost: 8, fHi: 12000 }, hpDesign: null,
+  hp: { file: null, target: 'over', tilt: 0, bass: 0, treble: 0, amount: 100, boost: 8, fHi: 12000, fit: false, bands: 10 }, hpDesign: null,
   sim: /(^|[#&?])sim\b/.test(location.hash + location.search),
 };
 const GRID = { lo: 20, hi: 20000, perOct: 96 };
@@ -923,7 +923,7 @@ function drawCorrection(w, h) {
   }
   const c = S.corr;
   drawDesign(w, h, d, { fLo: c.fLo, fHi: c.fHi, boost: c.boost, cut: c.cut, pLo: c.pLo, pHi: c.pHi, linear: c.linear,
-    showPhase: c.phase && !btRuns(), sides: [0, 1],
+    showPhase: c.phase && !btRuns(), sides: [0, 1], fits: c.fit ? d.sides.map((sd) => (sd ? fitCurve(sd.correction, c.bands, c.fHi) : null)) : null,
     title: `AVERAGE OF ${d.positions} POSITION${d.positions === 1 ? '' : 'S'} (FAINT${d.positions >= 2 ? ', SHADED: HOW MUCH THEY DIFFER' : ''}) · CORRECTED (BOLD) · TARGET (DASHED)` });
 }
 
@@ -993,6 +993,11 @@ function drawDesign(w, h, d, cfg) {
       g2.strokeStyle = colours[s]; g2.setLineDash([2, 3]); g2.beginPath(); g2.moveTo(x, bot.y0); g2.lineTo(x, bot.y1); g2.stroke(); g2.setLineDash([]);
     }
   });
+  // the parametric EQ fit, dotted over the correction it approximates
+  if (cfg.fits) cfg.fits.forEach((fit, s) => {
+    if (!fit || !cfg.sides.includes(s)) return;
+    line(bot, Array.from(F, (hz) => fit.curve(hz)), cy, colours[s], 2, [2, 3]);
+  });
   const tgt = d.sides.find((x) => x);
   line(top, tgt.target.map((v) => v + off), ly, css(theme.ink2), 1.5, [6, 4]);
   if (showPhase) {
@@ -1018,13 +1023,13 @@ function drawDesign(w, h, d, cfg) {
   for (const fr of showPhase ? [top, bot, ph] : [top, bot]) g2.strokeRect(fr.x0 + 0.75, fr.y0 + 0.75, fr.x1 - fr.x0 - 1.5, fr.y1 - fr.y0 - 1.5);
   g2.font = font(11); g2.fillStyle = css(theme.ink2); g2.textAlign = 'left'; g2.textBaseline = 'top';
   g2.fillText(cfg.title, top.x0 + 8, top.y0 + 6);
-  g2.fillText('CORRECTION', bot.x0 + 8, bot.y0 + 6);
+  g2.fillText(cfg.fits ? `CORRECTION · PARAMETRIC EQ FIT, ${cfg.fits.find(Boolean).filters.length} BANDS (DOTTED)` : 'CORRECTION', bot.x0 + 8, bot.y0 + 6);
   if (showPhase) g2.fillText(cfg.linear ? 'ARRIVAL BY FREQUENCY (MEASURED FAINT, CORRECTED BOLD)' : 'ARRIVAL BY FREQUENCY: CORRECTED ONLY WITH LINEAR-PHASE FILTERS', ph.x0 + 8, ph.y0 + 6);
 }
 
 function showCorrInfo(d) {
   const el = $('cInfo');
-  $('cSave').disabled = $('cWin').disabled = $('cPi').disabled = $('cWavelet').disabled = !d;
+  $('cSave').disabled = $('cExport').disabled = !d;
   if (!d) { el.innerHTML = ''; return; }
   const parts = [`PREAMP <b>${d.preamp.toFixed(1)} dB</b>`];
   d.sides.forEach((sd, s) => {
@@ -1052,6 +1057,11 @@ function showCorrInfo(d) {
     d.sides.forEach((sd) => { if (sd && sd.spread) for (let i = 0; i < F.length; ++i) if (F[i] >= 30 && F[i] <= 500 && sd.spread[i] > worst) { worst = sd.spread[i]; wf = F[i]; } });
     if (worst > 3) parts.push(`POSITIONS DIFFER MOST: <b>±${worst.toFixed(1)} dB at ${fmtHz(wf)}</b>` + (S.corr.spread ? ' (corrected less there)' : ' (turn on SPREAD-AWARE to correct less there)'));
   }
+  if (S.corr.fit) d.sides.forEach((sd, s) => {
+    if (!sd) return;
+    const f = fitCurve(sd.correction, S.corr.bands, S.corr.fHi);
+    parts.push(`${s ? 'RIGHT' : 'LEFT'} EQ FIT: <b>${f.filters.length} bands, within ${f.worst.toFixed(1)} dB</b> (typically ${f.rms.toFixed(1)})`);
+  });
   if (!d.sides[0] || !d.sides[1]) parts.push('<span class="warn">Only one speaker measured.</span>');
   el.innerHTML = parts.join('<br>');
 }
@@ -1066,7 +1076,8 @@ function showCorrControls() {
   set('cBoost', c.boost, '+' + c.boost.toFixed(1) + ' dB');
   set('cCut', c.cut, '-' + c.cut + ' dB');
   for (const [id, v] of [['cLo', c.fLo], ['cHi', c.fHi]]) $(id).querySelectorAll('button').forEach((b) => b.classList.toggle('on', +b.dataset.v === v));
-  for (const [id, k] of [['cNulls', 'nulls'], ['cLow', 'low'], ['cAlign', 'align'], ['cPhase', 'phase'], ['cSpread', 'spread']]) $(id).classList.toggle('on', c[k]);
+  for (const [id, k] of [['cNulls', 'nulls'], ['cLow', 'low'], ['cAlign', 'align'], ['cPhase', 'phase'], ['cSpread', 'spread'], ['cFit', 'fit']]) $(id).classList.toggle('on', c[k]);
+  $('cBandsRow').hidden = !c.fit;
   showBtLocks();
   $('cLat').querySelectorAll('button').forEach((b) => b.classList.toggle('on', (b.dataset.v === 'linear') === c.linear));
 }
@@ -1076,12 +1087,15 @@ function initCorrection() {
   slider('cTilt', 'tilt'); slider('cBass', 'bass'); slider('cTreble', 'treble'); slider('cAmount', 'amount'); slider('cBoost', 'boost'); slider('cCut', 'cut');
   seg('cLo', (v) => { S.corr.fLo = +v; draw(); });
   seg('cHi', (v) => { S.corr.fHi = +v; draw(); });
-  for (const [id, k] of [['cNulls', 'nulls'], ['cLow', 'low'], ['cAlign', 'align'], ['cPhase', 'phase'], ['cSpread', 'spread']]) $(id).onclick = () => { S.corr[k] = !S.corr[k]; showCorrControls(); draw(); };
+  for (const [id, k] of [['cNulls', 'nulls'], ['cLow', 'low'], ['cAlign', 'align'], ['cPhase', 'phase'], ['cSpread', 'spread'], ['cFit', 'fit']]) $(id).onclick = () => { S.corr[k] = !S.corr[k]; showCorrControls(); draw(); };
+  seg('cBands', (v) => { S.corr.bands = +v; draw(); });
   seg('cLat', (v) => { S.corr.linear = v === 'linear'; showCorrControls(); draw(); });
   $('cSave').onclick = saveProfile;
   $('cWin').onclick = () => exportWindows();
   $('cPi').onclick = exportPi;
   $('cWavelet').onclick = () => exportGraphicEq(designCorrection(), profileName(), 'the room correction');
+  $('cPeq').onclick = () => exportPeq(designCorrection(), profileName(), S.corr.bands, btRuns() ? Math.min(S.corr.fHi, BT.fHi) : S.corr.fHi, false);
+  $('cConv').onclick = () => exportConv(designCorrection(), profileName(), S.corr.linear, filterKind());
   $('cPiGuide').onclick = () => { $('guide').hidden = false; $('guideClose').focus(); };
   $('guideClose').onclick = () => { $('guide').hidden = true; };
   $('guide').onclick = (e) => { if (e.target === $('guide')) $('guide').hidden = true; };
@@ -1278,6 +1292,8 @@ function exportPi() {
     '   the card name from "arecord -l" (device: "hw:NAME,0") and the format it takes (S16_LE, S24_3_LE, S32_LE).',
     '   Then: sudo systemctl restart pump-room', '',
     'New correction for the same room: copy the new export over and run install.sh again (your device settings stay).',
+    'moOde or Volumio (they run CamillaDSP themselves): skip install.sh. Upload the files in coeffs/ on their CamillaDSP',
+    'page and copy the filters: and pipeline: parts of pump-room.yml into a config there (keep their devices: part).',
     'Status and errors: systemctl status pump-room   /   journalctl -u pump-room', '',
     `The filters include the preamp (${d.preamp.toFixed(2)} dB, headroom for the boosts) and the time alignment.`,
     'They exist for 44.1, 48, 88.2, 96 and 192 kHz; the config runs at 48 kHz (change samplerate to use another).',
@@ -1774,7 +1790,7 @@ function biquadDb(kind, fc, gain, q, f, fs = 96000) {
   const nr = b[0] + b[1] * cr + b[2] * c2r, ni = b[1] * ci + b[2] * c2i, dr = a[0] + a[1] * cr + a[2] * c2r, di = a[1] * ci + a[2] * c2i;
   return 10 * Math.log10((nr * nr + ni * ni) / Math.max(1e-30, dr * dr + di * di));
 }
-const filtersDb = (filters, f) => filters.reduce((acc, [k, fc, g, q]) => acc + biquadDb(k, fc, g, q, f), 0);
+const filtersDb = (filters, f, fs = 96000) => filters.reduce((acc, [k, fc, g, q]) => acc + biquadDb(k, fc, g, q, f, fs), 0);
 
 // What a loaded file is: a frequency response (kind 'fr', with the file's own target if it has one) or an EQ to apply
 // (kind 'eq'). Parametric ("Filter 1: ON PK Fc 105 Hz Gain 3 dB Q 0.7"), graphic ("GraphicEQ: 20 -3; 21 -3.1; ...")
@@ -1790,7 +1806,7 @@ function parseHeadphoneFile(text) {
     if (fc > 0 && fc < 48000 && isFinite(g) && Math.abs(g) <= 30 && q > 0 && q < 50) filters.push([kind, fc, g, q]);
   }
   if (filters.length) {
-    const f = Array.from(corrFreqs()), db = f.map((x) => filtersDb(filters, x));
+    const f = Array.from(corrFreqs()), db = f.map((x) => filtersDb(filters, x, 48000));   // EQ files are made for 48 kHz
     return { kind: 'eq', f, db, note: `${filters.length} filter${filters.length === 1 ? '' : 's'}` };
   }
   const ge = /GraphicEQ\s*:\s*([^\n\r]*)/i.exec(text);
@@ -1880,15 +1896,18 @@ function drawHeadphones(w, h) {
   if (!d) { $('empty').style.display = 'flex'; $('empty').textContent = 'Load a headphone measurement or EQ file (LOAD FILE…).'; return; }
   const eq = S.hp.file.kind === 'eq';
   drawDesign(w, h, d, { fLo: 20, fHi: eq ? 20000 : S.hp.fHi, boost: eq ? 15 : S.hp.boost, cut: 15, pLo: 60, pHi: 3000, linear: false, showPhase: false, sides: [0],
+    fits: S.hp.fit ? [fitCurve(d.sides[0].correction, S.hp.bands, eq ? 20000 : S.hp.fHi)] : null,
     title: eq ? 'THE EQ FILE AS A RESPONSE (FAINT) · CORRECTED (BOLD) · TARGET (DASHED)' : 'HEADPHONE RESPONSE (FAINT) · CORRECTED (BOLD) · TARGET (DASHED)' });
 }
 
 function showHpOut(d) {
-  for (const id of ['hpSave', 'hpWin', 'hpWavelet']) $(id).disabled = !d;
+  for (const id of ['hpSave', 'hpExport']) $(id).disabled = !d;
   if (!d) { $('hpOut').innerHTML = ''; return; }
   let lo = 1e9, hi = -1e9;
   for (const v of d.sides[0].correction) { lo = Math.min(lo, v); hi = Math.max(hi, v); }
-  $('hpOut').innerHTML = `PREAMP <b>${d.preamp.toFixed(1)} dB</b><br>CORRECTION <b>${lo.toFixed(1)} / +${Math.max(0, hi).toFixed(1)} dB</b>`;
+  let fitLine = '';
+  if (S.hp.fit) { const f = fitCurve(d.sides[0].correction, S.hp.bands, S.hp.file.kind === 'eq' ? 20000 : S.hp.fHi); fitLine = `<br>EQ FIT <b>${f.filters.length} bands, within ${f.worst.toFixed(1)} dB</b>`; }
+  $('hpOut').innerHTML = `PREAMP <b>${d.preamp.toFixed(1)} dB</b><br>CORRECTION <b>${lo.toFixed(1)} / +${Math.max(0, hi).toFixed(1)} dB</b>${fitLine}`;
 }
 
 function showHp() {
@@ -1933,8 +1952,215 @@ function initHeadphones() {
   $('hpClear').onclick = () => { S.hp.file = null; showHp(); draw(); };
   $('hpSave').onclick = saveHpProfile;
   $('hpWavelet').onclick = () => exportGraphicEq(designHeadphones(), hpName(), 'the headphone correction');
+  $('hpPeq').onclick = () => { const d = designHeadphones(); exportPeq(d, hpName(), S.hp.bands, S.hp.file && S.hp.file.kind === 'eq' ? 20000 : S.hp.fHi, true); };
+  $('hpConv').onclick = () => exportConv(designHeadphones(), hpName(), false, 'Minimum phase (no latency): headphone correction');
+  seg('hpBands', (v) => { S.hp.bands = +v; showHp(); draw(); });
+  $('hpFit').onclick = () => { S.hp.fit = !S.hp.fit; $('hpFit').classList.toggle('on', S.hp.fit); showHp(); draw(); };
   $('hpWin').onclick = () => exportWindows(designHeadphones(), hpName(), false, 'Minimum phase (no latency): headphone correction');
   showHp();
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// parametric EQ: a few bell and shelf filters fitted to a correction (Levenberg-Marquardt), for devices and apps that
+// take nothing else (WiiM, miniDSP, Poweramp, the Windows equalizer's parametric mode). Export only: the correction
+// itself, and everything that plays it in full, is unchanged. Limits: gain -15..+12 dB, Q 0.3..8 (shelves 0.5..1).
+const PEQ_LIMITS = { fLo: 20, fHi: 20000, gLo: -15, gHi: 12, qLo: 0.3, qHi: 8, shelfQLo: 0.5, shelfQHi: 1.0 };
+
+// f, target: the correction (dB) on a log grid; fitHi: the band corrected (above it the correction is ~0); n bands
+function fitPeq(f, target, n, fitHi = 20000) {
+  const L = { ...PEQ_LIMITS };
+  // boosts no bigger than the correction's own (plus a little), so the fit can't buy accuracy with headroom
+  L.gHi = Math.min(PEQ_LIMITS.gHi, Math.max(1, ...target.map((v, i) => (f[i] <= fitHi ? v : 0))) + 1.5);
+  // points: 1/12 octave from 20 Hz to fitHi (a little past it, so a band doesn't overshoot there)
+  const top = Math.min(20000, fitHi * 1.3);
+  const at = (hz) => {
+    if (hz <= f[0]) return target[0];
+    for (let i = 1; i < f.length; ++i) if (f[i] >= hz) { const t = Math.log(hz / f[i - 1]) / Math.log(f[i] / f[i - 1]); return target[i - 1] + t * (target[i] - target[i - 1]); }
+    return target[target.length - 1];
+  };
+  const F = [], T = [], Wt = [];
+  for (let hz = 20; hz <= top; hz *= Math.pow(2, 1 / 12)) {
+    F.push(hz); T.push(at(hz));
+    Wt.push(hz < 30 ? 0.4 : hz > 12000 ? 0.4 : 1);
+  }
+  const model = (fl) => F.map((hz) => fl.reduce((a, b) => a + biquadDb(b.kind, b.fc, b.gain, b.q, hz, 48000), 0));
+  const clamp = (b) => {
+    b.fc = Math.min(L.fHi, Math.max(L.fLo, b.fc));
+    b.gain = Math.min(L.gHi, Math.max(L.gLo, b.gain));
+    b.q = b.kind === 'PK' ? Math.min(L.qHi, Math.max(L.qLo, b.q)) : Math.min(L.shelfQHi, Math.max(L.shelfQLo, b.q));
+    return b;
+  };
+  const toP = (fl) => fl.flatMap((b) => [Math.log(b.fc), b.gain, Math.log(b.q)]);
+  const fromP = (fl, p) => fl.map((b, i) => clamp({ kind: b.kind, fc: Math.exp(p[3 * i]), gain: p[3 * i + 1], q: Math.exp(p[3 * i + 2]) }));
+  // a small cost on every band's gain keeps bands from fighting each other (a big boost beside a big cut)
+  const PEN = 0.02 * F.length / 100;
+  const cost = (fl) => { const m = model(fl); let s = 0; for (let i = 0; i < F.length; ++i) s += Wt[i] * (m[i] - T[i]) ** 2; for (const b of fl) s += PEN * b.gain * b.gain; return s; };
+  const lm = (fl, iters) => {
+    let p = toP(fl), cur = fromP(fl, p), c0 = cost(cur), lam = 1e-2;
+    for (let it = 0; it < iters; ++it) {
+      const m0 = model(cur), r = F.map((_, i) => Math.sqrt(Wt[i]) * (m0[i] - T[i])).concat(cur.map((b) => Math.sqrt(PEN) * b.gain));
+      const k = p.length, J = [];
+      for (let j = 0; j < k; ++j) {
+        const q = p.slice(); const h = j % 3 === 1 ? 0.05 : 0.01; q[j] += h;
+        const q1 = fromP(fl, q), m1 = model(q1);
+        J.push(F.map((_, i) => Math.sqrt(Wt[i]) * (m1[i] - m0[i]) / h).concat(q1.map((b, bi) => Math.sqrt(PEN) * (b.gain - cur[bi].gain) / h)));
+      }
+      const A = Array.from({ length: k }, (_, a) => Array.from({ length: k }, (_, b) => J[a].reduce((s, v, i) => s + v * J[b][i], 0)));
+      const g = Array.from({ length: k }, (_, a) => J[a].reduce((s, v, i) => s + v * r[i], 0));
+      let improved = false;
+      for (let tries = 0; tries < 6 && !improved; ++tries) {
+        const M = A.map((row, a) => row.map((v, b) => v + (a === b ? lam * (v + 1e-6) : 0)));
+        const d = solve(M, g.map((v) => -v));
+        if (!d) { lam *= 10; continue; }
+        const np = p.map((v, i) => v + d[i]), nf = fromP(fl, np), c1 = cost(nf);
+        if (c1 < c0) { p = toP(nf); cur = nf; c0 = c1; lam = Math.max(1e-6, lam / 3); improved = true; }
+        else lam *= 8;
+      }
+      if (!improved) break;
+    }
+    return cur;
+  };
+  // start: shelves for the ends when they sit off zero, then peaks where the error is largest
+  let fl = [];
+  const meanOf = (lo, hi) => { let s = 0, k = 0; F.forEach((hz, i) => { if (hz >= lo && hz <= hi) { s += T[i]; ++k; } }); return k ? s / k : 0; };
+  const lowEnd = meanOf(20, 60), highEnd = meanOf(8000, Math.min(16000, top));
+  if (n >= 3 && Math.abs(lowEnd) > 1.5) fl.push({ kind: 'LS', fc: 90, gain: lowEnd, q: 0.7 });
+  if (n >= 4 && Math.abs(highEnd) > 1.5 && fitHi > 9000) fl.push({ kind: 'HS', fc: 7000, gain: highEnd, q: 0.7 });
+  fl = lm(fl, 15);
+  while (fl.length < n) {
+    const m = model(fl);
+    // the largest error, smoothed over a third of an octave
+    let best = -1, bv = 0;
+    for (let i = 0; i < F.length; ++i) {
+      let s = 0, k = 0;
+      for (let j = Math.max(0, i - 2); j <= Math.min(F.length - 1, i + 2); ++j) { s += T[j] - m[j]; ++k; }
+      const v = Math.abs(s / k) * Wt[i];
+      if (v > bv) { bv = v; best = i; }
+    }
+    if (best < 0 || bv < 0.25) break;
+    const e = T[best] - m[best];
+    fl.push(clamp({ kind: 'PK', fc: F[best], gain: e, q: 2 }));
+    fl = lm(fl, 12);
+  }
+  fl = lm(fl, 40);
+  fl.sort((a, b) => a.fc - b.fc);
+  for (let i = 1; i < fl.length; ++i)
+    if (fl[i].kind === 'PK' && fl[i - 1].kind === 'PK' && Math.abs(Math.log2(fl[i].fc / fl[i - 1].fc)) < 1 / 6 && Math.sign(fl[i].gain) !== Math.sign(fl[i - 1].gain)) {
+      fl.splice(i, 1); --i;   // a pair cancelling each other: drop one, let the rest absorb it
+    }
+  fl = lm(fl, 25);
+  fl.sort((a, b) => a.fc - b.fc);
+  const fitted = (hz) => fl.reduce((a, b) => a + biquadDb(b.kind, b.fc, b.gain, b.q, hz, 48000), 0);
+  let worst = 0, sq = 0, k = 0;
+  F.forEach((hz, i) => { if (hz >= 30 && hz <= Math.min(10000, fitHi)) { const d = Math.abs(fitted(hz) - T[i]); worst = Math.max(worst, d); sq += d * d; ++k; } });
+  return { filters: fl, worst, rms: Math.sqrt(sq / Math.max(1, k)), curve: fitted };
+}
+
+// Gaussian elimination with partial pivoting
+function solve(A, b) {
+  const n = b.length, M = A.map((r, i) => [...r, b[i]]);
+  for (let c = 0; c < n; ++c) {
+    let piv = c;
+    for (let r = c + 1; r < n; ++r) if (Math.abs(M[r][c]) > Math.abs(M[piv][c])) piv = r;
+    if (Math.abs(M[piv][c]) < 1e-12) return null;
+    [M[c], M[piv]] = [M[piv], M[c]];
+    for (let r = c + 1; r < n; ++r) { const k = M[r][c] / M[c][c]; for (let j = c; j <= n; ++j) M[r][j] -= k * M[c][j]; }
+  }
+  const x = new Array(n).fill(0);
+  for (let r = n - 1; r >= 0; --r) { let s = M[r][n]; for (let j = r + 1; j < n; ++j) s -= M[r][j] * x[j]; x[r] = s / M[r][r]; }
+  return x;
+}
+
+
+const FIT_CACHE = new Map();
+// the fit of one curve (dB on the correction grid), cached by its contents
+function fitCurve(curve, n, fHi) {
+  let h = 0;
+  for (let i = 0; i < curve.length; i += 3) h = (h * 31 + Math.round(curve[i] * 100)) | 0;
+  const key = `${n}|${fHi}|${h}`;
+  if (FIT_CACHE.has(key)) return FIT_CACHE.get(key);
+  const r = fitPeq(Array.from(corrFreqs()), Array.from(curve), n, fHi);
+  if (FIT_CACHE.size > 40) FIT_CACHE.clear();
+  FIT_CACHE.set(key, r);
+  return r;
+}
+const avgCurve = (sides) => sides[0].correction.map((_, i) => sides.reduce((a, sd) => a + sd.correction[i], 0) / sides.length);
+
+// the text the Windows equalizer, WiiM, Poweramp and REW-style importers (miniDSP) read; the preamp keeps every boost
+// under 0 dB
+function peqText(fit, title) {
+  let top = 0;
+  for (let hz = 20; hz <= 20000; hz *= Math.pow(2, 1 / 24)) top = Math.max(top, fit.curve(hz));
+  const kind = (k) => (k === 'LS' ? 'LSC' : k === 'HS' ? 'HSC' : 'PK');
+  const lines = [`Preamp: ${(-top).toFixed(1)} dB`];
+  fit.filters.forEach((b, i) => lines.push(`Filter ${i + 1}: ON ${kind(b.kind)} Fc ${Math.round(b.fc)} Hz Gain ${b.gain.toFixed(1)} dB Q ${b.q.toFixed(2)}`));
+  return `# ${title}\n# pump ROOM parametric EQ: ${fit.filters.length} filters, within ${fit.worst.toFixed(1)} dB of the full correction (30 Hz to 10 kHz)\n` + lines.join('\n') + '\n';
+}
+
+function exportPeq(d, name, n, fHi, headphones) {
+  if (!d) return;
+  const sides = d.sides.filter(Boolean);
+  status('Fitting the parametric EQ…');
+  setTimeout(() => {
+    const same = headphones || sides.length < 2;
+    if (same) {
+      const fit = fitCurve(sides[0].correction, n, fHi);
+      download(`${fileName(name)} ParametricEQ.txt`, peqText(fit, `${name}${headphones ? ' (headphones)' : ''}`), 'text/plain');
+      status(`Saved a ${fit.filters.length}-band parametric EQ, within ${fit.worst.toFixed(1)} dB of the full correction. It includes the volume cut: turning the EQ off on the device plays louder.`);
+      return;
+    }
+    const both = fitCurve(avgCurve(sides), n, fHi), L = fitCurve(d.sides[0].correction, n, fHi), R = fitCurve(d.sides[1].correction, n, fHi);
+    const enc = (t) => new TextEncoder().encode(t);
+    const readme = [`pump ROOM parametric EQ: ${name}`, '',
+      `${name} ParametricEQ.txt      one EQ for both speakers (the two speakers' corrections averaged): WiiM in Stereo mode, Poweramp, the Windows equalizer`,
+      `${name} ParametricEQ L.txt / R.txt  each speaker's own: WiiM in L/R mode, miniDSP (import each into its channel's PEQ)`, '',
+      `Each file has ${n} filters at most and a Preamp line, so nothing boosts above 0 dB. They include the volume cut: turning`,
+      'the EQ off on the device plays louder by that much. Time alignment and phase correction need the full filters',
+      '(SAVE PROFILE, the Windows, Pi or convolution exports): a parametric EQ carries the levels only.', ''].join('\n');
+    download(`${fileName(name)}-parametric-eq.zip`, zip([
+      { name: `${name} ParametricEQ.txt`, data: enc(peqText(both, `${name} (both speakers)`)) },
+      { name: `${name} ParametricEQ L.txt`, data: enc(peqText(L, `${name} (left speaker)`)) },
+      { name: `${name} ParametricEQ R.txt`, data: enc(peqText(R, `${name} (right speaker)`)) },
+      { name: 'README.txt', data: enc(readme) }]), 'application/zip');
+    status(`Saved the parametric EQ (both speakers, and left / right): within ${Math.max(L.worst, R.worst).toFixed(1)} dB of the full correction. README.txt says which file goes where.`);
+  }, 30);
+}
+
+// Players with a convolution engine (Roon, JRiver, foobar2000, HQPlayer): one stereo filter per common rate, the
+// preamp and time alignment inside, in a folder, zipped (Roon loads the zip as it is)
+function exportConv(d, name, linear, kind) {
+  if (!d) return;
+  const files = [], rates = [44100, 48000, 88200, 96000, 176400, 192000], dir = fileName(name);
+  for (const fs of rates) {
+    const ch = [0, 1].map((s) => {
+      const side = d.sides[s] ? s : (s ? 0 : 1);
+      const n = W.x.room_corr_fir(side, fs, linear ? 1 : 0);
+      return W.f32(W.x.room_fir_ptr(), n).slice();
+    });
+    files.push({ name: `${dir}/${dir}-${fs}.wav`, data: wav(ch, fs) });
+  }
+  const readme = [`pump ROOM correction "${name}" for players with a convolution engine`, '',
+    `${kind}. One stereo filter (32-bit float WAV) per sample rate: 44.1, 48, 88.2, 96, 176.4 and 192 kHz.`,
+    `The preamp (${d.preamp.toFixed(2)} dB, headroom for the boosts) and the time alignment are inside the filters.`, '',
+    'Roon: Settings of the zone > DSP Engine > Convolution > add this zip as it is. Roon picks the filter for each rate.',
+    'JRiver Media Center: DSP Studio > Convolution > choose the WAV for your output rate (or use JRiver\'s resampling).',
+    'foobar2000: add the Convolver DSP and load the WAV for your output rate.',
+    'HQPlayer: Convolution > load the WAV for the rate it outputs.', '',
+    'They include the volume cut: turning convolution off in the player plays louder by that much.', ''].join('\n');
+  files.push({ name: `${dir}/README.txt`, data: new TextEncoder().encode(readme) });
+  download(`${dir}-convolution.zip`, zip(files), 'application/zip');
+  status('Saved the convolution filters: Roon takes the zip as it is; README.txt has the other players.');
+}
+
+// the EXPORT menus: open on click, close on a choice, a click elsewhere or Esc
+function initMenus() {
+  for (const id of ['cExportMenu', 'hpExportMenu']) {
+    const m = $(id), list = m.querySelector('.menu-list'), btn = m.querySelector('button');
+    btn.onclick = (e) => { e.stopPropagation(); list.hidden = !list.hidden; };
+    list.addEventListener('click', () => { list.hidden = true; });
+  }
+  document.addEventListener('click', () => document.querySelectorAll('.menu-list').forEach((l) => { l.hidden = true; }));
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') document.querySelectorAll('.menu-list').forEach((l) => { l.hidden = true; }); });
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -2047,6 +2273,7 @@ function init() {
   $('hRestart').onclick = () => { if (!S.busy) handReset(); showHand(); };
   initCorrection();
   initHeadphones();
+  initMenus();
   seg('smooth', (v) => { S.smooth = +v; draw(); });
   seg('win', (v) => {
     S.windowMs = +v;
@@ -2065,7 +2292,7 @@ function init() {
   new ResizeObserver(() => draw()).observe(canvas);
   if (document.fonts) document.fonts.ready.then(draw);
   if (S.sim) status('Test mode: a simulated room stands in for the speakers and mic. START AUDIO, then MEASURE.');
-  window.pumpRoom = { S, W, H, handFind, handCenter, handStart, parseHeadphoneFile, designHeadphones, HP_TARGETS, filtersDb, measure, startAudio, applyCal, saveSession, openSession, draw, designCorrection, saveProfile, exportWindows, exportPi };   // for tests
+  window.pumpRoom = { S, W, H, fitPeq, fitCurve, handFind, handCenter, handStart, parseHeadphoneFile, designHeadphones, HP_TARGETS, filtersDb, measure, startAudio, applyCal, saveSession, openSession, draw, designCorrection, saveProfile, exportWindows, exportPi };   // for tests
 }
 
 init();

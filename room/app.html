@@ -109,8 +109,10 @@
             <button class="key toggle on" id="cLow" title="No boost below the speakers' own low-end roll-off">PROTECT LOW END</button>
             <button class="key toggle on" id="cAlign" title="Delay the nearer speaker so both arrive together">TIME ALIGN</button>
             <button class="key toggle" id="cPhase" title="Line up each speaker's bass, mids and treble in time (its roll-off and crossover make the low end arrive late). Needs linear-phase filters">ALIGN PHASE</button>
+            <button class="key toggle" id="cFit" title="Fit a few bell and shelf filters to the correction (what PARAMETRIC EQ exports) and draw them on the graph">SHOW EQ FIT</button>
             <button class="key toggle on" id="cSpread" title="Correct less where the positions disagree (room modes that change from seat to seat): with 4 or more positions">SPREAD-AWARE</button>
           </div>
+          <div class="row" id="cBandsRow" hidden><span>EQ BANDS</span><div class="seg" id="cBands" title="How many filters the parametric EQ may use (WiiM: 10)"><button data-v="5">5</button><button data-v="8">8</button><button data-v="10" class="on">10</button><button data-v="15">15</button></div></div>
           <div class="readout" id="cInfo"></div>
         </div>
       </div>
@@ -118,9 +120,16 @@
         <label class="row"><span>NAME</span><input type="text" id="cName" value="My room" maxlength="60"></label>
         <div class="seg" id="cLat" title="Filters for the exports: minimum phase has no latency; linear phase adds about 0.17 s and carries the phase correction"><button data-v="min" class="on">NO LATENCY</button><button data-v="linear">LINEAR PHASE</button></div>
         <button class="key hot" id="cSave" title="A .pumproom file for pump ROOM (the plugin) and System EQ">SAVE PROFILE</button>
-        <button class="key" id="cWin" title="Filters and a config file for the system-wide equalizer on Windows">EXPORT FOR WINDOWS</button>
-        <button class="key" id="cPi" title="Filters, a CamillaDSP config and an install script for a Raspberry Pi between your sources and speakers">EXPORT FOR PI</button>
-        <button class="key" id="cWavelet" title="A GraphicEQ line for Wavelet (Android) and other apps that take one">EXPORT FOR WAVELET</button>
+        <div class="menu" id="cExportMenu">
+          <button class="key" id="cExport" aria-haspopup="true" title="The correction for other software and devices">EXPORT ▾</button>
+          <div class="menu-list" hidden>
+            <button class="key" id="cWin" title="Filters and a config file for the system-wide equalizer on Windows">WINDOWS <small>system-wide equalizer</small></button>
+            <button class="key" id="cPi" title="Filters, a CamillaDSP config and an install script for a Raspberry Pi between your sources and speakers">RASPBERRY PI <small>CamillaDSP, moOde, Volumio</small></button>
+            <button class="key" id="cConv" title="Filters for players with a convolution engine">CONVOLUTION <small>Roon, JRiver, foobar2000, HQPlayer</small></button>
+            <button class="key" id="cPeq" title="A few bell and shelf filters fitted to the correction">PARAMETRIC EQ <small>WiiM, miniDSP, Poweramp, APO</small></button>
+            <button class="key" id="cWavelet" title="A GraphicEQ line for Wavelet (Android) and other apps that take one">GRAPHIC EQ <small>Wavelet</small></button>
+          </div>
+        </div>
         <button class="key" id="cPiGuide" title="What to buy for a Raspberry Pi correction box, and how to set it up">PI: WHAT TO BUY</button>
       </div>
     </div>
@@ -142,14 +151,22 @@
         <div>
           <label class="row"><span>MAX BOOST</span><input type="range" id="hpBoost" min="0" max="15" step="0.5" value="8"><b class="num" id="hpBoostT"></b></label>
           <div class="row"><span>UP TO</span><div class="seg" id="hpHi" title="Above this the correction fades out: measurements of the top octave vary with how the headphones sit"><button data-v="8000">8K</button><button data-v="12000" class="on">12K</button><button data-v="20000">20K</button></div></div>
+          <div class="row"><span>EQ BANDS</span><div class="seg" id="hpBands" title="How many filters the parametric EQ may use (WiiM: 10); the fit is drawn dotted"><button data-v="5">5</button><button data-v="8">8</button><button data-v="10" class="on">10</button><button data-v="15">15</button></div><button class="key toggle" id="hpFit" title="Draw the parametric EQ fit on the graph">FIT</button></div>
           <div class="readout" id="hpOut"></div>
         </div>
       </div>
       <div class="corr-save">
         <label class="row"><span>NAME</span><input type="text" id="hpName" value="My headphones" maxlength="60"></label>
         <button class="key hot" id="hpSave" disabled title="A .pumproom headphone file for System EQ (its Headphones menu) and pump ROOM (the plugin)">SAVE PROFILE</button>
-        <button class="key" id="hpWavelet" disabled title="A GraphicEQ line for Wavelet (Android) and other apps that take one">EXPORT FOR WAVELET</button>
-        <button class="key" id="hpWin" disabled title="Filters and a config file for the system-wide equalizer on Windows">EXPORT FOR WINDOWS</button>
+        <div class="menu" id="hpExportMenu">
+          <button class="key" id="hpExport" disabled aria-haspopup="true" title="The correction for other software and devices">EXPORT ▾</button>
+          <div class="menu-list" hidden>
+            <button class="key" id="hpWavelet" title="A GraphicEQ line for Wavelet (Android) and other apps that take one">GRAPHIC EQ <small>Wavelet</small></button>
+            <button class="key" id="hpPeq" title="A few bell and shelf filters fitted to the correction">PARAMETRIC EQ <small>WiiM, miniDSP, Poweramp, APO</small></button>
+            <button class="key" id="hpConv" title="Filters for players with a convolution engine">CONVOLUTION <small>Roon, JRiver, foobar2000, HQPlayer</small></button>
+            <button class="key" id="hpWin" title="Filters and a config file for the system-wide equalizer on Windows">WINDOWS <small>system-wide equalizer</small></button>
+          </div>
+        </div>
       </div>
       <p class="hint">Headphones can't be measured with a measurement mic in the open: they need an ear simulator. Load a published measurement of your model (a frequency / dB list, ideally from the same kind of ear simulator the targets assume) or a parametric or graphic EQ file made for it. A file with a target column uses that target with FILE. EQ files are applied as they are, with your tilt, bass and treble on top.</p>
     </div>

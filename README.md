@@ -154,6 +154,12 @@ it to Applications; the first time, right-click > Open, since it isn't notarized
   Profiles* and *Headphones* submenus that switches what the free system-wide equalizer for Windows applies (it
   writes the filters and one included file; the equalizer reloads at once). Double-click a `.pumproom` file to add it;
   each output can keep its own profile. Setup: `ROOM-PROFILES-windows.txt` in the zip.
+- **EXPORT ▾** gathers the exports (correction and headphones alike): *Windows*, *Raspberry Pi* (also moOde and
+  Volumio), *Convolution* (Roon takes the zip as it is; JRiver, foobar2000, HQPlayer), *Parametric EQ* (5–15 bell and
+  shelf filters fitted to the correction, for WiiM, miniDSP, Poweramp and the Windows equalizer's parametric mode;
+  left, right and both-speaker files for a room) and *Graphic EQ* (Wavelet). *SHOW EQ FIT* draws the parametric fit
+  dotted over the correction with how close it is. Exports never change the measurements or the profiles; the app
+  ones include the volume cut, so turning their EQ off plays louder.
 - **EXPORT FOR WINDOWS** makes filters (every common sample rate) and a config file for the free system-wide
   equalizer for Windows that reads `config.txt`: unzip into its config folder and add `Include: pump-room.txt`.
 - **EXPORT FOR PI** makes the same filters with a CamillaDSP config and an install script, for a Raspberry Pi with a
