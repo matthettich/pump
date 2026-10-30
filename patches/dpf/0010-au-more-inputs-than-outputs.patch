@@ -1,0 +1,69 @@
+diff --git a/distrho/src/DistrhoPluginAU.cpp b/distrho/src/DistrhoPluginAU.cpp
+index 9387449..294c5de 100644
+--- a/distrho/src/DistrhoPluginAU.cpp
++++ b/distrho/src/DistrhoPluginAU.cpp
+@@ -1885,7 +1885,19 @@ public:
+             DISTRHO_SAFE_ASSERT_RETURN(fPlugin.isActive(), kAudio_ParamError);
+             DISTRHO_SAFE_ASSERT_UINT_RETURN(inBusNumber == 0, inBusNumber, kAudioUnitErr_InvalidElement);
+            #if DISTRHO_PLUGIN_NUM_INPUTS + DISTRHO_PLUGIN_NUM_OUTPUTS != 0
+-            DISTRHO_SAFE_ASSERT_UINT_RETURN(ioData->mNumberBuffers == fAudioBufferList->mNumberBuffers,
++            // the output bus's buffers: as many as outputs (fewer than the internal list when there are more
++            // inputs, e.g. a stereo effect with a stereo sidechain), or the whole internal list
++           #if DISTRHO_PLUGIN_NUM_OUTPUTS != 0
++            #ifdef DISTRHO_PLUGIN_EXTRA_IO
++            const UInt32 numOutputBuffers = fNumOutputs;
++            #else
++            const UInt32 numOutputBuffers = DISTRHO_PLUGIN_NUM_OUTPUTS;
++            #endif
++           #else
++            const UInt32 numOutputBuffers = fAudioBufferList->mNumberBuffers;
++           #endif
++            DISTRHO_SAFE_ASSERT_UINT_RETURN(ioData->mNumberBuffers == fAudioBufferList->mNumberBuffers ||
++                                            ioData->mNumberBuffers == numOutputBuffers,
+                                             ioData->mNumberBuffers, kAudio_ParamError);
+            #else
+             DISTRHO_SAFE_ASSERT_UINT_RETURN(ioData->mNumberBuffers == 0, ioData->mNumberBuffers, kAudio_ParamError);
+@@ -1975,6 +1987,10 @@ public:
+                 }
+             }
+ 
++            // more inputs than the output bus has buffers: the input is pulled into the internal list
++            if (ioData->mNumberBuffers < numInputs)
++                usingHostBuffer = false;
++
+             if (! usingHostBuffer)
+             {
+                 prevDataByteSize = fAudioBufferList->mBuffers[0].mDataByteSize;
+@@ -1982,7 +1998,7 @@ public:
+ 
+                 if (adjustDataByteSize)
+                 {
+-                    for (uint16_t i = 0; i < ioData->mNumberBuffers; ++i)
++                    for (uint16_t i = 0; i < fAudioBufferList->mNumberBuffers; ++i)
+                         fAudioBufferList->mBuffers[i].mDataByteSize = sizeof(float) * inFramesToProcess;
+                 }
+             }
+@@ -2004,7 +2020,7 @@ public:
+             {
+                 if (adjustDataByteSize)
+                 {
+-                    for (uint16_t i = 0; i < ioData->mNumberBuffers; ++i)
++                    for (uint16_t i = 0; i < fAudioBufferList->mNumberBuffers; ++i)
+                         fAudioBufferList->mBuffers[i].mDataByteSize = prevDataByteSize;
+                 }
+ 
+@@ -2040,6 +2056,14 @@ public:
+            #if DISTRHO_PLUGIN_NUM_INPUTS != 0
+             for (uint16_t i = 0; i < numInputs; ++i)
+             {
++                // no input connected: inputs beyond the output bus's buffers (a sidechain) are silent
++                if (i >= ioData->mNumberBuffers)
++                {
++                    std::memset(fAudioBufferList->mBuffers[i].mData, 0, sizeof(float) * inFramesToProcess);
++                    inputs[i] = static_cast<const float*>(fAudioBufferList->mBuffers[i].mData);
++                    continue;
++                }
++
+                 if (ioData->mBuffers[i].mData == nullptr)
+                 {
+                     ioData->mBuffers[i].mData = fAudioBufferList->mBuffers[i].mData;
