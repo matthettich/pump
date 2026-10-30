@@ -1398,8 +1398,11 @@ const WHEEL_NEON = [0xFF7466, 0xFFD04A, 0xC8FF4D, 0x5CFFB4, 0x4DF3FF, 0x73B4FF, 
                     0xFFB24F, 0xDCEB5A, 0x8CFF5A, 0x3DF5D0, 0x5CCBFF, 0x949FFF, 0xDD77FF, 0xFF92C2];
 const WHEEL_INK = [0x8C2318, 0x6B4700, 0x3B5C00, 0x006E44, 0x00636D, 0x1443AC, 0x4528B5, 0x8C1257,
                    0x934000, 0x4E5700, 0x235C00, 0x006652, 0x00527A, 0x262C99, 0x650C8A, 0x8A1450];
-const dotColour = (i) => rgb(WHEEL_NEON.at(((i % 16) + 16) % 16));
-const dotInk = (i) => theme.dark ? mix(dotColour(i), rgb(0xffffff), 0.18) : rgb(WHEEL_INK.at(((i % 16) + 16) % 16));
+// pastel: the wheel's bright shade softened toward white (the fill once a point is measured); the outline before
+// that is a deeper shade of the same hue, so it stands out on the light page (on the dark page, the pastel itself)
+const wheelAt = (arr, i) => rgb(arr.at(((i % 16) + 16) % 16));
+const dotColour = (i) => mix(wheelAt(WHEEL_NEON, i), rgb(0xffffff), theme.dark ? 0.25 : 0.38);
+const dotInk = (i) => theme.dark ? dotColour(i) : mix(wheelAt(WHEEL_INK, i), wheelAt(WHEEL_NEON, i), 0.3);
 
 function handPhase(phase) {
   if (phase === 'measuring' && H.phase !== 'measuring') S.runProgress = 0;
@@ -1658,29 +1661,31 @@ function drawHand(w, h) {
   }
   const now = performance.now();
   const marks = (P, pxs, pys, r, bold) => {
-    // the current dot's state, under its outline
+    // the current dot's state: still unfilled; reached, its outline swells and ripples; measuring, a ring fills
     const cur = H.targets[H.cur];
     if (cur && H.phase !== 'away') {
-      const cx = pxs(cur.x), cy = pys(cur.y), beat = 0.5 + 0.5 * Math.sin(now / 160), col = dotColour(H.cur);
+      const cx = pxs(cur.x), cy = pys(cur.y), beat = 0.5 + 0.5 * Math.sin(now / 160), ink = dotInk(H.cur);
       if (H.phase === 'on') {
-        // reached: it lights up and breathes, a ring ripples outward
-        g2.beginPath(); g2.arc(cx, cy, r, 0, Math.PI * 2); g2.fillStyle = css(col, 0.35 + 0.4 * beat); g2.fill();
-        const ripple = (now % 900) / 900;
-        g2.beginPath(); g2.arc(cx, cy, r * (1 + 0.8 * ripple), 0, Math.PI * 2);
-        g2.strokeStyle = css(col, 1 - ripple); g2.lineWidth = bold ? 3 : 2; g2.stroke();
+        g2.beginPath(); g2.arc(cx, cy, r * (1 + 0.08 * beat), 0, Math.PI * 2);
+        g2.strokeStyle = css(ink); g2.lineWidth = (bold ? 4 : 2.5) + (bold ? 3 : 1.5) * beat; g2.stroke();
+        for (const k of [0, 0.5]) {
+          const ripple = ((now / 1000 + k * 0.9) % 0.9) / 0.9;
+          g2.beginPath(); g2.arc(cx, cy, r * (1 + 0.9 * ripple), 0, Math.PI * 2);
+          g2.strokeStyle = css(ink, 0.8 * (1 - ripple)); g2.lineWidth = bold ? 2.5 : 1.5; g2.stroke();
+        }
       } else if (H.phase === 'measuring') {
-        // measuring: solid, with a ring filling clockwise as the sweeps play
-        g2.beginPath(); g2.arc(cx, cy, r, 0, Math.PI * 2); g2.fillStyle = css(col, 0.75 + 0.2 * beat); g2.fill();
+        g2.beginPath(); g2.arc(cx, cy, r, 0, Math.PI * 2);
+        g2.strokeStyle = css(ink); g2.lineWidth = (bold ? 4 : 2.5) + (bold ? 1.5 : 0.75) * beat; g2.stroke();
         const p = Math.max(0.02, Math.min(1, S.runProgress || 0));
-        g2.beginPath(); g2.arc(cx, cy, r + (bold ? 7 : 4), -Math.PI / 2, -Math.PI / 2 + p * Math.PI * 2);
-        g2.strokeStyle = css(theme.ink); g2.lineWidth = bold ? 4 : 2.5; g2.lineCap = 'round'; g2.stroke(); g2.lineCap = 'butt';
+        g2.beginPath(); g2.arc(cx, cy, r + (bold ? 8 : 4.5), -Math.PI / 2, -Math.PI / 2 + p * Math.PI * 2);
+        g2.strokeStyle = css(ink); g2.lineWidth = bold ? 4 : 2.5; g2.lineCap = 'round'; g2.stroke(); g2.lineCap = 'butt';
       }
     }
     // a point just kept bursts outward (or flashes red when it wasn't kept)
     if (H.pop && H.targets[H.pop.i]) {
       const a = Math.min(1, (now - H.pop.t) / 700), t0 = H.targets[H.pop.i], cx = pxs(t0.x), cy = pys(t0.y);
       if (a < 1) {
-        const col = H.pop.ok ? dotColour(H.pop.i) : theme.red;
+        const col = H.pop.ok ? dotInk(H.pop.i) : theme.red;
         for (const k of [0, 0.25]) {
           const b = Math.max(0, a - k) / (1 - k);
           if (b <= 0) continue;
@@ -1696,12 +1701,18 @@ function drawHand(w, h) {
     }
     H.targets.forEach((t, i) => {
       const col = dotColour(i), ink = dotInk(i);
+      // to do: an outline in its colour, no fill (the one to go to next, a heavier one); measured: filled pastel
+      if (i === H.cur && H.phase !== 'away') return;   // drawn above, by its state
+      const grow = H.pop && H.pop.ok && H.pop.i === i ? (now - H.pop.t) / 260 : 1;
+      if (grow < 1) {   // just measured: the fill flows in from the centre, inside its outline
+        g2.beginPath(); g2.arc(pxs(t.x), pys(t.y), r * grow, 0, Math.PI * 2); g2.fillStyle = css(col); g2.fill();
+        g2.beginPath(); g2.arc(pxs(t.x), pys(t.y), r, 0, Math.PI * 2); g2.strokeStyle = css(ink); g2.lineWidth = bold ? 2.5 : 1.5; g2.stroke();
+        return;
+      }
       g2.beginPath(); g2.arc(pxs(t.x), pys(t.y), r, 0, Math.PI * 2);
-      if (H.done[i]) { g2.fillStyle = css(col); g2.fill(); }
-      else if (i !== H.cur || H.phase === 'away') { g2.fillStyle = css(col, i === H.cur ? 0.45 : (theme.dark ? 0.16 : 0.28)); g2.fill(); }
-      g2.strokeStyle = css(i === H.cur ? theme.ink : ink);
-      g2.lineWidth = i === H.cur ? (bold ? 3.5 : 2.5) : (bold ? 2 : 1.25); g2.stroke();
-      if (H.done[i] && r > 8) { g2.fillStyle = css(rgb(WHEEL_INK.at(i % 16))); g2.font = font(Math.min(16, r)); g2.textAlign = 'center'; g2.textBaseline = 'middle'; g2.fillText('✓', pxs(t.x), pys(t.y)); }
+      if (H.done[i]) { g2.fillStyle = css(col); g2.fill(); g2.strokeStyle = css(col); g2.lineWidth = 1; g2.stroke(); }
+      else { g2.strokeStyle = css(ink); g2.lineWidth = i === H.cur ? (bold ? 4 : 2.5) : (bold ? 2.5 : 1.5); g2.stroke(); }
+      if (H.done[i] && r > 8) { g2.fillStyle = css(wheelAt(WHEEL_INK, i)); g2.font = font(Math.min(16, r)); g2.textAlign = 'center'; g2.textBaseline = 'middle'; g2.fillText('✓', pxs(t.x), pys(t.y)); }
     });
     // heights: points at the same spot drawn as one dot, with ▲ / ▼ beside it for the raised and lowered ones
     if (r > 8) H.targets.forEach((t, i) => {
