@@ -120,6 +120,7 @@
         <button class="key hot" id="cSave" title="A .pumproom file for pump ROOM (the plugin) and System EQ">SAVE PROFILE</button>
         <button class="key" id="cWin" title="Filters and a config file for the system-wide equalizer on Windows">EXPORT FOR WINDOWS</button>
         <button class="key" id="cPi" title="Filters, a CamillaDSP config and an install script for a Raspberry Pi between your sources and speakers">EXPORT FOR PI</button>
+        <button class="key" id="cPiGuide" title="What to buy for a Raspberry Pi correction box, and how to set it up">PI: WHAT TO BUY</button>
       </div>
     </div>
     <div class="panel corr" id="hpPanel" hidden>
@@ -173,11 +174,18 @@
   </section>
 </main>
 
+<div class="guide-wrap" id="guide" hidden>
+  <div class="panel guide" role="dialog" aria-modal="true" aria-label="Pi correction box: what to buy">
+    <div class="guide-head"><span class="cap">PI CORRECTION BOX</span><span class="spacer"></span><button class="key" id="guideClose">CLOSE</button></div>
+    <div class="guide-body">@PIGUIDE@</div>
+  </div>
+</div>
 <footer class="status" id="status">Ready.</footer>
 
 <script>
 const ROOM_WASM = "@WASM@";
 const ROOM_BUILD = @BUILD@;
+const PI_GUIDE_MD = @PIGUIDE_MD@;
 const ROOM_WORKLET = @WORKLET@;
 </script>
 <script>

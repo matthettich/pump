@@ -28,6 +28,43 @@ python3 - "$H" "$O/pump-room.wasm" "$OUT" "$BUILD_ID" "$BUILD_TIME" <<'PY'
 import base64, json, sys, os
 h, wasm, out, build_id, build_time = sys.argv[1:6]
 build = json.dumps({'id': build_id, 'time': int(build_time)})
+
+# the Pi buying guide (docs/PI-BOX.md) as HTML: headings, paragraphs, lists, tables, bold, italics, code, links
+import html, re
+def md_inline(t):
+    t = html.escape(t, quote=False)
+    t = re.sub(r'`([^`]+)`', r'<code>\1</code>', t)
+    t = re.sub(r'\*\*([^*]+)\*\*', r'<b>\1</b>', t)
+    t = re.sub(r'(?<![*\w])\*([^*]+)\*(?!\*)', r'<i>\1</i>', t)
+    t = re.sub(r'\[([^\]]+)\]\((https?://[^)\s]+)\)', r'<a href="\2" target="_blank" rel="noopener">\1</a>', t)
+    return t
+def md_html(md):
+    out, lines, i = [], md.split('\n'), 0
+    while i < len(lines):
+        l = lines[i]
+        if not l.strip(): i += 1; continue
+        m = re.match(r'(#{1,3}) (.*)', l)
+        if m:
+            n = len(m.group(1)); out.append('<h%d>%s</h%d>' % (n, md_inline(m.group(2)), n)); i += 1; continue
+        if l.startswith('|'):
+            rows = []
+            while i < len(lines) and lines[i].startswith('|'):
+                rows.append([c.strip() for c in lines[i].strip().strip('|').split('|')]); i += 1
+            body = [r for r in rows[1:] if not all(re.fullmatch(r'-+', c) for c in r)]
+            t = '<div class="guide-table"><table><tr>' + ''.join('<th>%s</th>' % md_inline(c) for c in rows[0]) + '</tr>'
+            t += ''.join('<tr>' + ''.join('<td>%s</td>' % md_inline(c) for c in r) + '</tr>' for r in body) + '</table></div>'
+            out.append(t); continue
+        m = re.match(r'(- |\d+\. )', l)
+        if m:
+            tag = 'ul' if l.startswith('- ') else 'ol'; items = []
+            while i < len(lines) and re.match(r'(- |\d+\. )', lines[i]):
+                items.append(re.sub(r'^(- |\d+\. )', '', lines[i])); i += 1
+            out.append('<%s>%s</%s>' % (tag, ''.join('<li>%s</li>' % md_inline(x) for x in items), tag)); continue
+        para = []
+        while i < len(lines) and lines[i].strip() and not re.match(r'(#|\||- |\d+\. )', lines[i]):
+            para.append(lines[i]); i += 1
+        out.append('<p>%s</p>' % md_inline(' '.join(para)))
+    return '\n'.join(out)
 r = lambda p: open(os.path.join(h, p), encoding='utf-8').read()
 b64 = lambda p: base64.b64encode(open(p, 'rb').read()).decode()
 page = r('room/app.html')
@@ -37,6 +74,8 @@ for key, value in [('@STYLE@', r('room/app.css')),
                    ('@WASM@', b64(wasm)),
                    ('@WORKLET@', json.dumps(r('room/worklet.js'))),
                    ('@BUILD@', build),
+                   ('@PIGUIDE@', md_html(r('docs/PI-BOX.md'))),
+                   ('@PIGUIDE_MD@', json.dumps(r('docs/PI-BOX.md')).replace('</', '<\\/')),
                    ('@SCRIPT@', r('room/app.js'))]:
     assert key in page, key
     page = page.replace(key, value)

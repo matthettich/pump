@@ -1080,6 +1080,10 @@ function initCorrection() {
   $('cSave').onclick = saveProfile;
   $('cWin').onclick = () => exportWindows();
   $('cPi').onclick = exportPi;
+  $('cPiGuide').onclick = () => { $('guide').hidden = false; $('guideClose').focus(); };
+  $('guideClose').onclick = () => { $('guide').hidden = true; };
+  $('guide').onclick = (e) => { if (e.target === $('guide')) $('guide').hidden = true; };
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('guide').hidden) $('guide').hidden = true; });
   showCorrControls();
 }
 
@@ -1141,7 +1145,7 @@ function exportPi() {
   for (const fs of rates)
     for (const s of [0, 1]) {
       const side = d.sides[s] ? s : (s ? 0 : 1);
-      const n = W.x.room_corr_fir(side, fs, linear ? 1 : 0);
+      const n = W.x.room_corr_fir(side, fs, S.corr.linear ? 1 : 0);
       files.push({ name: `coeffs/pump-room-${s ? 'R' : 'L'}-${fs}.wav`, data: wav([W.f32(W.x.room_fir_ptr(), n).slice()], fs) });
     }
   const yml = [
@@ -1236,6 +1240,7 @@ function exportPi() {
   const readme = [`pump ROOM correction "${name}" for a Raspberry Pi`, '',
     'The Pi sits between your sources and your speakers (or amp): sources -> audio interface line in -> Pi',
     '(CamillaDSP applies the correction) -> audio interface line out -> speakers.', '',
+    'Shopping list and a longer walkthrough: WHAT-TO-BUY.md (also PI: WHAT TO BUY in pump ROOM).', '',
     'Set up (once per box):',
     '1. Put Raspberry Pi OS Lite (64-bit) on a microSD card with Raspberry Pi Imager; in its settings turn on SSH',
     '   and Wi-Fi so you can reach the Pi from your computer.',
@@ -1252,6 +1257,7 @@ function exportPi() {
     'Latency: about the chunk size (1024 samples, 21 ms at 48 kHz) plus the interface\'s own. Lower chunksize for',
     'less (the Pi has to keep up: if you hear dropouts, raise it again).', ''].join('\n');
   files.push({ name: 'README.txt', data: new TextEncoder().encode(readme) });
+  files.push({ name: 'WHAT-TO-BUY.md', data: new TextEncoder().encode(PI_GUIDE_MD) });
   download(`${fileName(name)}-pi.zip`, zip(files), 'application/zip');
   status('Exported for a Pi: unzip, then follow README.txt.');
 }

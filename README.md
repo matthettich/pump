@@ -152,6 +152,8 @@ it to Applications; the first time, right-click > Open, since it isn't notarized
   equalizer for Windows that reads `config.txt`: unzip into its config folder and add `Include: pump-room.txt`.
 - **EXPORT FOR PI** makes the same filters with a CamillaDSP config and an install script, for a Raspberry Pi with a
   USB audio interface between your sources and your speakers: one cheap box per room (`README.txt` in the zip).
+  **PI: WHAT TO BUY** beside it opens the shopping list and setup guide ([docs/PI-BOX.md](docs/PI-BOX.md)), which
+  every Pi export also carries as `WHAT-TO-BUY.md`.
 
 ## Using them
 
