@@ -1024,7 +1024,7 @@ function drawDesign(w, h, d, cfg) {
 
 function showCorrInfo(d) {
   const el = $('cInfo');
-  $('cSave').disabled = $('cWin').disabled = $('cPi').disabled = !d;
+  $('cSave').disabled = $('cWin').disabled = $('cPi').disabled = $('cWavelet').disabled = !d;
   if (!d) { el.innerHTML = ''; return; }
   const parts = [`PREAMP <b>${d.preamp.toFixed(1)} dB</b>`];
   d.sides.forEach((sd, s) => {
@@ -1081,6 +1081,7 @@ function initCorrection() {
   $('cSave').onclick = saveProfile;
   $('cWin').onclick = () => exportWindows();
   $('cPi').onclick = exportPi;
+  $('cWavelet').onclick = () => exportGraphicEq(designCorrection(), profileName(), 'the room correction');
   $('cPiGuide').onclick = () => { $('guide').hidden = false; $('guideClose').focus(); };
   $('guideClose').onclick = () => { $('guide').hidden = true; };
   $('guide').onclick = (e) => { if (e.target === $('guide')) $('guide').hidden = true; };
@@ -1134,6 +1135,32 @@ function exportWindows(d = designCorrection(), name = profileName(), linear = S.
   files.push({ name: 'README.txt', data: new TextEncoder().encode(readme) });
   download(`${fileName(name)}-windows.zip`, zip(files), 'application/zip');
   status('Exported for Windows: unzip, then follow README.txt.');
+}
+
+// Wavelet (Android) and other apps that take a "GraphicEQ:" line: the correction, the preamp in it (nothing above
+// 0 dB), at the 127 frequencies those files use (20 Hz x 1.0563^k). Both speakers' curves are averaged (the app is one
+// EQ for both sides); a headphone correction has one curve anyway. Fine enough to carry the correction nearly whole.
+function graphicEq(d) {
+  const F = corrFreqs(), sides = d.sides.filter(Boolean);
+  if (!sides.length) return null;
+  const at = (arr, hz) => {
+    if (hz <= F[0]) return arr[0];
+    for (let i = 1; i < F.length; ++i) if (F[i] >= hz) { const t = Math.log(hz / F[i - 1]) / Math.log(F[i] / F[i - 1]); return arr[i - 1] + t * (arr[i] - arr[i - 1]); }
+    return arr[F.length - 1];
+  };
+  const pts = Array.from({ length: 127 }, (_, k) => Math.floor(20 * Math.pow(1.0563, k))).map((hz) => {
+    const db = sides.reduce((a, sd) => a + at(sd.correction, hz), 0) / sides.length;
+    return [hz, db + d.preamp];
+  });
+  const top = Math.max(0, ...pts.map((p) => p[1]));
+  return 'GraphicEQ: ' + pts.map(([hz, db]) => `${hz} ${(db - top).toFixed(1)}`).join('; ');
+}
+
+function exportGraphicEq(d, name, what) {
+  const line = d && graphicEq(d);
+  if (!line) return;
+  download(`${fileName(name)} GraphicEQ.txt`, line + '\n', 'text/plain');
+  status(`Saved ${what} for Wavelet: in Wavelet's graphic equalizer, import this file (or paste its line). It includes the volume cut, so turning Wavelet's EQ off plays louder.`);
 }
 
 // A Raspberry Pi (or any Linux box) running CamillaDSP between the sources and the speakers: one mono filter per
@@ -1857,7 +1884,7 @@ function drawHeadphones(w, h) {
 }
 
 function showHpOut(d) {
-  for (const id of ['hpSave', 'hpWin']) $(id).disabled = !d;
+  for (const id of ['hpSave', 'hpWin', 'hpWavelet']) $(id).disabled = !d;
   if (!d) { $('hpOut').innerHTML = ''; return; }
   let lo = 1e9, hi = -1e9;
   for (const v of d.sides[0].correction) { lo = Math.min(lo, v); hi = Math.max(hi, v); }
@@ -1905,6 +1932,7 @@ function initHeadphones() {
   $('hpFile').onchange = () => { const f = $('hpFile').files[0]; if (f) loadHeadphones(f); $('hpFile').value = ''; };
   $('hpClear').onclick = () => { S.hp.file = null; showHp(); draw(); };
   $('hpSave').onclick = saveHpProfile;
+  $('hpWavelet').onclick = () => exportGraphicEq(designHeadphones(), hpName(), 'the headphone correction');
   $('hpWin').onclick = () => exportWindows(designHeadphones(), hpName(), false, 'Minimum phase (no latency): headphone correction');
   showHp();
 }

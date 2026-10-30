@@ -120,6 +120,7 @@
         <button class="key hot" id="cSave" title="A .pumproom file for pump ROOM (the plugin) and System EQ">SAVE PROFILE</button>
         <button class="key" id="cWin" title="Filters and a config file for the system-wide equalizer on Windows">EXPORT FOR WINDOWS</button>
         <button class="key" id="cPi" title="Filters, a CamillaDSP config and an install script for a Raspberry Pi between your sources and speakers">EXPORT FOR PI</button>
+        <button class="key" id="cWavelet" title="A GraphicEQ line for Wavelet (Android) and other apps that take one">EXPORT FOR WAVELET</button>
         <button class="key" id="cPiGuide" title="What to buy for a Raspberry Pi correction box, and how to set it up">PI: WHAT TO BUY</button>
       </div>
     </div>
@@ -147,6 +148,7 @@
       <div class="corr-save">
         <label class="row"><span>NAME</span><input type="text" id="hpName" value="My headphones" maxlength="60"></label>
         <button class="key hot" id="hpSave" disabled title="A .pumproom headphone file for System EQ (its Headphones menu) and pump ROOM (the plugin)">SAVE PROFILE</button>
+        <button class="key" id="hpWavelet" disabled title="A GraphicEQ line for Wavelet (Android) and other apps that take one">EXPORT FOR WAVELET</button>
         <button class="key" id="hpWin" disabled title="Filters and a config file for the system-wide equalizer on Windows">EXPORT FOR WINDOWS</button>
       </div>
       <p class="hint">Headphones can't be measured with a measurement mic in the open: they need an ear simulator. Load a published measurement of your model (a frequency / dB list, ideally from the same kind of ear simulator the targets assume) or a parametric or graphic EQ file made for it. A file with a target column uses that target with FILE. EQ files are applied as they are, with your tilt, bass and treble on top.</p>
