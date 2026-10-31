@@ -122,6 +122,16 @@ column there: IN (glue threshold marked), COMP GR, LEVEL (lift), LIMIT GR, OUT (
 **Next:** pump METER's LUFS readout looks fuzzy on the owner's Windows PC (high-DPI gaming screen). Later: a
 linear-phase TONE (the reference is linear phase).
 
+## pump CONVERT window and icon (2026-10-31)
+
+The window never grows past its size any more (the owner's long playlist pushed it taller, and after a run the
+log pushed the CONVERT bar over the outputs): `body` is the window's height, the grid's columns and rows can shrink
+(`minmax(0, 1fr)`; outputs `fit-content(44%)`), every table scrolls inside its panel, the playlist has fixed columns
+(long titles and file names end in …) and tighter rows past 8 files, and the LOG opens over the panels (with CLOSE),
+paths shown from the output folder. Checked headless at 1360 × 900 and 980 × 640 with 30 files × 6 versions.
+New icon: one waveform cut by a diagonal slash, pink left of it, green right (`tools/make_convert_icon.js` draws
+`convert/icon.png`).
+
 ## Installer quits a running System EQ (2026-10-31)
 
 The owner updated with System EQ running and kept using the old copy (it looked like a bug in the new one).

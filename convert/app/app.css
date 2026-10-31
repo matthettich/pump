@@ -18,7 +18,8 @@
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
 html, body { margin: 0; height: 100%; }
-body { background: var(--bg); color: var(--ink); font: 13px/1.35 "STM", ui-monospace, monospace; letter-spacing: .02em; display: flex; flex-direction: column; min-height: 100vh; }
+/* the window never grows: every list scrolls inside its own panel, and the log opens over the panels */
+body { background: var(--bg); color: var(--ink); font: 13px/1.35 "STM", ui-monospace, monospace; letter-spacing: .02em; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
 .num, input[type=text], select, td.num { font-family: "JBM", ui-monospace, monospace; }
 button, select, input { font: inherit; color: inherit; }
 
@@ -31,13 +32,13 @@ button, select, input { font: inherit; color: inherit; }
 .engine { font-size: 11px; color: var(--ink2); }
 .engine.bad { color: var(--red); }
 
-main { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 330px; grid-template-rows: minmax(220px, 1fr) minmax(200px, auto); gap: 14px; padding: 14px; }
+main { flex: 1; min-height: 0; overflow: hidden; display: grid; grid-template-columns: minmax(0, 1fr) 330px; grid-template-rows: minmax(120px, 1fr) fit-content(44%); gap: 14px; padding: 14px; }
 .panel { background: var(--panel); border: var(--line) solid var(--ink); box-shadow: 4px 4px 0 var(--dim); padding: 10px 12px 12px; min-height: 0; display: flex; flex-direction: column; }
 .sources { grid-column: 1; grid-row: 1; }
 .meta { grid-column: 2; grid-row: 1 / span 2; overflow: auto; }
 .outputs { grid-column: 1; grid-row: 2; }
 .phead { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; }
-.phead .cap { margin: 0; border: 0; flex: 1; }
+.phead .cap { margin: 0; border: 0; flex: 1 0 auto; white-space: nowrap; }
 .tools { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 .lbl { font-size: 10px; letter-spacing: .14em; color: var(--ink2); }
 .cap { font-size: 11px; letter-spacing: .16em; color: var(--ink2); margin: 12px 0 6px; border-bottom: 1px solid var(--dim); padding-bottom: 3px; }
@@ -67,10 +68,19 @@ table.list tr.row td:first-child { border-left: 4px solid var(--c); }
 table.list tr.sel td { background: var(--cbg); }
 table.list tr.drag-over td { border-top: 2px solid var(--c); }
 table.list input[type=text], table.list select { width: 100%; height: 24px; font-size: 12px; }
+/* a long playlist: tighter rows so more of it fits */
+table.list.dense td { padding: 1px 6px; }
+table.list.dense input[type=text] { height: 20px; font-size: 11px; }
+table.list.dense td.file, table.list.dense td.fmt, table.list.dense td.len { font-size: 11px; }
 .versions th:nth-child(2) { width: 196px; } .versions th:nth-child(3) { width: 112px; } .versions th:nth-child(4) { width: 118px; } .versions th:nth-child(5) { width: 104px; } .versions th:nth-child(6) { width: 112px; } .versions th:nth-child(9) { width: 52px; }
-.c-n { width: 34px; } .c-isrc { width: 140px; } .c-fmt { width: 150px; } .c-len { width: 64px; } .c-x { width: 30px; } .c-on { width: 34px; }
+.c-n { width: 34px; } .c-isrc { width: 140px; } .c-fmt { width: 120px; } .c-len { width: 56px; } .c-x { width: 30px; } .c-on { width: 34px; }
+/* the playlist fits its panel: fixed columns, the title and file name share what is left (long names end in …) */
+#sourceTable { table-layout: fixed; min-width: 820px; }
+#sourceTable th:nth-child(2) { width: 36%; }
+#sourceTable td { overflow: hidden; text-overflow: ellipsis; }
+.versions { min-width: 1060px; }   /* narrower than this: the outputs table scrolls sideways inside its panel */
 td.n { cursor: grab; color: var(--c); font-family: "JBM", monospace; text-align: center; }
-td.file { color: var(--ink2); max-width: 240px; overflow: hidden; text-overflow: ellipsis; }
+td.file { color: var(--ink2); overflow: hidden; text-overflow: ellipsis; font-size: 12px; }
 td.fmt, td.len { color: var(--ink2); font-family: "JBM", monospace; font-size: 12px; }
 td.err { color: var(--red); }
 .x { background: none; border: 0; color: var(--ink2); cursor: pointer; font-size: 15px; padding: 0 4px; }
@@ -103,12 +113,20 @@ input[type=checkbox] { accent-color: var(--c); width: 16px; height: 16px; vertic
 .tok { height: 22px; padding: 0 6px; font-family: "JBM", monospace; font-size: 11px; background: var(--cbg); border: 1px solid var(--c); color: var(--c); cursor: pointer; }
 
 /* the run bar */
-.run { flex: none; display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-top: var(--line) solid var(--ink); background: var(--panel); }
+.run { flex: none; position: relative; display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-top: var(--line) solid var(--ink); background: var(--panel); }
 .bar { flex: 1; height: 28px; border: var(--line) solid var(--ink); background: var(--screen); position: relative; overflow: hidden; }
 #barFill { position: absolute; inset: 0 auto 0 0; width: 0; background: linear-gradient(90deg, oklch(.75 .14 20), oklch(.75 .14 140), oklch(.75 .14 260), oklch(.75 .14 340)); transition: width .2s; }
 #barText { position: absolute; inset: 0; display: flex; align-items: center; padding: 0 10px; font-size: 11px; letter-spacing: .14em; color: var(--ink); mix-blend-mode: normal; }
-.log { max-height: 34vh; overflow: auto; border-top: var(--line) solid var(--ink); background: var(--panel); flex: none; }
+.log { position: absolute; left: 14px; right: 14px; bottom: calc(100% + 8px); max-height: 46vh; display: flex; flex-direction: column; z-index: 5;
+  border: var(--line) solid var(--ink); background: var(--panel); box-shadow: 4px 4px 0 var(--dim); }
+.loghead { display: flex; align-items: center; gap: 10px; padding: 6px 10px; border-bottom: var(--line) solid var(--ink); flex: none; }
+.loghead .cap { margin: 0; border: 0; padding: 0; flex: 1; }
+.logscroll { overflow: auto; min-height: 0; }
+.log table { table-layout: fixed; }
+.log td { font-size: 11px; }
 .log td.state { width: 70px; letter-spacing: .1em; font-size: 10px; }
+.log td.file { overflow: hidden; text-overflow: ellipsis; max-width: none; color: var(--ink); }
+.log td.note { width: 34%; color: var(--ink2); overflow: hidden; text-overflow: ellipsis; }
 .log td.done { color: oklch(.55 .15 150); } .log td.warn { color: oklch(.6 .15 70); } .log td.fail { color: var(--red); } .log td.run { color: var(--ink2); }
 
 .help { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: flex; align-items: center; justify-content: center; z-index: 10; }

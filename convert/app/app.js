@@ -101,6 +101,7 @@ function renderSources() {
     tb.append(tr);
   });
   $('#dropHint').hidden = S.sources.length > 0;
+  $('#sourceTable').classList.toggle('dense', S.sources.length > 8);
   paint();
 }
 
@@ -241,15 +242,20 @@ async function go() {
   for (const j of jobs)
   {
     progress[j.id] = { pct: 0, state: 'wait' };
-    lb.append(el('tr', { id: 'job-' + j.id }, el('td', { className: 'state', textContent: 'WAITING' }), el('td', { className: 'num', textContent: j.file }), el('td', { className: 'num note' })));
+    lb.append(el('tr', { id: 'job-' + j.id }, el('td', { className: 'state', textContent: 'WAITING' }), el('td', { className: 'num file', textContent: jobPath(j.file), title: j.file }), el('td', { className: 'num note' })));
   }
-  $('#log').hidden = false;
+  $('#log').hidden = false; $('#logKey').classList.add('on');
   const r = await API.run(setup());
   running = false;
   $('#go').textContent = 'CONVERT'; $('#go').classList.remove('on');
   if (!r.ok && r.error) setBar(0, 'ERROR: ' + r.error);
   else setBar(r.cancelled ? sumPct() : 1, r.cancelled ? `STOPPED  ·  ${r.done} OF ${r.total} DONE` :
     `DONE  ·  ${r.done} FILES${r.warned ? `  ·  ${r.warned} REACH FULL SCALE (SEE LOG)` : ''}${r.failed ? `  ·  ${r.failed} FAILED (SEE LOG)` : '  ·  ALL CHECKED'}`);
+}
+// a job's file under the output folder, shown from there (the whole path is its tooltip)
+function jobPath(f) {
+  const root = (S.root || '').replace(/[\\/]+$/, '');
+  return root && f.startsWith(root) && /[\\/]/.test(f[root.length] || '') ? '…' + f.slice(root.length) : f;
 }
 function sumPct() { const v = Object.values(progress); return v.length ? v.reduce((a, b) => a + b.pct, 0) / v.length : 0; }
 API.onProgress((m) => {
@@ -319,7 +325,8 @@ $('#clearArt').onclick = () => { S.meta.artwork = ''; renderMeta(); save(); };
 $('#addTag').onclick = () => { S.meta.custom.push({ key: '', value: '' }); renderMeta(); save(); };
 $('#go').onclick = go;
 $('#openOut').onclick = () => { const f = jobs[0] ? jobs[0].file : S.root; if (f) API.reveal(f); };
-$('#logKey').onclick = () => { $('#log').hidden = !$('#log').hidden; };
+$('#logKey').onclick = () => { $('#log').hidden = !$('#log').hidden; $('#logKey').classList.toggle('on', !$('#log').hidden); };
+$('#logClose').onclick = () => { $('#log').hidden = true; $('#logKey').classList.remove('on'); };
 $('#helpKey').onclick = () => { $('#help').hidden = false; };
 $('#helpClose').onclick = () => { $('#help').hidden = true; };
 document.addEventListener('keydown', (e) => {
