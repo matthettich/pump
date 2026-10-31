@@ -39,6 +39,12 @@ not official Erica Synths firmware or software, and pump is not affiliated with 
 MACHINE as a whole, including the pump code compiled into it, is GPL-3.0-only with those terms: see
 pump-MACHINE-NOTICE.md and pump-MACHINE-LICENSE-GPL-3.0.txt next to this file (plugins/machine/ in the source).
 
+## pump CONVERT: FFmpeg (GPL / LGPL)
+The pump CONVERT app runs a separate, unmodified FFmpeg program (static builds, with the SoX resampler and LAME) that
+ships next to it in the app's resources (ffmpeg/<platform>-<arch>/, with its licence and the builder's README).
+FFmpeg is free software under the GNU GPL / LGPL; its source is at https://ffmpeg.org. pump CONVERT's own code is
+not part of FFmpeg and only starts it as a program.
+
 ## Fonts (SIL Open Font License 1.1)
 Share Tech Mono — Copyright 2012 Carrois Type Design. JetBrains Mono — Copyright 2020 The JetBrains Mono Project
 Authors. Full texts: common/fonts/OFL-*.txt.

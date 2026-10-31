@@ -1,0 +1,24 @@
+{
+  "name": "pump-convert",
+  "productName": "pump CONVERT",
+  "version": "0.1.0",
+  "description": "pump CONVERT: mastering converter by wake",
+  "author": "wake",
+  "private": true,
+  "main": "main.js",
+  "build": {
+    "appId": "com.wake.pump-convert",
+    "productName": "pump CONVERT",
+    "copyright": "(c) wake",
+    "directories": { "output": "dist" },
+    "files": ["main.js", "preload.js", "engine.js", "app/**"],
+    "extraResources": [{ "from": "ffmpeg", "to": "ffmpeg" }],
+    "mac": { "icon": "icon.png", "category": "public.app-category.music", "identity": null, "hardenedRuntime": false, "minimumSystemVersion": "12.0" },
+    "win": {
+      "icon": "icon.png",
+      "target": [{ "target": "nsis", "arch": ["x64"] }, { "target": "zip", "arch": ["x64"] }],
+      "artifactName": "pump-convert-windows.${ext}"
+    },
+    "nsis": { "oneClick": false, "perMachine": false, "allowToChangeInstallationDirectory": true, "artifactName": "pump-convert-windows-setup.${ext}" }
+  }
+}

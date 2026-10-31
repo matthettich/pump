@@ -25,6 +25,27 @@ Last updated 2026-10-30 (pump MASTER; pump ROOM PHONE MIC; before it: ACID, X0X,
 - DPF prints `Unknown license string 'All rights reserved (c) wake'` while generating the AU plist. Harmless: DPF only
   knows SPDX names, "Proprietary" hit the same warning, and the string is not written into the plist.
 
+## pump CONVERT, the mastering converter (2026-10-30)
+
+`convert/`: an Electron app (Mac universal, Windows x64) in MASTER's rainbow look. `engine.js` does everything that
+matters (probe by parsing ffmpeg's own description, plan the jobs, build each ffmpeg command, write ID3 chunks into
+WAV/AIFF by patching the file in place, run, verify by decoding again); `main.js` is the app (IPC, a few jobs at once,
+cancel); `preload.js` the bridge; `app/` the window (opens with demo data in a plain browser: that is how it was
+screenshotted). ffmpeg is not ours: `build.sh` fetches static builds (ffmpeg-static 5.2.0) per architecture into
+`convert/ffmpeg/`, runs `test.mjs` against the one it ships, then packages. CI jobs `convert-app-mac/-windows`
+(continue-on-error while new).
+
+Verified here (Linux, the system ffmpeg 6.1 with soxr): `node convert/test.mjs`: every format and its tags read back
+(UTF-16 in ID3, artwork in FLAC/MP3/AAC), 96->48 kHz level 0.001 dB and residue -141 dBFS (no aliasing of a 30 kHz
+tone), 48->44.1 kHz flat at 20 kHz, 16-bit TPDF at its theoretical floor (-93.3 dB under a full-scale sine), a -90 dBFS
+tone dithered without harmonics (undithered: the 3rd harmonic 20 dB up). **Not yet run as an app** (no Electron
+here) and the shipped ffmpeg builds are untested until CI runs build.sh: if the test there says no SoX resampler,
+pick another static build that has it.
+
+Known limit: AAC with artwork gets the iTunes tags only (ffmpeg's MP4 writer drops the cover when it writes freeform
+tags, so ISRC and your own tags are left out of the .m4a when there is a cover). Writing the freeform atoms ourselves
+would fix it.
+
 ## pump MASTER, auto mastering (2026-10-30)
 
 `plugins/master`: LEARN measures the song (BS.1770 loudness, LRA, true peak; 1/3-octave mid and side spectra; level

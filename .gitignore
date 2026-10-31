@@ -6,3 +6,8 @@ build/
 room/electron/node_modules/
 room/electron/dist/
 room/electron/app/
+convert/node_modules/
+convert/dist/
+convert/ffmpeg/
+convert/app/fonts/
+convert/package-lock.json

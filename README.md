@@ -175,6 +175,26 @@ it to Applications; the first time, right-click > Open, since it isn't notarized
   **PI: WHAT TO BUY** beside it opens the shopping list and setup guide ([docs/PI-BOX.md](docs/PI-BOX.md)), which
   every Pi export also carries as `WHAT-TO-BUY.md`.
 
+## pump CONVERT (mastering converter, Mac and Windows)
+
+A desktop app for deliverables: add the masters (files or folders, in track order), fill in the metadata once, add one
+output row per version (WAV, AIFF, FLAC, MP3, AAC; any rate; 16, 24 or 32-bit float; each into its own folder, with
+folder and file names from templates like `{track:02} {artist} - {title}` and `{format} {bits}-{khz}`), press
+CONVERT. Deliverable sets (master set, streaming, CD, hi-res, promo) or your own saved ones fill the outputs in one go.
+Tags go into every file in its own format (WAV: INFO list and an ID3 chunk; AIFF: ID3; FLAC: Vorbis comments; MP3:
+ID3v2.3 and v1; AAC: iTunes tags), with artwork, ISRCs per track and your own tags, which can carry tokens such as
+`{bitdepth} / {khz} kHz`.
+
+Quality: rates are converted with the SoX resampler at its very-high-quality setting (28-bit, linear phase, flat to the
+top of the band) in 64-bit float; 16-bit results get TPDF dither (or noise-shaped at 44.1/48 kHz), 24-bit and float are
+not dithered; MP3 is LAME at its best quality, AAC is Apple's encoder on a Mac. Every result is decoded again and
+checked (rate, word length, channels, length, peak), and anything that reaches full scale is flagged in the log.
+`convert/test.mjs` measures it: a 1 kHz tone keeps its level to 0.001 dB through 96 -> 48 kHz, 20 kHz is flat to
+0.001 dB at 44.1 kHz, nothing above the new band aliases back (residue -141 dBFS), and 16-bit dither sits at its
+theoretical noise floor with no distortion on a -90 dBFS tone.
+
+Downloads: pump-convert-macos.zip, pump-convert-windows-setup.exe / pump-convert-windows.zip in the `latest` release.
+
 ## Using them
 
 Every plugin shares the same mouse and key conventions. Press **?** in a plugin for its full list.

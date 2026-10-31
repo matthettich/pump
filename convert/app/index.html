@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' file: data:; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self'">
+<title>pump CONVERT</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand"><span class="dots">…</span>pump <b>CONVERT</b></div>
+  <div class="what">MASTERING CONVERTER</div>
+  <div class="spacer"></div>
+  <div class="engine num" id="engine">…</div>
+  <button class="key" id="helpKey" title="How it works">?</button>
+</header>
+
+<main>
+  <section class="panel sources" id="sourcesPanel">
+    <div class="phead">
+      <div class="cap">SOURCES · THE PLAYLIST</div>
+      <div class="tools">
+        <button class="key" id="addFiles">ADD FILES</button>
+        <button class="key" id="addFolder">ADD FOLDER</button>
+        <button class="key" id="titlesFrom" title="Titles from the files' own tags, or their names">TITLES FROM FILES</button>
+        <button class="key" id="clearSources">CLEAR</button>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table class="list" id="sourceTable">
+        <thead><tr><th class="c-n">#</th><th>TITLE</th><th class="c-isrc">ISRC</th><th>FILE</th><th class="c-fmt">FORMAT</th><th class="c-len">LENGTH</th><th class="c-x"></th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <div class="drop" id="dropHint">DROP AUDIO FILES OR FOLDERS HERE<br><span>WAV · AIFF · FLAC · MP3 · AAC · CAF · W64 … in any rate and word length. The order is the track order: drag rows to change it.</span></div>
+    </div>
+  </section>
+
+  <section class="panel meta" id="metaPanel">
+    <div class="cap">METADATA · WRITTEN INTO EVERY FILE</div>
+    <div class="metagrid">
+      <label>ARTIST<input type="text" data-meta="artist"></label>
+      <label>ALBUM<input type="text" data-meta="album"></label>
+      <label>ALBUM ARTIST<input type="text" data-meta="albumArtist" placeholder="= artist"></label>
+      <label class="half">YEAR<input type="text" data-meta="year"></label>
+      <label class="half">GENRE<input type="text" data-meta="genre"></label>
+      <label>LABEL<input type="text" data-meta="label"></label>
+      <label>COPYRIGHT<input type="text" data-meta="copyright" placeholder="(c) 2026 …"></label>
+      <label>COMPOSER<input type="text" data-meta="composer"></label>
+      <label>TITLE<input type="text" data-meta="titleTpl" placeholder="{title}"></label>
+      <label>COMMENT<input type="text" data-meta="comment" placeholder="e.g. Mastered by … · {spec}"></label>
+    </div>
+    <div class="artrow">
+      <div class="art" id="art" title="Artwork (JPEG or PNG): written into WAV, AIFF, FLAC, MP3 and AAC"><span>ARTWORK</span></div>
+      <div class="artkeys">
+        <button class="key" id="pickArt">CHOOSE ARTWORK</button>
+        <button class="key" id="clearArt">NONE</button>
+        <label class="check"><input type="checkbox" data-meta-bool="writeTotal" checked> TRACK n/TOTAL</label>
+      </div>
+    </div>
+    <div class="cap">YOUR TAGS · e.g. SPEC = {bitdepth} / {khz} kHz</div>
+    <div id="customTags"></div>
+    <button class="key small" id="addTag">+ TAG</button>
+    <div class="cap">TOKENS · CLICK TO INSERT WHERE YOU ARE TYPING</div>
+    <div class="tokens" id="tokens"></div>
+  </section>
+
+  <section class="panel outputs" id="outPanel">
+    <div class="phead">
+      <div class="cap">OUTPUTS · ONE ROW PER VERSION</div>
+      <div class="tools">
+        <span class="lbl">OUTPUT FOLDER</span>
+        <button class="key path" id="rootKey">CHOOSE…</button>
+        <select id="setMenu" title="Deliverable sets"></select>
+        <button class="key" id="saveSet">SAVE SET</button>
+        <button class="key" id="addVersion">+ VERSION</button>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table class="list versions" id="versionTable">
+        <thead><tr><th class="c-on">ON</th><th>FORMAT</th><th>RATE</th><th>WORD / QUALITY</th><th>DITHER</th><th>FOLDER</th><th>SUBFOLDER</th><th>FILE NAME</th><th class="c-x"></th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <div class="preview num" id="preview"></div>
+  </section>
+</main>
+
+<footer class="run">
+  <button class="key big" id="go">CONVERT</button>
+  <div class="bar"><div id="barFill"></div><span id="barText">ADD SOURCES AND OUTPUTS</span></div>
+  <button class="key" id="openOut">OPEN OUTPUT</button>
+  <button class="key" id="logKey">LOG</button>
+</footer>
+<div class="log" id="log" hidden><table class="list"><tbody id="logBody"></tbody></table></div>
+
+<div class="help" id="help" hidden>
+  <div class="helpbox panel">
+    <div class="cap">HOW IT WORKS</div>
+    <p><b>1.</b> Add your masters (files or folders; drag rows to set the track order) and give each a title and ISRC.</p>
+    <p><b>2.</b> Fill in the metadata once: it goes into every file in the format's own tags (WAV: INFO list and an ID3 chunk; AIFF: ID3; FLAC: Vorbis comments; MP3: ID3v2.3 + v1; AAC: iTunes tags), with the artwork.</p>
+    <p><b>3.</b> Add one OUTPUT row per version you deliver. Each source is made in each version, into its folder; folder and file names can use tokens like {track:02}, {title}, {bits}, {khz}, {format}.</p>
+    <p><b>Quality.</b> Sample rates are converted with the SoX resampler at its very-high-quality setting (28-bit, linear phase, flat to the top of the band) in 64-bit float. 16-bit results get TPDF dither (or noise-shaped at 44.1 / 48 kHz); 24-bit and float are not dithered. MP3 is LAME at its best quality, AAC Apple's encoder on a Mac. Every file is read back and checked (rate, word length, channels, length, peak); anything that reaches full scale is flagged.</p>
+    <p><b>Keys.</b> Ctrl/Cmd+Enter converts · Delete removes the selected source.</p>
+    <button class="key" id="helpClose">CLOSE</button>
+  </div>
+</div>
+<script src="app.js"></script>
+</body>
+</html>

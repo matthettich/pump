@@ -325,6 +325,43 @@ jobs:
             room/electron/dist/pump-room-windows-setup.exe
             room/electron/dist/pump-room-windows.zip
 
+  convert-app-mac:
+    # pump CONVERT, the mastering converter (Electron + its own ffmpeg); build.sh tests the shipped ffmpeg with
+    # convert/test.mjs (real conversions, resampler and dither quality) before packaging. Not allowed to hold up the
+    # release while it is new.
+    runs-on: macos-14
+    timeout-minutes: 30
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09   # v5
+      - name: Package
+        run: |
+          set -o pipefail
+          sh convert/build.sh 2>&1 | tee package.log \
+            || { echo "::error::$(grep -iE 'FAIL|error|⨯|cannot|failed|not found' package.log | tail -14 | sed ':a;N;$!ba;s/\n/%0A/g')"; exit 1; }
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02   # v4
+        with: { name: pump-convert-macos, path: convert/dist/pump-convert-macos.zip }
+
+  convert-app-windows:
+    runs-on: windows-2022
+    timeout-minutes: 30
+    continue-on-error: true
+    defaults:
+      run: { shell: bash }
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09   # v5
+      - name: Package
+        run: |
+          set -o pipefail
+          sh convert/build.sh 2>&1 | tee package.log \
+            || { echo "::error::$(grep -iE 'FAIL|error|⨯|cannot|failed|not found' package.log | tail -14 | sed ':a;N;$!ba;s/\n/%0A/g')"; exit 1; }
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02   # v4
+        with:
+          name: pump-convert-windows
+          path: |
+            convert/dist/pump-convert-windows-setup.exe
+            convert/dist/pump-convert-windows.zip
+
   pages:
     # pump ROOM on the web: the room job's page published to the gh-pages branch on every push to main (GitHub Pages
     # serves it at https://matthettich.github.io/pump/ once Settings > Pages > Source is "Deploy from a branch",
@@ -357,7 +394,7 @@ jobs:
           git push -q --force "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" gh-pages
 
   release:
-    needs: [tests, windows, macos, linux, room, room-app-mac, room-app-windows]
+    needs: [tests, windows, macos, linux, room, room-app-mac, room-app-windows, convert-app-mac, convert-app-windows]
     if: github.event_name == 'push'
     runs-on: ubuntu-24.04
     permissions:
@@ -380,5 +417,5 @@ jobs:
           else
             gh release delete latest --yes --cleanup-tag 2>/dev/null || true
             gh release create latest $files --prerelease --title "…pump (latest build)" \
-              --notes "Newest build from main ($GITHUB_SHA). pump MACHINE is GPL-3.0 (pump-MACHINE-NOTICE.md in each package; source: this commit). Mac: pump-macos.pkg (installer; if macOS blocks it, System Settings > Privacy & Security > Open Anyway) or pump-macos.zip. The .pkg also installs System EQ (pump EQ on everything the Mac plays) in Applications; system-eq-macos.zip has the app on its own. Windows: pump-windows.zip; room-profiles-windows.zip has Room Profiles (switch pump ROOM profiles from the tray). pump ROOM, the room measurement app: pump-room-macos.zip (Mac app), pump-room-windows-setup.exe or pump-room-windows.zip (Windows), or pump-room.html in Chrome / Edge on either system. Install steps are in INSTALL.txt inside each zip."
+              --notes "Newest build from main ($GITHUB_SHA). pump MACHINE is GPL-3.0 (pump-MACHINE-NOTICE.md in each package; source: this commit). Mac: pump-macos.pkg (installer; if macOS blocks it, System Settings > Privacy & Security > Open Anyway) or pump-macos.zip. The .pkg also installs System EQ (pump EQ on everything the Mac plays) in Applications; system-eq-macos.zip has the app on its own. Windows: pump-windows.zip; room-profiles-windows.zip has Room Profiles (switch pump ROOM profiles from the tray). pump ROOM, the room measurement app: pump-room-macos.zip (Mac app), pump-room-windows-setup.exe or pump-room-windows.zip (Windows), or pump-room.html in Chrome / Edge on either system. pump CONVERT, the mastering converter: pump-convert-macos.zip (Mac) or pump-convert-windows-setup.exe / pump-convert-windows.zip (Windows). Install steps are in INSTALL.txt inside each zip."
           fi
