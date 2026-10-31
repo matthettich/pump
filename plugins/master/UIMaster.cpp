@@ -18,7 +18,7 @@ public:
         if (auto* p = static_cast<PluginMaster*>(pluginPtr())) plug = p;
 
         learnBtn = addButton("LEARN", [this]() { toggleLearn(); }, [this]() { return learning; });
-        learnBtn->tip = "Learn: play the song (or its loudest part and a quiet part), press LEARN, press again when done "
+        learnBtn->tip = "Learn: press LEARN and play the whole song from the top; press again at the end "
                         "(it also stops by itself when the song stops). L key";
         styleSeg = addSegmented(kStyle, { "BALANCED", "WARM", "OPEN", "PUNCH" });
         styleSeg->tip = "Style: the balance MASTER aims for. Balanced is the subtle reference; Warm darker, Open brighter "
@@ -187,7 +187,7 @@ protected:
     {
         if (!plug) return;
         if (learning) { plug->learnFinish(); setStatus("Learned: the master follows this song now"); }
-        else { plug->learnStart(); learning = true; setStatus("Learning: play the song; press LEARN again when it has played (or stop the song)"); }
+        else { plug->learnStart(); learning = true; setStatus("Learning: play the whole song from the top; press STOP at the end (or stop the song)"); }
         repaint();
     }
 
@@ -306,7 +306,8 @@ protected:
         const float cg = e.compGR.exchange(0.0f), lg = e.limGR.exchange(0.0f);
         compGr = std::max(cg, compGr - 12.0f * dt);
         limGr = std::max(lg, limGr - 12.0f * dt);
-        learnBtn->label = learning ? "STOP " + clock(learnSec) : (ana.valid ? "RE-LEARN" : "LEARN");
+        learnWaiting = e.uiLearnWaiting.load(std::memory_order_relaxed);
+        learnBtn->label = learning ? (learnWaiting ? "WAITING" : "STOP " + clock(learnSec)) : (ana.valid ? "RE-LEARN" : "LEARN");
         // the spectrum scale follows the learned song
         if (ana.valid)
         {
@@ -427,8 +428,9 @@ protected:
             fillRect(lb, bgc);
             textAt(lb.cx(), lb.cy(), s, kLabel, 12.0f, fg, ALIGN_CENTER | ALIGN_MIDDLE, 1.0f);
         };
-        if (learning) banner("LEARNING  " + clock(learnSec) + "  ·  PLAY THE SONG, THEN PRESS STOP", theme.ink, theme.on, display.cy() - 12);
-        else if (!ana.valid) banner("PLAY THE SONG AND PRESS LEARN  ·  UNTIL THEN MASTER CHANGES NOTHING", theme.ink, theme.on, display.cy() - 12);
+        if (learning && learnWaiting) banner("READY  ·  START THE SONG FROM THE TOP: LEARNING BEGINS WITH THE FIRST SOUND", theme.ink, theme.on, display.cy() - 12);
+        else if (learning) banner("LEARNING  " + clock(learnSec) + "  ·  PLAY THE WHOLE SONG, THEN PRESS STOP", theme.ink, theme.on, display.cy() - 12);
+        else if (!ana.valid) banner("PRESS LEARN AND PLAY THE WHOLE SONG  ·  UNTIL THEN MASTER CHANGES NOTHING", theme.ink, theme.on, display.cy() - 12);
         if (value(kCompare) >= 0.5f)
         {
             char b[96]; std::snprintf(b, sizeof b, "COMPARE  ·  THE ORIGINAL, %+.1f dB TO MATCH THE MASTER'S LOUDNESS", cmpDb);
@@ -815,7 +817,7 @@ protected:
     std::vector<std::pair<std::string, std::string>> helpLines() override
     {
         return {
-            { "L", "learn: start, and stop when the song has played (stopping the song also finishes it)" },
+            { "L", "learn: start, play the whole song from the top, then stop (stopping the song also finishes it)" },
             { "C", "compare with the original at the same loudness (COMPARE key: hold = only while held)" },
             { "1  2  3  4", "tone · dynamics · stereo · loudness on/off" },
             { "INTENSITY", "everything at once: 25 % light, 50 % medium, 100 % strong" },
@@ -901,6 +903,7 @@ private:
     Analysis ana;
     bool learning = false, planValid = false;
     float learnSec = 0.0f;
+    bool learnWaiting = false;
     float curve[kCurvePts] = {}, target[kBands] = {}, measured[kBands] = {}, eqGain[kEq] = {};
     float ratio = 1.0f, thr = 0.0f, liftMax = 0.0f, lift = 0.0f, sideLo = 0.0f, sideHi = 0.0f, makeup = 0.0f, outPred = -70.0f,
           cmpDb = 0.0f, peakOver = 0.0f, limLoss = 0.0f, eqDelta = 0.0f, inST = -INFINITY, outST = -INFINITY, compGr = 0.0f, limGr = 0.0f;

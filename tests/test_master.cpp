@@ -278,6 +278,21 @@ int main()
         float x[64] = {}, y[64] = {};
         l.process(x, y, 64);
         CHECK(l.hasAnalysis() && std::fabs(l.analysis().lufs - a.lufs) < 0.05 && !l.uiLearning.load(), "LEARN while playing: %.2f LUFS", l.analysis().lufs);
+        // LEARN pressed with the song stopped: silence first doesn't start the clock or change the result
+        {
+            Engine w; w.prepare(sr);
+            w.learnCmd.store(1);
+            Stereo pre; pre.L.assign((size_t)sr * 2, 0.0f); pre.R = pre.L;
+            run(w, pre);
+            const bool waiting = w.uiLearnWaiting.load();
+            run(w, mix);
+            w.learnCmd.store(2);
+            float x2[64] = {}, y2[64] = {};
+            w.process(x2, y2, 64);
+            CHECK(waiting && !w.uiLearnWaiting.load() && std::fabs(w.analysis().seconds - mix.L.size() / sr) < 0.05
+                  && std::fabs(w.analysis().lufs - a.lufs) < 0.05,
+                  "2 s of silence before the song: LEARN waits for it (%.2f s learned, %.2f LUFS)", w.analysis().seconds, w.analysis().lufs);
+        }
         // a learn on silence keeps the old analysis
         l.learnCmd.store(1);
         Stereo quiet; quiet.L.assign((size_t)sr * 3, 0.0f); quiet.R = quiet.L;

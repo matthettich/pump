@@ -372,6 +372,7 @@ public:
     std::atomic<bool> uiPlanValid { false };
     std::atomic<unsigned> uiPlanSerial { 0 };
     std::atomic<bool> uiLearning { false };
+    std::atomic<bool> uiLearnWaiting { false };   // LEARN is on but no music has come in yet (the clock hasn't started)
     std::atomic<float> uiLearnSeconds { 0.0f };
     std::atomic<float> uiInST { -INFINITY }, uiOutST { -INFINITY }, uiOutI { -INFINITY };
     MeterValue compGR, limGR;                     // dB of reduction (max since the UI last exchanged them)
@@ -646,11 +647,23 @@ private:
         resetLearn();
         for (int c = 0; c < 2; ++c) ldet[c].d = det[c].d;
         learning = true;
+        heard = false;
         uiLearning.store(true, std::memory_order_relaxed);
+        uiLearnWaiting.store(true, std::memory_order_relaxed);
         uiLearnSeconds.store(0.0f, std::memory_order_relaxed);
     }
     void learnBlock(const float* L, const float* R, int n)
     {
+        // nothing counts until the music starts (a block reaching -60 dBFS): pressing LEARN before playing, or
+        // with a silent count-in, doesn't start the clock (the analysis ignores silence anyway)
+        if (!heard)
+        {
+            float pk = 0.0f;
+            for (int i = 0; i < n; ++i) pk = std::max(pk, std::max(std::fabs(L[i]), std::fabs(R[i])));
+            if (pk < 0.001f) return;
+            heard = true;
+            uiLearnWaiting.store(false, std::memory_order_relaxed);
+        }
         learnMeter.process(L, R, n);
         learnSamples += n;
         for (stTimer += n; stTimer >= block100; stTimer -= block100)
@@ -1157,7 +1170,7 @@ private:
     unsigned seenIncoming = 0;
 
     // learning
-    bool learning = false;
+    bool learning = false, heard = false;
     int64_t learnSamples = 0;
     RealFFT fft;
     int fftN = 8192;
