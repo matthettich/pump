@@ -29,7 +29,7 @@
 'use strict';
 
 // The relay's address (relay/README.md). Empty: PHONE MIC says it isn't set up. #relay=… overrides it.
-const RELAY_URL = '';
+const RELAY_URL = 'wss://pump-room-relay.matthettich.workers.dev';
 
 const PHONE = {
   web: 'https://matthettich.github.io/pump/',

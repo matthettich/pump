@@ -48,8 +48,8 @@ slots in `app.html` and the USE A PHONE AS THE MIC button; app.js is untouched, 
 | The link (WebRTC data channel, blobs with backpressure), the computer's dialog and playback, the phone page and its recorder worklet, `analysePhoneRun` (two pings, resampling, cuts), test mode | `room/remote.js` | `tools/room_phone_e2e.mjs`: clocks to the ppm at +150 / -400, L/R timing to 0.001 ms, one speaker, calibration from the phone, MEASURE unchanged, correction alignment, reconnect |
 | QR codes | `room/third_party/qrcode.js` (MIT, unmodified; notice in THIRD_PARTY_NOTICES.md) | the test checks the drawing |
 
-**To make it live:** deploy `relay/` (the owner's account: log in with the host's command-line tool, deploy from that
-folder) and put its `wss://` address in `RELAY_URL` (remote.js). Until then the dialog says the relay isn't set up.
+**Live:** the owner deployed `relay/` on 2026-10-30 (`wss://pump-room-relay.matthettich.workers.dev`, in `RELAY_URL`).
+Redeploy from `relay/` with the host's command-line tool after changing it.
 `tools/room_e2e.mjs` was stale (the export items moved into the EXPORT menu; the Pi export has 14 files): fixed, and
 it passes on this build. Neither page test runs in CI.
 
