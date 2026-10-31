@@ -30,7 +30,7 @@
 //   pump_ring_read(h, k, from, count)  float[count] (count <= 32768): feed k's samples from position `from`
 //   pump_hold(h, kind, a, b, c, d)     momentary listening, never saved: kind 0 = listen band / EQ solo (a = band,
 //                                      -1 off), 1 = audition filter (a = on, b = Hz, c = Q, d = region, CALM),
-//                                      2 = LIMIT: reset loudness
+//                                      2 = LIMIT: reset loudness, 3 = MASTER: LEARN (a = 1 start, 2 finish, 3 cancel)
 #include <limits>
 #include "Handles.hpp"
 #include "../plugins/eq/EQDsp.hpp"
@@ -57,6 +57,7 @@
 #include "../plugins/stutter/StutterParams.hpp"
 #include "../plugins/chop/ChopParams.hpp"
 #include "../plugins/twang/TwangParams.hpp"
+#include "../plugins/master/MasterParams.hpp"
 #include "fx/Runner.hpp"
 #include "dsp/Bypass.hpp"
 #include "dsp/Audition.hpp"
@@ -83,6 +84,7 @@ PumpRunner* pumpfx_new_swirl(double sr);
 PumpRunner* pumpfx_new_stutter(double sr);
 PumpRunner* pumpfx_new_chop(double sr);
 PumpRunner* pumpfx_new_twang(double sr);
+PumpRunner* pumpfx_new_master(double sr);
 
 namespace pumpwasm {
 
@@ -94,7 +96,7 @@ inline int toInt(float a) { return a == a ? (int)std::max(-1.0e6f, std::min(a, 1
 
 enum Type : int { kEQ = 0, kComp, kLimit, kCalm, kTone, kBand, kWide, kHeat, kMeter,
     // the creative effects (30 Oct 2026): each its plugin's own Plugin<Name>.hpp on the DPF stand-in (wasm/fx, wasm/shim)
-    kTube, kSnap, kGate, kEcho, kSpring, kVerb, kGrain, kVox, kTune, kCrush, kSwirl, kStutter, kChop, kTwang, kNumTypes };
+    kTube, kSnap, kGate, kEcho, kSpring, kVerb, kGrain, kVox, kTune, kCrush, kSwirl, kStutter, kChop, kTwang, kMaster, kNumTypes };
 constexpr int kFirstShim = kTube;
 
 inline const std::vector<ParamSpec>& specsOf(int type)
@@ -123,6 +125,7 @@ inline const std::vector<ParamSpec>& specsOf(int type)
     case kStutter: return pump::stutter::params();
     case kChop: return pump::chop::params();
     case kTwang: return pump::twang::params();
+    case kMaster: return pump::master::params();
     default: return pump::meter::params();
     }
 }
@@ -416,8 +419,9 @@ public:
     int telemetry(float* t) override
     {
         t[0] = (float)latencyNow(); t[1] = lin(outPk[0]); t[2] = lin(outPk[1]); t[3] = lin(inPk[0]); t[4] = lin(inPk[1]);
-        return 5;
+        return 5 + runner->status(t + 5);   // MASTER: t[5] learning, t[6] an analysis in use, t[7] its loudness (LUFS)
     }
+    void hold(int kind, float a, float, float, float) override { if (kind == 3) runner->command(toInt(a)); }   // MASTER: LEARN 1 / finish 2 / cancel 3
     void midi(int frame, int status, int d1, int d2) override
     {
         if (nq >= kMaxMidi) return;
@@ -462,6 +466,7 @@ inline HostBase* make(int type, double sr)
     case kStutter: return new HostShim(type, sr, pumpfx_new_stutter(sr));
     case kChop: return new HostShim(type, sr, pumpfx_new_chop(sr));
     case kTwang: return new HostShim(type, sr, pumpfx_new_twang(sr));
+    case kMaster: return new HostShim(type, sr, pumpfx_new_master(sr));
     default: return nullptr;
     }
 }
@@ -478,6 +483,7 @@ inline int telLen(int type)
     case kWide: return 18;
     case kHeat: return 21;
     case kMeter: return 24;
+    case kMaster: return 8;
     default: return type >= kFirstShim && type < kNumTypes ? 5 : 0;
     }
 }

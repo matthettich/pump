@@ -24,7 +24,7 @@ O=$(mktemp -d)
 # the creative effects: each plugin's own Plugin<Name>.hpp, one translation unit each, on the DPF stand-in (wasm/shim
 # before common, so PumpPlugin.hpp's #include "DistrhoPlugin.hpp" finds it; the plugin's folder for its DistrhoPluginInfo.h)
 FXO=""
-for p in tube snap gate echo spring verb grain vox tune crush swirl stutter chop twang; do
+for p in tube snap gate echo spring verb grain vox tune crush swirl stutter chop twang master; do
   "$WASI_SDK/bin/clang++" $FLAGS -std=c++17 -fno-exceptions -fno-rtti -Wno-everything -I"$H/wasm/shim" -I"$H/plugins/$p" -I"$H/common" -c "$H/wasm/fx/$p.cpp" -o "$O/fx_$p.o"
   FXO="$FXO $O/fx_$p.o"
 done

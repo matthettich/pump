@@ -17,6 +17,9 @@ struct PumpRunner {
     virtual void transport(double bpm, double ppq, bool playing) = 0;
     virtual const char* getState(const char* key) = 0;   // valid until the next call
     virtual void setState(const char* key, const char* value) = 0;
+    // a plugin's own commands and status, where it has any (MASTER: LEARN; see RunnerExtra below)
+    virtual void command(int) {}
+    virtual int status(float*) { return 0; }
 };
 
 #ifdef PUMP_SHIM_NS
@@ -24,6 +27,9 @@ struct PumpRunner {
 #include <cmath>
 
 namespace PUMP_SHIM_NS {
+// What a plugin's window would do that isn't a parameter: none by default; a plugin's unit specializes it (master.cpp).
+template <class P> struct RunnerExtra { static void command(P&, int) {} static int status(P&, float*) { return 0; } };
+
 template <class P>
 class RunnerOf final : public PumpRunner {
 public:
@@ -59,6 +65,8 @@ public:
     }
     const char* getState(const char* key) override { st = static_cast<Plugin*>(p)->getState(key).c_str(); return st.c_str(); }
     void setState(const char* key, const char* value) override { static_cast<Plugin*>(p)->setState(key, value); }
+    void command(int c) override { RunnerExtra<P>::command(*p, c); }
+    int status(float* t) override { return RunnerExtra<P>::status(*p, t); }
 
 private:
     void setPos(double q)

@@ -32,6 +32,7 @@
 #include "../plugins/stutter/StutterParams.hpp"
 #include "../plugins/chop/ChopParams.hpp"
 #include "../plugins/twang/TwangParams.hpp"
+#include "../plugins/master/MasterParams.hpp"
 #include "../plugins/mono/MonoParams.hpp"
 #include "../plugins/poly/PolyParams.hpp"
 #include "../plugins/coil/CoilParams.hpp"
@@ -118,7 +119,7 @@ int main(int argc, char** argv)
         std::printf("}}\n");
         return 0;
     }
-    std::printf("{\"version\":1,\"types\":[\"eq\",\"comp\",\"limit\",\"calm\",\"tone\",\"band\",\"wide\",\"heat\",\"meter\",\"tube\",\"snap\",\"gate\",\"echo\",\"spring\",\"verb\",\"grain\",\"vox\",\"tune\",\"crush\",\"swirl\",\"stutter\",\"chop\",\"twang\"],\"fx\":{\n");
+    std::printf("{\"version\":1,\"types\":[\"eq\",\"comp\",\"limit\",\"calm\",\"tone\",\"band\",\"wide\",\"heat\",\"meter\",\"tube\",\"snap\",\"gate\",\"echo\",\"spring\",\"verb\",\"grain\",\"vox\",\"tune\",\"crush\",\"swirl\",\"stutter\",\"chop\",\"twang\",\"master\"],\"fx\":{\n");
     dump("eq", "EQ", "Equalizer", eq::params(), eq::presets(), false);
     dump("comp", "COMP", "Compressor", comp::params(), comp::presets(), false);
     dump("limit", "LIMIT", "Limiter", limit::params(), limit::presets(), false);
@@ -141,7 +142,8 @@ int main(int argc, char** argv)
     dump("swirl", "SWIRL", "Modulation", swirl::params(), swirl::presets(), false);
     dump("stutter", "STUTTER", "Beat Repeat", stutter::params(), stutter::presets(), false);
     dump("chop", "CHOP", "Live Chopper", chop::params(), chop::presets(), false);
-    dump("twang", "TWANG", "Spring Resonator", twang::params(), twang::presets(), true);
+    dump("twang", "TWANG", "Spring Resonator", twang::params(), twang::presets(), false);
+    dump("master", "MASTER", "Auto Mastering", master::params(), master::presets(), true);
     std::printf("}}\n");
     return 0;
 }
