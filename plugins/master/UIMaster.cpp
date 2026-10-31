@@ -32,7 +32,7 @@ public:
 
         struct StageDef { int on, amt; const char* name; const char* tip; };
         const StageDef sd[3] = {
-            { kToneOn, kToneAmt, "TONE", "Tone: broad EQ toward the style's balance (about a third of the way at medium)" },
+            { kToneOn, kToneAmt, "TONE", "Tone: broad EQ toward the style's balance (about half of the way at medium)" },
             { kDynOn, kDynAmt, "DYNAMICS", "Dynamics: lifts quiet sections slowly (Punch also glues the loud parts)" },
             { kStereoOn, kStereoAmt, "STEREO", "Stereo: tightens a wide low end; Open and Punch nudge the width" },
         };
@@ -632,8 +632,9 @@ protected:
             const Rect& p = stageP[i];
             const bool on = value(i == 0 ? kToneOn : i == 1 ? kDynOn : i == 2 ? kStereoOn : kLoudOn) >= 0.5f;
             const Color c = on ? stageInk(i) : theme.ink2;
-            textAt(p.cx(), p.b() - 34, a, kMono, 10.5f, c, ALIGN_CENTER | ALIGN_MIDDLE);
-            textAt(p.cx(), p.b() - 18, b, kMono, 10.5f, bc ? *bc : c, ALIGN_CENTER | ALIGN_MIDDLE);
+            const float lo = i == 3 ? 12.0f : 0.0f;   // LOUDNESS: under its dials (DESTINATION moved them down)
+            textAt(p.cx(), p.b() - 34 + lo, a, kMono, 10.5f, c, ALIGN_CENTER | ALIGN_MIDDLE);
+            textAt(p.cx(), p.b() - 18 + lo * 0.75f, b, kMono, 10.5f, bc ? *bc : c, ALIGN_CENTER | ALIGN_MIDDLE);
         };
         if (!(ana.valid && planValid))
         {
