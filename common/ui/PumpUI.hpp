@@ -409,6 +409,10 @@ public:
     // Value text of a parameter on controls and in the status line. Override for plugin-specific text ("OFF" at a
     // filter's end stop, note names); the default is the ParamSpec's own.
     virtual std::string formatParam(int i, float v) const { return fSpecs[i].format(v); }
+    // A parameter shown as another quantity (MASTER's offsets shown as the values they produce): typed entry starts
+    // from shownValue() and a typed number goes back through fromShown(). The defaults show the value itself.
+    virtual float shownValue(int /*i*/, float v) const { return v; }
+    virtual float fromShown(int /*i*/, float s) const { return s; }
 
     // ---- drawing helpers (logical coordinates) --------------------------------------------------------------------
     enum Font { kLabel, kMono, kBold };
@@ -683,7 +687,7 @@ public:
         fEdit.ring = ring;
         fEdit.onText = nullptr;
         fEdit.active = true; fEdit.param = param; fEdit.r = r;
-        fEdit.text = fSpecs[param].format(fValues[(size_t)param]);
+        fEdit.text = fSpecs[param].format(shownValue(param, fValues[(size_t)param]));
         // strip units for editing convenience
         const size_t sp = fEdit.text.find(' ');
         if (sp != std::string::npos && !fSpecs[param].isChoice()) fEdit.text = fEdit.text.substr(0, sp);
@@ -1371,7 +1375,7 @@ protected:
             return;
         }
         float v;
-        if (fEdit.text != fEdit.original && fSpecs[fEdit.param].parse(fEdit.text.c_str(), v)) setParamGesture(fEdit.param, v);
+        if (fEdit.text != fEdit.original && fSpecs[fEdit.param].parse(fEdit.text.c_str(), v)) setParamGesture(fEdit.param, fromShown(fEdit.param, v));
         repaint();
     }
     void tabTextEntry(bool back)

@@ -23,7 +23,7 @@ public:
 
     Engine engine;
     pump::ScopeRing preRing { pump::kAnalyzerRing }, postRing { pump::kAnalyzerRing };
-    pump::MeterValue outPeak[2];
+    pump::MeterValue outPeak[2], inPeak[2];
 
     int latencyNow() const { return engine.latency(); }
 
@@ -137,7 +137,9 @@ protected:
             bypass.capture(l, r, n);
             pump::sanitizeBlock(l, n);
             pump::sanitizeBlock(r, n);
-            for (int i = 0; i < n; ++i) preRing.push(0.5f * (l[i] + r[i]));
+            float il = 0.0f, ir = 0.0f;
+            for (int i = 0; i < n; ++i) { preRing.push(0.5f * (l[i] + r[i])); il = std::max(il, std::fabs(l[i])); ir = std::max(ir, std::fabs(r[i])); }
+            inPeak[0].setMax(il); inPeak[1].setMax(ir);
             engine.process(l, r, n);
             const int lat = engine.latency();
             if (lat != lastLatency) { setLatency((uint32_t)lat); bypass.setLatency(lat); lastLatency = lat; }

@@ -57,7 +57,11 @@ Thunder Plus's Simple rainbow skin: hue = (column + row) x 30 + 10 degrees); MAS
 and where it starts, glue ratio/threshold/attack/release, low-mono crossover and amount, width, gain into the limiter
 (its threshold, in effect), limiter release and style; plus eight free EQ bands (bell, shelves, 24 dB/oct cuts:
 click the curve to add, drag, wheel = Q, right-click = shape, double-click = remove) after the tone stage, working
-even before LEARN. Tested in test_master (trims add exactly; a +6 dB band gives +6.00 dB; off = null).
+even before LEARN. Tested in test_master (trims add exactly; a +6 dB band gives +6.00 dB; off = null). The
+advanced dials show (and take typed) the values they produce, not the offsets: threshold in dB, ratio as n:1, width
+and bass mono in %, limiter input gain, leveler amount and the short-term LUFS it starts below (PumpUI's new
+`shownValue` / `fromShown` hooks); a dial's centre is auto's value. A compressor-style meter bridge replaces the info
+column there: IN (glue threshold marked), COMP GR, LEVEL (lift), LIMIT GR, OUT (ceiling marked).
 
 **Next:** pump METER's LUFS readout looks fuzzy on the owner's Windows PC (high-DPI gaming screen). Later: a
 linear-phase TONE (the reference is linear phase).

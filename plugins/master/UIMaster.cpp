@@ -76,16 +76,18 @@ public:
         auto adv = [this](int prm, const char* label, bool bip, const char* tip) {
             Dial* d = addDial(prm, label, Dial::Small, bip); d->tip = tip; advDials.push_back(d); return d;
         };
-        liftD = adv(kLiftTrim, "LIFT", true, "Leveler lift: dB added to (or taken from) what auto lifts quiet sections by");
-        liftAtD = adv(kLiftAt, "LIFT AT", true, "Where lifting starts: + = sections closer to the song's own level get lifted too");
-        ratioD = adv(kRatioTrim, "RATIO", true, "Glue ratio added to auto's (Balanced starts at 1:1, no compression)");
-        gThrD = adv(kGlueThrTrim, "THRESH", true, "Glue threshold, dB from auto's (- = more compression)");
-        atkD = adv(kGlueAttack, "ATTACK", false, "Glue attack");
-        relD = adv(kGlueRelease, "RELEASE", false, "Glue release");
-        monoD = adv(kMonoFreq, "MONO BELOW", false, "Low-mono crossover: the side below it is what LOW MONO folds");
-        lowMonoD = adv(kLowMonoTrim, "LOW MONO", true, "Fold the lows' side toward mono, added to auto's (+100 % = fully mono below the crossover)");
-        widthD = adv(kWidthTrim, "WIDTH", true, "Side level above the crossover, dB on top of auto's");
-        gainD = adv(kGainTrim, "GAIN", true, "Gain into the limiter on top of auto's makeup (+ = louder, more limiting: the limiter's threshold)");
+        // the values show what they set (auto's choice plus your offset); the dial's centre is auto's choice and
+        // double-click goes back to it
+        gThrD = adv(kGlueThrTrim, "THRESHOLD", true, "Compressor threshold (RMS of the bass-filtered signal, dBFS). Centre = auto's");
+        ratioD = adv(kRatioTrim, "RATIO", true, "Compressor ratio. Centre = auto's (Balanced: 1:1, no compression)");
+        atkD = adv(kGlueAttack, "ATTACK", false, "Compressor attack");
+        relD = adv(kGlueRelease, "RELEASE", false, "Compressor release");
+        liftD = adv(kLiftTrim, "LEVELER", true, "Leveler: how much quiet sections are lifted (slow, by short-term loudness). Centre = auto's");
+        liftAtD = adv(kLiftAt, "BELOW", true, "Leveler: sections quieter than this (short-term LUFS) are lifted. Centre = auto's");
+        monoD = adv(kMonoFreq, "MONO BELOW", false, "Bass mono crossover: the side below it is what BASS MONO folds");
+        lowMonoD = adv(kLowMonoTrim, "BASS MONO", true, "How much of the side below the crossover is folded to mono (100 % = mono). Centre = auto's");
+        widthD = adv(kWidthTrim, "WIDTH", true, "Stereo width above the crossover (side level: 100 % = unchanged). Centre = auto's");
+        gainD = adv(kGainTrim, "INPUT", true, "Limiter input gain (the makeup: more = louder, more limiting). Centre = auto's");
         limRelD = adv(kLimRelease, "RELEASE", false, "Limiter release");
         limStyleM = addMenu(kLimStyle);
         limStyleM->tip = "Limiter style (LIMIT's styles). Dynamic: brief peak-only limiting, the default";
@@ -99,7 +101,7 @@ public:
         modeSeg->tint = hue(5, 1); targetDial->tint = hue(5, 2); ceilDial->tint = hue(6, 2);
         advBtn->tint = hue(0, 2); styleSeg->tint = hue(0, 3);
         resetTrimBtn->tint = hue(2, 2); clearBandsBtn->tint = hue(3, 2);
-        liftD->tint = hue(3, 1); liftAtD->tint = hue(4, 1); ratioD->tint = hue(3, 2); gThrD->tint = hue(4, 2); atkD->tint = hue(3, 3); relD->tint = hue(4, 3);
+        gThrD->tint = hue(3, 1); ratioD->tint = hue(4, 1); atkD->tint = hue(3, 2); relD->tint = hue(4, 2); liftD->tint = hue(3, 3); liftAtD->tint = hue(4, 3);
         monoD->tint = hue(5, 1); lowMonoD->tint = hue(6, 1); widthD->tint = hue(5, 2);
         gainD->tint = hue(6, 3); limRelD->tint = hue(7, 3); limStyleM->tint = hue(6, 4);
 
@@ -131,9 +133,39 @@ protected:
             std::snprintf(b, sizeof b, "%.0f %% %s", v, w);
             return b;
         }
-        if (i == kRatioTrim) { std::snprintf(b, sizeof b, "%+.2f", v); return b; }
-        if (i == kLiftAt) { std::snprintf(b, sizeof b, "%+.1f LU", v); return b; }
+        const float sv = shownValue(i, v);
+        if (i == kRatioTrim) { std::snprintf(b, sizeof b, "%.2f:1", sv); return b; }
+        if (i == kGlueThrTrim) { std::snprintf(b, sizeof b, "%.1f dB", sv); return b; }
+        if (i == kLiftTrim) { std::snprintf(b, sizeof b, "+%.1f dB", sv); return b; }
+        if (i == kLiftAt) { std::snprintf(b, sizeof b, "%.1f LUFS", sv); return b; }
+        if (i == kLowMonoTrim || i == kWidthTrim) { std::snprintf(b, sizeof b, "%.0f %%", sv); return b; }
+        if (i == kGainTrim || (i >= kToneTrim0 && i < kToneTrim0 + kEq)) { std::snprintf(b, sizeof b, "%+.1f dB", sv); return b; }
         return PumpUI::formatParam(i, v);
+    }
+    // the ADVANCED offsets shown (and typed) as the values they produce
+    float shownValue(int i, float v) const override
+    {
+        if (i == kRatioTrim) return std::max(1.0f, aRatio + v);
+        if (i == kGlueThrTrim) return aThr + v;
+        if (i == kLiftTrim) return std::max(0.0f, aLift + v);
+        if (i == kLiftAt) return (ana.valid ? ana.lufs + eqDelta : -14.0f) - 5.0f + v;
+        if (i == kLowMonoTrim) return pump::clampv((1.0f - pump::dbToGainF(aSideLoDb)) * 100.0f + v, 0.0f, 100.0f);
+        if (i == kWidthTrim) return 100.0f * pump::dbToGainF(aSideHiDb + v);
+        if (i == kGainTrim) return aMakeup + v;
+        if (i >= kToneTrim0 && i < kToneTrim0 + kEq) return autoEq[i - kToneTrim0] + v;
+        return v;
+    }
+    float fromShown(int i, float s) const override
+    {
+        if (i == kRatioTrim) return s - aRatio;
+        if (i == kGlueThrTrim) return s - aThr;
+        if (i == kLiftTrim) return s - aLift;
+        if (i == kLiftAt) return s - ((ana.valid ? ana.lufs + eqDelta : -14.0f) - 5.0f);
+        if (i == kLowMonoTrim) return s - (1.0f - pump::dbToGainF(aSideLoDb)) * 100.0f;
+        if (i == kWidthTrim) return pump::gainToDbF(std::max(s, 1.0f) / 100.0f) - aSideHiDb;
+        if (i == kGainTrim) return s - aMakeup;
+        if (i >= kToneTrim0 && i < kToneTrim0 + kEq) return s - autoEq[i - kToneTrim0];
+        return s;
     }
 
     void toggleLearn()
@@ -188,8 +220,8 @@ protected:
             stageAmt[0]->r = Rect(tp.cx() - 36, tp.y + 44, 72, sh);
             resetTrimBtn->r = Rect(tp.x + 10, tp.y + 44 + sh + 6, tp.w - 20, 22);
             clearBandsBtn->r = Rect(tp.x + 10, tp.y + 44 + sh + 34, tp.w - 20, 22);
-            liftD->r = cell(1, 0, 0); liftAtD->r = cell(1, 1, 0); ratioD->r = cell(1, 0, 1); gThrD->r = cell(1, 1, 1);
-            atkD->r = cell(1, 0, 2); relD->r = cell(1, 1, 2);
+            gThrD->r = cell(1, 0, 0); ratioD->r = cell(1, 1, 0); atkD->r = cell(1, 0, 1); relD->r = cell(1, 1, 1);
+            liftD->r = cell(1, 0, 2); liftAtD->r = cell(1, 1, 2);
             stageAmt[2]->r = cell(2, 0, 0); monoD->r = cell(2, 1, 0); lowMonoD->r = cell(2, 0, 1); widthD->r = cell(2, 1, 1);
             gainD->r = Rect(lp.x + 6, lp.y + 72 + sh + 2, lp.w * 0.5f - 6, sh);
             limRelD->r = Rect(lp.cx(), lp.y + 72 + sh + 2, lp.w * 0.5f - 6, sh);
@@ -233,6 +265,7 @@ protected:
         const double srNow = plug->getSampleRate();
         if (srNow > 0.0 && srNow != anaRate) setupAnalyzers(srNow);
         outMeter.tick(plug->outPeak, dt);
+        inMeter.tick(plug->inPeak, dt);
         post.update(&plug->postRing, nullptr, dt);
         Engine& e = plug->engine;
         learning = e.uiLearning.load(std::memory_order_relaxed);
@@ -252,6 +285,8 @@ protected:
         sideLo = e.uiSideLoDb.load(); sideHi = e.uiSideHiDb.load(); makeup = e.uiMakeup.load(); outPred = e.uiOutLufs.load();
         cmpDb = e.uiCompare.load(); peakOver = e.uiPeakOver.load(); limLoss = e.uiLimitLoss.load(); eqDelta = e.uiEqDelta.load();
         inST = e.uiInST.load(); outST = e.uiOutST.load();
+        aRatio = e.uiAutoRatio.load(); aThr = e.uiAutoThr.load(); aLift = e.uiAutoLift.load(); aMakeup = e.uiAutoMakeup.load();
+        aSideLoDb = e.uiAutoSideLo.load(); aSideHiDb = e.uiAutoSideHi.load();
         const float cg = e.compGR.exchange(0.0f), lg = e.limGR.exchange(0.0f);
         compGr = std::max(cg, compGr - 12.0f * dt);
         limGr = std::max(lg, limGr - 12.0f * dt);
@@ -444,8 +479,87 @@ protected:
         return -1;
     }
 
+    // ADVANCED: a compressor-style meter bridge: input (with the glue threshold), glue reduction, leveler lift,
+    // limiter reduction, output (with the ceiling)
+    void drawBridge()
+    {
+        const Rect& r = info;
+        strokeRect(r, theme.dim, 1.0f);
+        char b[64];
+        if (ana.valid && planValid) std::snprintf(b, sizeof b, "%.1f -> %.1f LUFS", ana.lufs, outPred);
+        else std::snprintf(b, sizeof b, "NOT LEARNED");
+        caption(r.x + 12, r.y + 15, "METERS");
+        textAt(r.r() - 12, r.y + 15, b, kMono, 10.0f, theme.ink2, ALIGN_RIGHT | ALIGN_MIDDLE);
+        const float top = r.y + 44, bot = r.b() - 22, h = bot - top;
+        const float lo = -48.0f, hi = 0.0f, grMax = 12.0f;
+        auto yLvl = [&](float db) { return bot - h * pump::clampv((db - lo) / (hi - lo), 0.0f, 1.0f); };
+        auto yGr = [&](float db) { return top + h * pump::clampv(db / grMax, 0.0f, 1.0f); };
+        const float gw = (r.w - 24) / 5.0f;
+        static const char* const names[5] = { "IN", "COMP", "LEVEL", "LIMIT", "OUT" };
+        for (int g = 0; g < 5; ++g)
+        {
+            const float gx = r.x + 12 + g * gw;
+            const Color c = pump::oklchColor(theme.dark ? 0.74f : 0.62f, 0.15f, 10.0f + 72.0f * g);
+            textAt(gx + gw * 0.5f, r.y + 32, names[g], kLabel, 9.5f, theme.ink, ALIGN_CENTER | ALIGN_MIDDLE, 0.8f);
+            if (g == 0 || g == 4)
+            {
+                const OutMeter& m = g == 0 ? inMeter : outMeter;
+                for (int ch = 0; ch < 2; ++ch)
+                {
+                    const Rect bar(gx + 6 + ch * (gw * 0.5f - 4), top, gw * 0.5f - 10, h);
+                    fillRect(bar, theme.screen);
+                    const float y = yLvl(m.lvl[ch]);
+                    fillRect(Rect(bar.x, y, bar.w, bot - y), m.lvl[ch] > -0.1f ? theme.red : c);
+                    line(bar.x, yLvl(m.hold[ch]), bar.r(), yLvl(m.hold[ch]), theme.ink, 1.5f);
+                    strokeRect(bar, theme.ink, 1.0f);
+                }
+                // the glue threshold on the input, the ceiling on the output
+                const float mark = g == 0 ? thr : value(kCeiling);
+                if ((g == 4 || ratio > 1.001f) && mark > lo)
+                {
+                    const float y = yLvl(mark);
+                    line(gx + 2, y, gx + gw - 2, y, theme.second, 2.0f);
+                }
+                std::snprintf(b, sizeof b, "%.1f", std::max(m.hold[0], m.hold[1]));
+                textAt(gx + gw * 0.5f, bot + 11, std::max(m.hold[0], m.hold[1]) < -90.0f ? "-inf" : b, kMono, 9.5f, theme.ink2, ALIGN_CENTER | ALIGN_MIDDLE);
+            }
+            else
+            {
+                const Rect bar(gx + gw * 0.5f - 7, top, 14, h);
+                fillRect(bar, theme.screen);
+                float v = g == 1 ? compGr : g == 3 ? limGr : lift;
+                if (g == 2)
+                {
+                    // the lift grows up from the bottom (gain added), on the same 12 dB scale
+                    const float y = bot - h * pump::clampv(v / grMax, 0.0f, 1.0f);
+                    fillRect(Rect(bar.x, y, bar.w, bot - y), c);
+                }
+                else
+                {
+                    const float y = yGr(v);
+                    fillRect(Rect(bar.x, top, bar.w, y - top), c);
+                }
+                strokeRect(bar, theme.ink, 1.0f);
+                std::snprintf(b, sizeof b, g == 2 ? "+%.1f" : "-%.1f", std::fabs(v));
+                textAt(gx + gw * 0.5f, bot + 11, b, kMono, 9.5f, theme.ink2, ALIGN_CENTER | ALIGN_MIDDLE);
+            }
+        }
+        // scales: dBFS for the level meters (left), dB of gain change for the middle three (right)
+        for (int d : { 0, -6, -12, -24, -36 })
+        {
+            char t[8]; std::snprintf(t, sizeof t, "%d", d);
+            textAt(r.x + 9, yLvl((float)d), t, kMono, 7.5f, theme.ink2, ALIGN_RIGHT | ALIGN_MIDDLE);
+        }
+        for (int d : { 0, 3, 6, 9, 12 })
+        {
+            char t[8]; std::snprintf(t, sizeof t, "%d", d);
+            textAt(r.r() - 3, yGr((float)d), t, kMono, 7.5f, theme.ink2, ALIGN_RIGHT | ALIGN_MIDDLE);
+        }
+    }
+
     void drawInfo()
     {
+        if (advanced) { drawBridge(); return; }
         const Rect& r = info;
         strokeRect(r, theme.dim, 1.0f);
         float y = r.y + 15;
@@ -623,7 +737,7 @@ protected:
         {
             const float v = pump::clampv(dragV0 + (dragY0 - y) / pxPerDb() * fine, -6.0f, 6.0f);
             setParam(kToneTrim0 + dragIdx, v);
-            char b[96]; std::snprintf(b, sizeof b, "%s: auto %+.1f dB, trim %+.1f dB", spec(kToneTrim0 + dragIdx).name, autoEq[dragIdx], v);
+            char b[96]; std::snprintf(b, sizeof b, "%s Hz  %+.1f dB  (auto %+.1f, yours %+.1f)", spec(kToneTrim0 + dragIdx).shortName, autoEq[dragIdx] + v, autoEq[dragIdx], v);
             setStatus(b);
         }
         else if (drag == dBand)
@@ -707,13 +821,14 @@ protected:
 private:
     PluginMaster* plug = nullptr;
     SpectrumView post;
-    OutMeter outMeter;
+    OutMeter outMeter, inMeter;
     Rect display, info, mainP, stageP[4];
     Button *learnBtn, *cmpBtn, *stageBtn[4];
     Segmented *styleSeg, *modeSeg;
     Dial *intDial, *stageAmt[3], *targetDial, *ceilDial;
 
     float stageHue[4] = {};
+    float aRatio = 1.0f, aThr = 0.0f, aLift = 0.0f, aMakeup = 0.0f, aSideLoDb = 0.0f, aSideHiDb = 0.0f;   // what auto chose
     bool advanced = false;
     Button *advBtn, *resetTrimBtn, *clearBandsBtn;
     Dial *liftD, *liftAtD, *ratioD, *gThrD, *atkD, *relD, *monoD, *lowMonoD, *widthD, *gainD, *limRelD;
