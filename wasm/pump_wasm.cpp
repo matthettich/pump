@@ -9,7 +9,7 @@
 // for wasm/compare.cpp, which checks that the wasm and native builds give the same output.
 //
 // Interface (all exported, "C"):
-//   pump_types()                       number of effect types (9); type ids are kTypeNames' order
+//   pump_types()                       number of effect types (23: the nine, then the creative effects); type ids are kTypeNames' order
 //   pump_nparams(type)                 parameter count (parameter i is params()[i] of that plugin)
 //   pump_stage()                       float[512]: write a new slot's values here before pump_new (values not
 //                                      written are the parameter's default: pump_new clears the stage after use)
@@ -43,6 +43,21 @@
 #include "../plugins/heat/HeatDsp.hpp"
 #include "../plugins/meter/MeterDsp.hpp"
 #include "../plugins/meter/MeterParams.hpp"
+#include "../plugins/tube/TubeParams.hpp"
+#include "../plugins/snap/SnapParams.hpp"
+#include "../plugins/gate/GateParams.hpp"
+#include "../plugins/echo/EchoParams.hpp"
+#include "../plugins/spring/SpringParams.hpp"
+#include "../plugins/verb/VerbParams.hpp"
+#include "../plugins/grain/GrainParams.hpp"
+#include "../plugins/vox/VoxParams.hpp"
+#include "../plugins/tune/TuneParams.hpp"
+#include "../plugins/crush/CrushParams.hpp"
+#include "../plugins/swirl/SwirlParams.hpp"
+#include "../plugins/stutter/StutterParams.hpp"
+#include "../plugins/chop/ChopParams.hpp"
+#include "../plugins/twang/TwangParams.hpp"
+#include "fx/Runner.hpp"
 #include "dsp/Bypass.hpp"
 #include "dsp/Audition.hpp"
 #include <memory>
@@ -53,6 +68,22 @@
  #define PUMP_API extern "C"
 #endif
 
+// the creative effects' factories (wasm/fx/<name>.cpp)
+PumpRunner* pumpfx_new_tube(double sr);
+PumpRunner* pumpfx_new_snap(double sr);
+PumpRunner* pumpfx_new_gate(double sr);
+PumpRunner* pumpfx_new_echo(double sr);
+PumpRunner* pumpfx_new_spring(double sr);
+PumpRunner* pumpfx_new_verb(double sr);
+PumpRunner* pumpfx_new_grain(double sr);
+PumpRunner* pumpfx_new_vox(double sr);
+PumpRunner* pumpfx_new_tune(double sr);
+PumpRunner* pumpfx_new_crush(double sr);
+PumpRunner* pumpfx_new_swirl(double sr);
+PumpRunner* pumpfx_new_stutter(double sr);
+PumpRunner* pumpfx_new_chop(double sr);
+PumpRunner* pumpfx_new_twang(double sr);
+
 namespace pumpwasm {
 
 using pump::ParamSpec;
@@ -61,7 +92,10 @@ constexpr int kStage = 512;
 // a number from JavaScript as an int (a float that is NaN or out of range has no int value: casting it is undefined)
 inline int toInt(float a) { return a == a ? (int)std::max(-1.0e6f, std::min(a, 1.0e6f)) : -1; }
 
-enum Type : int { kEQ = 0, kComp, kLimit, kCalm, kTone, kBand, kWide, kHeat, kMeter, kNumTypes };
+enum Type : int { kEQ = 0, kComp, kLimit, kCalm, kTone, kBand, kWide, kHeat, kMeter,
+    // the creative effects (30 Oct 2026): each its plugin's own Plugin<Name>.hpp on the DPF stand-in (wasm/fx, wasm/shim)
+    kTube, kSnap, kGate, kEcho, kSpring, kVerb, kGrain, kVox, kTune, kCrush, kSwirl, kStutter, kChop, kTwang, kNumTypes };
+constexpr int kFirstShim = kTube;
 
 inline const std::vector<ParamSpec>& specsOf(int type)
 {
@@ -75,6 +109,20 @@ inline const std::vector<ParamSpec>& specsOf(int type)
     case kBand: return pump::band::params();
     case kWide: return pump::wide::params();
     case kHeat: return pump::heat::params();
+    case kTube: return pump::tube::params();
+    case kSnap: return pump::snap::params();
+    case kGate: return pump::gate::params();
+    case kEcho: return pump::echo::params();
+    case kSpring: return pump::spring::params();
+    case kVerb: return pump::verb::params();
+    case kGrain: return pump::grain::params();
+    case kVox: return pump::vox::params();
+    case kTune: return pump::tune::params();
+    case kCrush: return pump::crush::params();
+    case kSwirl: return pump::swirl::params();
+    case kStutter: return pump::stutter::params();
+    case kChop: return pump::chop::params();
+    case kTwang: return pump::twang::params();
     default: return pump::meter::params();
     }
 }
@@ -110,7 +158,14 @@ public:
         requested[index] = values[index];
         changed[index] = 1;
         anyChanged = true;
+        onParam(index, values[index]);
     }
+    virtual void onParam(uint32_t, float) {}
+    // the creative effects only (HostShim): MIDI, the transport, saved text state
+    virtual void midi(int, int, int, int) {}
+    virtual void transport(double, double, bool) {}
+    virtual const char* getState(const char*) { return ""; }
+    virtual void setState(const char*, const char*) {}
 
     const int type;
     const ParamSpec* specs;
@@ -330,6 +385,56 @@ public:
     const pump::ScopeRing* ring(int k) const override { return k == 0 ? &engine.spectrum : k == 1 ? &engine.histM : k == 2 ? &engine.histS : k == 3 ? &engine.histI : nullptr; }
 };
 
+
+// ---------------------------------------------------------------- the creative effects (wasm/fx: each plugin's own
+// Plugin<Name>.hpp, built on the DPF stand-in in wasm/shim). Telemetry is only the common part (latency, output and
+// input peaks); pop-up windows for these would add their own feeds here.
+
+class HostShim : public HostBase {
+public:
+    HostShim(int t, double rate, PumpRunner* r) : HostBase(t, rate), runner(r) {}
+    ~HostShim() override { delete runner; }
+    void activate() override { runner->activate(); }
+    void onParam(uint32_t i, float v) override { if (runner) runner->setParam(i, v); }
+    void run(const float** inputs, float** outputs, uint32_t frames) override
+    {
+        float pi[2] = { 0.0f, 0.0f }, po[2] = { 0.0f, 0.0f };
+        for (uint32_t i = 0; i < frames; ++i) { pi[0] = std::max(pi[0], std::fabs(inputs[0][i])); pi[1] = std::max(pi[1], std::fabs(inputs[1][i])); }
+        // a plain sort keeps the queue in time order (std::stable_sort would keep equal frames in order too: so does this)
+        for (int a = 1; a < nq; ++a) for (int b = a; b > 0 && q[b - 1].frame > q[b].frame; --b) std::swap(q[b - 1], q[b]);
+        int now = 0;
+        while (now < nq && q[now].frame < frames) ++now;
+        runner->run(inputs, outputs, frames, q, (uint32_t)now);
+        int k = 0;
+        for (int i = now; i < nq; ++i) { PumpRunnerMidi m = q[i]; m.frame -= frames; q[k++] = m; }
+        nq = k;
+        for (uint32_t i = 0; i < frames; ++i) { po[0] = std::max(po[0], std::fabs(outputs[0][i])); po[1] = std::max(po[1], std::fabs(outputs[1][i])); }
+        inPk[0].setMax(pi[0]); inPk[1].setMax(pi[1]); outPk[0].setMax(po[0]); outPk[1].setMax(po[1]);
+        setLatency((uint32_t)runner->latency());
+    }
+    int latencyNow() const override { return runner->latency(); }
+    int telemetry(float* t) override
+    {
+        t[0] = (float)latencyNow(); t[1] = lin(outPk[0]); t[2] = lin(outPk[1]); t[3] = lin(inPk[0]); t[4] = lin(inPk[1]);
+        return 5;
+    }
+    void midi(int frame, int status, int d1, int d2) override
+    {
+        if (nq >= kMaxMidi) return;
+        q[nq++] = { (uint32_t)std::max(0, std::min(frame, kMaxBlock - 1)), (uint8_t)status, (uint8_t)(d1 & 0x7F), (uint8_t)(d2 & 0x7F) };
+    }
+    void transport(double bpm, double ppq, bool playing) override { runner->transport(bpm, ppq, playing); }
+    const char* getState(const char* key) override { return runner->getState(key); }
+    void setState(const char* key, const char* value) override { runner->setState(key, value); }
+
+private:
+    static constexpr int kMaxMidi = 512;
+    PumpRunner* runner;
+    PumpRunnerMidi q[kMaxMidi] = {};
+    int nq = 0;
+    pump::MeterValue inPk[2], outPk[2];
+};
+
 inline HostBase* make(int type, double sr)
 {
     switch (type)
@@ -343,6 +448,20 @@ inline HostBase* make(int type, double sr)
     case kWide: return new HostWide(sr);
     case kHeat: return new HostHeat(sr);
     case kMeter: return new HostMeter(sr);
+    case kTube: return new HostShim(type, sr, pumpfx_new_tube(sr));
+    case kSnap: return new HostShim(type, sr, pumpfx_new_snap(sr));
+    case kGate: return new HostShim(type, sr, pumpfx_new_gate(sr));
+    case kEcho: return new HostShim(type, sr, pumpfx_new_echo(sr));
+    case kSpring: return new HostShim(type, sr, pumpfx_new_spring(sr));
+    case kVerb: return new HostShim(type, sr, pumpfx_new_verb(sr));
+    case kGrain: return new HostShim(type, sr, pumpfx_new_grain(sr));
+    case kVox: return new HostShim(type, sr, pumpfx_new_vox(sr));
+    case kTune: return new HostShim(type, sr, pumpfx_new_tune(sr));
+    case kCrush: return new HostShim(type, sr, pumpfx_new_crush(sr));
+    case kSwirl: return new HostShim(type, sr, pumpfx_new_swirl(sr));
+    case kStutter: return new HostShim(type, sr, pumpfx_new_stutter(sr));
+    case kChop: return new HostShim(type, sr, pumpfx_new_chop(sr));
+    case kTwang: return new HostShim(type, sr, pumpfx_new_twang(sr));
     default: return nullptr;
     }
 }
@@ -359,7 +478,7 @@ inline int telLen(int type)
     case kWide: return 18;
     case kHeat: return 21;
     case kMeter: return 24;
-    default: return 0;
+    default: return type >= kFirstShim && type < kNumTypes ? 5 : 0;
     }
 }
 
@@ -369,6 +488,7 @@ const bool stageCleared = [] { for (float& v : stage) v = std::numeric_limits<fl
 float io[4][kMaxBlock];
 float tel[512];
 float ringBuf[1 << 15];
+char text[1 << 16];   // pump_text(): state keys and values in and out
 
 inline HostBase* at(int h) { return slots.at(h); }
 
@@ -420,3 +540,31 @@ PUMP_API float* pump_ring_read(int h, int k, unsigned from, int count)
     return ringBuf;
 }
 PUMP_API void pump_hold(int h, int kind, float a, float b, float c, float d) { if (HostBase* s = at(h)) s->hold(kind, a, b, c, d); }
+
+// The creative effects (types from tube on; a no-op for the nine others):
+//   pump_midi(h, frame, status, d1, d2)  queues a MIDI message for the next pump_process, at sample `frame` of it
+//   pump_transport(h, bpm, ppq, playing) the host's tempo and song position (quarter notes) for the next pump_process
+//   pump_text()                          char[65536]: the buffer pump_state_get / pump_state_set use
+//   pump_state_get(h)                    pump_text() holds a key (zero-terminated); writes its value there, returns its length
+//   pump_state_set(h)                    pump_text() holds "key\0value\0": sets that state
+PUMP_API void pump_midi(int h, int frame, int status, int d1, int d2) { if (HostBase* s = at(h)) s->midi(frame, status, d1, d2); }
+PUMP_API void pump_transport(int h, double bpm, double ppq, int playing) { if (HostBase* s = at(h)) s->transport(bpm, ppq, playing != 0); }
+PUMP_API char* pump_text() { return text; }
+PUMP_API int pump_state_get(int h)
+{
+    HostBase* s = at(h); text[sizeof text - 1] = 0;
+    const std::string key(text);
+    const char* v = s ? s->getState(key.c_str()) : "";
+    size_t n = std::strlen(v); if (n > sizeof text - 1) n = sizeof text - 1;
+    std::memcpy(text, v, n); text[n] = 0;
+    return (int)n;
+}
+PUMP_API void pump_state_set(int h)
+{
+    HostBase* s = at(h); if (!s) return;
+    text[sizeof text - 1] = 0;
+    const std::string key(text);
+    const size_t at2 = key.size() + 1;
+    const std::string value(at2 < sizeof text ? text + at2 : "");
+    s->setState(key.c_str(), value.c_str());
+}

@@ -1,5 +1,5 @@
 #!/bin/sh
-# Builds pump.wasm (the nine engines behind wasm/pump_wasm.cpp's C interface, for Thunder Plus's track effects) and
+# Builds pump.wasm (the nine mastering engines and the creative effects behind wasm/pump_wasm.cpp's C interface, for Thunder Plus's track effects) and
 # pump-meta.js (every plugin's parameter table and factory presets, from the same Params.hpp tables), into OUT; and
 # pump-synth.wasm (the instruments MONO, POLY and COIL behind wasm/pump_synth.cpp, for Thunder Plus's synth engines)
 # with pump-synth-meta.js (their parameters and factory presets).
@@ -21,11 +21,19 @@ FLAGS="--target=wasm32-wasip1 --sysroot=$WASI_SDK/share/wasi-sysroot -O3 -ffast-
 O=$(mktemp -d)
 "$WASI_SDK/bin/clang" $FLAGS -Wno-everything -c "$H/common/pump_pffft.c" -I"$H/common" -o "$O/pffft.o"
 "$WASI_SDK/bin/clang++" $FLAGS -std=c++17 -fno-exceptions -fno-rtti -Wall -Wno-unused-parameter -Wno-unused-private-field -I"$H/common" -c "$H/wasm/pump_wasm.cpp" -o "$O/pump.o"
+# the creative effects: each plugin's own Plugin<Name>.hpp, one translation unit each, on the DPF stand-in (wasm/shim
+# before common, so PumpPlugin.hpp's #include "DistrhoPlugin.hpp" finds it; the plugin's folder for its DistrhoPluginInfo.h)
+FXO=""
+for p in tube snap gate echo spring verb grain vox tune crush swirl stutter chop twang; do
+  "$WASI_SDK/bin/clang++" $FLAGS -std=c++17 -fno-exceptions -fno-rtti -Wno-everything -I"$H/wasm/shim" -I"$H/plugins/$p" -I"$H/common" -c "$H/wasm/fx/$p.cpp" -o "$O/fx_$p.o"
+  FXO="$FXO $O/fx_$p.o"
+done
 EXPORTS=""
 for f in pump_types pump_nparams pump_stage pump_new pump_free pump_values pump_commit pump_io pump_process pump_latency \
-         pump_tel pump_tel_len pump_rings pump_ring_pos pump_ring_cap pump_ring_read pump_hold; do EXPORTS="$EXPORTS -Wl,--export=$f"; done
+         pump_tel pump_tel_len pump_rings pump_ring_pos pump_ring_cap pump_ring_read pump_hold \
+         pump_midi pump_transport pump_text pump_state_get pump_state_set; do EXPORTS="$EXPORTS -Wl,--export=$f"; done
 "$WASI_SDK/bin/clang++" $FLAGS -mexec-model=reactor -Wl,--export=_initialize $EXPORTS -Wl,--strip-all -Wl,-z,stack-size=1048576 \
-  -Wl,--initial-memory=16777216 "$O/pump.o" "$O/pffft.o" -o "$OUT/pump.wasm"
+  -Wl,--initial-memory=16777216 "$O/pump.o" $FXO "$O/pffft.o" -o "$OUT/pump.wasm"
 # the instruments: no input audio, MIDI in (pump_synth.cpp); COIL's tanks are SPRING's (its own SIMD, no pffft)
 "$WASI_SDK/bin/clang++" $FLAGS -std=c++17 -fno-exceptions -fno-rtti -Wall -Wno-unused-parameter -Wno-unused-private-field -I"$H/common" -c "$H/wasm/pump_synth.cpp" -o "$O/synth.o"
 SEXPORTS=""

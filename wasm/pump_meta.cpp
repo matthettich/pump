@@ -18,6 +18,20 @@
 #include "../plugins/wide/WideParams.hpp"
 #include "../plugins/heat/HeatParams.hpp"
 #include "../plugins/meter/MeterParams.hpp"
+#include "../plugins/tube/TubeParams.hpp"
+#include "../plugins/snap/SnapParams.hpp"
+#include "../plugins/gate/GateParams.hpp"
+#include "../plugins/echo/EchoParams.hpp"
+#include "../plugins/spring/SpringParams.hpp"
+#include "../plugins/verb/VerbParams.hpp"
+#include "../plugins/grain/GrainParams.hpp"
+#include "../plugins/vox/VoxParams.hpp"
+#include "../plugins/tune/TuneParams.hpp"
+#include "../plugins/crush/CrushParams.hpp"
+#include "../plugins/swirl/SwirlParams.hpp"
+#include "../plugins/stutter/StutterParams.hpp"
+#include "../plugins/chop/ChopParams.hpp"
+#include "../plugins/twang/TwangParams.hpp"
 #include "../plugins/mono/MonoParams.hpp"
 #include "../plugins/poly/PolyParams.hpp"
 #include "../plugins/coil/CoilParams.hpp"
@@ -104,7 +118,7 @@ int main(int argc, char** argv)
         std::printf("}}\n");
         return 0;
     }
-    std::printf("{\"version\":1,\"types\":[\"eq\",\"comp\",\"limit\",\"calm\",\"tone\",\"band\",\"wide\",\"heat\",\"meter\"],\"fx\":{\n");
+    std::printf("{\"version\":1,\"types\":[\"eq\",\"comp\",\"limit\",\"calm\",\"tone\",\"band\",\"wide\",\"heat\",\"meter\",\"tube\",\"snap\",\"gate\",\"echo\",\"spring\",\"verb\",\"grain\",\"vox\",\"tune\",\"crush\",\"swirl\",\"stutter\",\"chop\",\"twang\"],\"fx\":{\n");
     dump("eq", "EQ", "Equalizer", eq::params(), eq::presets(), false);
     dump("comp", "COMP", "Compressor", comp::params(), comp::presets(), false);
     dump("limit", "LIMIT", "Limiter", limit::params(), limit::presets(), false);
@@ -113,7 +127,21 @@ int main(int argc, char** argv)
     dump("band", "BAND", "Multiband Dynamics", band::params(), band::presets(), false);
     dump("wide", "WIDE", "Stereo Imager", wide::params(), wide::presets(), false);
     dump("heat", "HEAT", "Saturator", heat::params(), heat::presets(), false);
-    dump("meter", "METER", "Loudness Meter", meter::params(), meter::presets(), true);
+    dump("meter", "METER", "Loudness Meter", meter::params(), meter::presets(), false);
+    dump("tube", "TUBE", "Tube Distortion", tube::params(), tube::presets(), false);
+    dump("snap", "SNAP", "Transient Shaper", snap::params(), snap::presets(), false);
+    dump("gate", "GATE", "Sequenced Gate", gate::params(), gate::presets(), false);
+    dump("echo", "ECHO", "Delay", echo::params(), echo::presets(), false);
+    dump("spring", "SPRING", "Spring Reverb", spring::params(), spring::presets(), false);
+    dump("verb", "VERB", "Reverb", verb::params(), verb::presets(), false);
+    dump("grain", "GRAIN", "Granular", grain::params(), grain::presets(), false);
+    dump("vox", "VOX", "Vocoder", vox::params(), vox::presets(), false);
+    dump("tune", "TUNE", "Pitch Correction", tune::params(), tune::presets(), false);
+    dump("crush", "CRUSH", "Lo-Fi Degrader", crush::params(), crush::presets(), false);
+    dump("swirl", "SWIRL", "Modulation", swirl::params(), swirl::presets(), false);
+    dump("stutter", "STUTTER", "Beat Repeat", stutter::params(), stutter::presets(), false);
+    dump("chop", "CHOP", "Live Chopper", chop::params(), chop::presets(), false);
+    dump("twang", "TWANG", "Spring Resonator", twang::params(), twang::presets(), true);
     std::printf("}}\n");
     return 0;
 }
