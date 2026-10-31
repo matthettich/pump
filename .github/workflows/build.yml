@@ -99,7 +99,7 @@ jobs:
         with: { name: room-profiles-windows, path: dist/room-profiles-windows.zip }
 
   macos:
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09   # v5
@@ -283,7 +283,7 @@ jobs:
   room-app-mac:
     # pump ROOM as a desktop app (Electron), from the page the room job built; smoke-tested on its simulated room
     needs: room
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09   # v5
@@ -333,7 +333,7 @@ jobs:
     # pump CONVERT, the mastering converter (Electron + its own ffmpeg); build.sh tests the shipped ffmpeg with
     # convert/test.mjs (real conversions, resampler and dither quality) before packaging. Not allowed to hold up the
     # release while it is new.
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 30
     continue-on-error: true
     steps:
