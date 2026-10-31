@@ -56,9 +56,16 @@ SYNC_TESTS := $(patsubst %,build/tests/sync_test_%,eq band wide heat)
 build/tests/sync_test_%: tests/test_%.cpp build/tests/pffft.o $(wildcard common/*.hpp common/dsp/*.hpp tests/*.hpp) $$(wildcard plugins/$$*/*.hpp)
 	@mkdir -p build/tests
 	$(CXX) $(TEST_FLAGS) -DPUMP_SYNC_KERNELS=1 -Iplugins/$* $< build/tests/pffft.o -lpthread -o $@
-build/tests/wasm_wrapper: tests/wasm_wrapper.cpp wasm/pump_wasm.cpp build/tests/pffft.o $(wildcard common/*.hpp common/dsp/*.hpp plugins/*/*.hpp)
+# the creative effects in pump.wasm are one translation unit each (wasm/fx/<name>.cpp, each plugin's own
+# Plugin<Name>.hpp on the DPF stand-in in wasm/shim), as wasm/build.sh compiles them
+WASM_FX := $(patsubst wasm/fx/%.cpp,%,$(wildcard wasm/fx/*.cpp))
+WASM_FX_OBJS := $(patsubst %,build/tests/wasmfx_%.o,$(WASM_FX))
+build/tests/wasmfx_%.o: wasm/fx/%.cpp wasm/fx/Runner.hpp wasm/shim/DistrhoPlugin.hpp $(wildcard common/*.hpp common/dsp/*.hpp) $$(wildcard plugins/$$*/*.hpp)
 	@mkdir -p build/tests
-	$(CXX) $(TEST_FLAGS) -DPUMP_SYNC_KERNELS=1 $< build/tests/pffft.o -o $@
+	$(CXX) -O2 -std=c++17 -DPUMP_SYNC_KERNELS=1 -Wno-unused-parameter -Iwasm/shim -Iplugins/$* -Icommon -c $< -o $@
+build/tests/wasm_wrapper: tests/wasm_wrapper.cpp wasm/pump_wasm.cpp build/tests/pffft.o $(WASM_FX_OBJS) $(wildcard common/*.hpp common/dsp/*.hpp plugins/*/*.hpp)
+	@mkdir -p build/tests
+	$(CXX) $(TEST_FLAGS) -DPUMP_SYNC_KERNELS=1 $< $(WASM_FX_OBJS) build/tests/pffft.o -lpthread -o $@
 
 # The web build against the plugins (tests/parity.cpp): each of the nine effects in wasm/pump_wasm.cpp, run beside the
 # real plugin through DPF's exporter on the test mix, every factory preset, the same output and latency.
@@ -66,9 +73,9 @@ PARITY := eq:EQ:kEQ comp:Comp:kComp limit:Limit:kLimit calm:Calm:kCalm tone:Tone
 PARITY_TESTS := $(foreach p,$(PARITY),build/tests/parity_$(word 1,$(subst :, ,$(p))))
 PARITY_FLAGS = -O2 -std=c++17 -DPUMP_SYNC_KERNELS=1 -DPFFFT_STATIC_DEFINE -fno-finite-math-only -Wno-unused-parameter -Idpf/distrho -Idpf/distrho/src -Icommon -Itests
 define PARITY_RULE
-build/tests/parity_$(1): tests/parity.cpp wasm/pump_wasm.cpp wasm/Handles.hpp plugins/$(1)/Plugin$(2).cpp build/tests/pffft.o $$(wildcard common/*.hpp common/dsp/*.hpp tests/*.hpp plugins/*/*.hpp) | dpf-patches
+build/tests/parity_$(1): tests/parity.cpp wasm/pump_wasm.cpp wasm/Handles.hpp plugins/$(1)/Plugin$(2).cpp build/tests/pffft.o $$(WASM_FX_OBJS) $$(wildcard common/*.hpp common/dsp/*.hpp tests/*.hpp plugins/*/*.hpp) | dpf-patches
 	@mkdir -p build/tests
-	$$(CXX) $$(PARITY_FLAGS) -Iplugins/$(1) -DPTYPE=$(3) -DPNS=$(1) tests/parity.cpp plugins/$(1)/Plugin$(2).cpp build/tests/pffft.o -lpthread -o $$@
+	$$(CXX) $$(PARITY_FLAGS) -Iplugins/$(1) -DPTYPE=$(3) -DPNS=$(1) tests/parity.cpp plugins/$(1)/Plugin$(2).cpp $$(WASM_FX_OBJS) build/tests/pffft.o -lpthread -o $$@
 endef
 $(foreach p,$(PARITY),$(eval $(call PARITY_RULE,$(word 1,$(subst :, ,$(p))),$(word 2,$(subst :, ,$(p))),$(word 3,$(subst :, ,$(p))))))
 # and the instruments in wasm/pump_synth.cpp (tests/parity_synth.cpp: a MIDI phrase, every factory preset)

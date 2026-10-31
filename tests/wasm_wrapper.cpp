@@ -48,7 +48,7 @@ static float db(float g) { return 20.0f * std::log10(std::max(g, 1e-9f)); }
 int main()
 {
     printf("== wasm wrapper (native build of wasm/pump_wasm.cpp)\n");
-    CHECK(pump_types() == 9, "nine effect types");
+    CHECK(pump_types() == 24, "24 effect types (the nine mastering engines, the creative effects, MASTER): %d", pump_types());
     for (int t = 0; t < 9; ++t)
     {
         const int h = make(t, {});
@@ -133,8 +133,9 @@ int main()
               "staged values go to one new slot only (the next gets the defaults: %g)", pump_values(b)[out]);
         pump_free(a); pump_free(b);
         bool telOk = true;
-        for (int t = 0; t < pump_types(); ++t) telOk = telOk && pump_tel_len(t) <= 512;
-        CHECK(telOk, "every type's telemetry fits pump_tel()'s 512 floats");
+        int telMax = 0;
+        for (int t = 0; t < pump_types(); ++t) { telOk = telOk && pump_tel_len(t) <= 4096; telMax = std::max(telMax, pump_tel_len(t)); }
+        CHECK(telOk, "every type's telemetry fits pump_tel()'s 4096 floats (largest %d)", telMax);
         CHECK(pump_new(kEQ, 1e12) == -1 && pump_new(kEQ, std::nan("")) == -1, "an absurd sample rate is refused");
     }
     printf(fails ? "%d FAILED\n" : "all passed\n", fails);

@@ -9,7 +9,7 @@
 // for wasm/compare.cpp, which checks that the wasm and native builds give the same output.
 //
 // Interface (all exported, "C"):
-//   pump_types()                       number of effect types (23: the nine, then the creative effects); type ids are kTypeNames' order
+//   pump_types()                       number of effect types (24: the nine, then the creative effects and MASTER); type ids are kTypeNames' order
 //   pump_nparams(type)                 parameter count (parameter i is params()[i] of that plugin)
 //   pump_stage()                       float[512]: write a new slot's values here before pump_new (values not
 //                                      written are the parameter's default: pump_new clears the stage after use)
