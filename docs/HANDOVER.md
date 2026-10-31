@@ -91,7 +91,14 @@ redoes the fit from pairs (raw float in + measured mid transfer per third octave
 +6 dB at 12 kHz) is still the worst fit (~1 dB). The default -1 dBTP ceiling gives a little less punch than the
 service (which lets true peaks over 0); the reference EQ is linear phase, ours is minimum phase.
 
-**Destination presets:** Club -9, Vinyl -12 (also bass mono below 150 Hz), Streaming -14 (TARGET dial = any value).
+Boosts are no longer halved under 50 Hz and over 12 kHz (cuts still are): the darkest reference song got +7 dB of
+air from the service and we stopped at +3.8 (its error 1.05 -> 0.85 dB; six-song rms 0.66 dB).
+
+**DESTINATION** (loudness panel, a menu over the TARGET dial; UI only, no new parameter): Streaming -14, Standard
+-13.5 (the reference's level, the default), Vinyl -12 (also BASS MONO 100 % below 150 Hz; leaving vinyl puts those
+back only if they are still vinyl's), Club -9. Choosing one sets TARGET, TARGET mode and LOUDNESS on in one undo
+step; any other TARGET reads CUSTOM. Matching presets: Streaming -14, Vinyl -12, Club -9. Only syntax-checked here
+(no GL headers in this container): check the layout in a host (normal and ADVANCED view).
 
 Verified: `tests/test_master.cpp` (null before LEARN and with every stage off, target loudness within 1 LU, true
 peak under the ceiling, gentle limits, the analysis text round trip, LEARN through process(), random setting jumps,

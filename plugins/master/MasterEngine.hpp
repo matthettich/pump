@@ -845,7 +845,8 @@ private:
             const double f = bandFreq(b);
             const double dev = d[b] - off;   // + = the song is short of the target here
             double maxCut = st.toneMax, maxBoost = 0.7 * st.toneMax;
-            if (f < 50.0 || f > 12000.0) { maxCut *= 0.5; maxBoost *= 0.5; }
+            if (f < 50.0 || f > 12000.0) maxCut *= 0.5;   // the ends: gentler cuts (boosts there follow the reference: a dark
+                                                          // song gets its air back, a thin one its sub)
             const double lowT = clampv(std::log2(f / 100.0) / 2.0, 0.0, 1.0);   // 0 under 100 Hz .. 1 from 400 Hz
             double v = st.strength * (st.lowStr + (1.0 - st.lowStr) * lowT) * dev;
             v = v > 0.0 ? maxBoost * std::tanh(v / maxBoost) : maxCut * std::tanh(v / maxCut);

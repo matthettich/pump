@@ -45,6 +45,21 @@ public:
         }
         stageBtn[3] = addToggle(kLoudOn, "LOUDNESS");
         stageBtn[3]->tip = "Loudness: makeup gain and a true-peak limiter that only touches the peaks";
+        // DESTINATION: where the master is going; picks TARGET (and TARGET mode; vinyl also folds the bass to mono).
+        // Moving the TARGET dial anywhere else reads CUSTOM.
+        destM = addMenu(-1);
+        destM->itemsFn = []() { std::vector<std::string> v; for (const Destination& d : destinations()) v.push_back(d.item); return v; };
+        destM->getFn = [this]() { return currentDestination(); };
+        destM->setFn = [this](int i) { chooseDestination(i); };
+        destM->textFn = [this]() {
+            const int i = currentDestination();
+            char b[48];
+            if (i >= 0) std::snprintf(b, sizeof b, "%s %g", destinations()[(size_t)i].face, destinations()[(size_t)i].lufs);
+            else std::snprintf(b, sizeof b, "CUSTOM %.1f", value(kTarget));
+            return std::string(b);
+        };
+        destM->tip = "Destination: sets the loudness TARGET for where the master is going (Streaming -14, Standard -13.5 = "
+                     "the reference's level, Vinyl -12 with the bass mono below 150 Hz, Club -9). Wheel steps through them";
         modeSeg = addSegmented(kLoudMode, { "GENTLE", "TARGET" });
         modeSeg->tip = "Gentle: only as loud as the peaks allow (a couple of dB of peak limiting at most), never past "
                        "TARGET. Target: to TARGET, however much limiting it takes";
@@ -98,7 +113,7 @@ public:
         learnBtn->tint = hue(0, 0); intDial->tint = hue(1, 0); cmpBtn->tint = hue(0, 1); styleSeg->tint = hue(0, 2);
         for (int i = 0; i < 4; ++i) stageBtn[i]->tint = stageHue[i] = hue(2 + i, 0);
         for (int i = 0; i < 3; ++i) stageAmt[i]->tint = hue(2 + i, 1);
-        modeSeg->tint = hue(5, 1); targetDial->tint = hue(5, 2); ceilDial->tint = hue(6, 2);
+        destM->tint = hue(6, 1); modeSeg->tint = hue(5, 1); targetDial->tint = hue(5, 2); ceilDial->tint = hue(6, 2);
         advBtn->tint = hue(0, 2); styleSeg->tint = hue(0, 3);
         resetTrimBtn->tint = hue(2, 2); clearBandsBtn->tint = hue(3, 2);
         gThrD->tint = hue(3, 1); ratioD->tint = hue(4, 1); atkD->tint = hue(3, 2); relD->tint = hue(4, 2); liftD->tint = hue(3, 3); liftAtD->tint = hue(4, 3);
@@ -202,9 +217,10 @@ protected:
             if (i < 3) stageAmt[i]->r = Rect(p.cx() - 36, p.y + 46, 72, sh);
         }
         const Rect& lp = stageP[3];
-        modeSeg->r = Rect(lp.x + 10, lp.y + 44, lp.w - 20, 22);
-        targetDial->r = Rect(lp.x + 6, lp.y + 72, lp.w * 0.5f - 6, sh);
-        ceilDial->r = Rect(lp.cx(), lp.y + 72, lp.w * 0.5f - 6, sh);
+        destM->r = Rect(lp.x + 10, lp.y + 40, lp.w - 20, 22);
+        modeSeg->r = Rect(lp.x + 10, lp.y + 66, lp.w - 20, 20);
+        targetDial->r = Rect(lp.x + 6, lp.y + 88, lp.w * 0.5f - 6, sh);
+        ceilDial->r = Rect(lp.cx(), lp.y + 88, lp.w * 0.5f - 6, sh);
 
         // ADVANCED: two columns of small dials under each stage's key
         for (Control* c : advDials) c->visible = advanced;
@@ -223,9 +239,9 @@ protected:
             gThrD->r = cell(1, 0, 0); ratioD->r = cell(1, 1, 0); atkD->r = cell(1, 0, 1); relD->r = cell(1, 1, 1);
             liftD->r = cell(1, 0, 2); liftAtD->r = cell(1, 1, 2);
             stageAmt[2]->r = cell(2, 0, 0); monoD->r = cell(2, 1, 0); lowMonoD->r = cell(2, 0, 1); widthD->r = cell(2, 1, 1);
-            gainD->r = Rect(lp.x + 6, lp.y + 72 + sh + 2, lp.w * 0.5f - 6, sh);
-            limRelD->r = Rect(lp.cx(), lp.y + 72 + sh + 2, lp.w * 0.5f - 6, sh);
-            limStyleM->r = Rect(lp.x + 10, lp.b() - 32, lp.w - 20, 22);
+            gainD->r = Rect(lp.x + 6, lp.y + 88 + sh, lp.w * 0.5f - 6, sh);
+            limRelD->r = Rect(lp.cx(), lp.y + 88 + sh, lp.w * 0.5f - 6, sh);
+            limStyleM->r = Rect(lp.x + 10, std::min(lp.y + 90 + 2 * sh, lp.b() - 24), lp.w - 20, 22);
         }
     }
 
@@ -833,6 +849,48 @@ private:
     Button *advBtn, *resetTrimBtn, *clearBandsBtn;
     Dial *liftD, *liftAtD, *ratioD, *gThrD, *atkD, *relD, *monoD, *lowMonoD, *widthD, *gainD, *limRelD;
     MenuButton* limStyleM;
+    MenuButton* destM;
+
+    struct Destination { const char* item; const char* face; float lufs; bool vinyl; };
+    static const std::vector<Destination>& destinations()
+    {
+        static const std::vector<Destination> v = {
+            { "Streaming  -14 LUFS", "STREAM", -14.0f, false },
+            { "Standard  -13.5 LUFS (the reference)", "STANDARD", -13.5f, false },
+            { "Vinyl  -12 LUFS, bass mono below 150 Hz", "VINYL", -12.0f, true },
+            { "Club  -9 LUFS", "CLUB", -9.0f, false },
+        };
+        return v;
+    }
+    static constexpr float kVinylMonoFreq = 150.0f, kVinylMonoTrim = 100.0f;
+    bool vinylBass() const { return std::fabs(value(kMonoFreq) - kVinylMonoFreq) < 0.5f && std::fabs(value(kLowMonoTrim) - kVinylMonoTrim) < 0.5f; }
+    // the destination TARGET is on (vinyl only with its bass mono; plain -12 without it reads CUSTOM), -1 = none
+    int currentDestination() const
+    {
+        const auto& d = destinations();
+        for (size_t i = 0; i < d.size(); ++i)
+            if (std::fabs(value(kTarget) - d[i].lufs) < 0.05f && (!d[i].vinyl || vinylBass())) return (int)i;
+        return -1;
+    }
+    void chooseDestination(int i)
+    {
+        const auto& d = destinations();
+        if (i < 0 || i >= (int)d.size()) return;
+        beginGroup();
+        // leaving vinyl puts its bass mono back (only if it is still vinyl's, so a hand-set value stays)
+        if (!d[(size_t)i].vinyl && vinylBass())
+        {
+            setParamGesture(kMonoFreq, params()[kMonoFreq].def);
+            setParamGesture(kLowMonoTrim, params()[kLowMonoTrim].def);
+        }
+        if (d[(size_t)i].vinyl) { setParamGesture(kMonoFreq, kVinylMonoFreq); setParamGesture(kLowMonoTrim, kVinylMonoTrim); }
+        setParamGesture(kTarget, d[(size_t)i].lufs);
+        setParamGesture(kLoudMode, (float)kToTarget);
+        setParamGesture(kLoudOn, 1.0f);
+        endGroup();
+        setStatus(std::string("Destination: ") + d[(size_t)i].item);
+        repaint();
+    }
     std::vector<Control*> advDials;
     float bandsCurve[kCurvePts] = {}, autoEq[kEq] = {};
     enum DragMode { dNone = 0, dTrim, dBand };

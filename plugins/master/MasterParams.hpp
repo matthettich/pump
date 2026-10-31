@@ -109,7 +109,7 @@ inline const std::vector<Preset>& presets()
     v.push_back({ "Punch", { { "style", kPunch } } });
     // destinations: the loudness each one wants (TARGET mode); vinyl also folds the bass to mono below 150 Hz
     v.push_back({ "Club -9", { { "target", -9 }, { "loud_mode", kToTarget }, { "intensity", 60 } } });
-    v.push_back({ "Vinyl -12", { { "target", -12 }, { "loud_mode", kToTarget }, { "mono_freq", 150 }, { "low_mono_trim", 60 } } });
+    v.push_back({ "Vinyl -12", { { "target", -12 }, { "loud_mode", kToTarget }, { "mono_freq", 150 }, { "low_mono_trim", 100 } } });
     v.push_back({ "Streaming -14", { { "target", -14 }, { "loud_mode", kToTarget } } });
     v.push_back({ "Tone only", { { "dyn_on", 0 }, { "stereo_on", 0 }, { "loud_on", 0 } } });
     v.push_back({ "Loudness only", { { "tone_on", 0 }, { "dyn_on", 0 }, { "stereo_on", 0 } } });
