@@ -4,7 +4,7 @@
 #define DISTRHO_PLUGIN_BRAND           "wake effects"
 #define DISTRHO_PLUGIN_NAME            "pump VOX Vocoder"   // hosts identify plugins by the ids below, not the name
 #define PUMP_PLUGIN_KIND               "Vocoder"   // shown next to the tag in the window
-#define PUMP_PLUGIN_ABOUT              "Vocoder: classic band vocoder, spectral, talkbox and convolution modes, with a built-in carrier synth that plays MIDI or follows your voice."
+#define PUMP_PLUGIN_ABOUT              "Vocoder: classic band vocoder, spectral, talkbox and convolution modes, with a built-in carrier synth that plays MIDI or follows your voice; and Voice FX: pitch, formant, grit, robot and character."
 #define DISTRHO_PLUGIN_URI             "https://github.com/matthettich/pump#vox"
 #define DISTRHO_PLUGIN_CLAP_ID         "com.wake.pump.vox"
 #define DISTRHO_PLUGIN_BRAND_ID        Wake

@@ -12,8 +12,20 @@ enum Param : int {
     kFormant, kAttack, kRelease, kFlatten, kEmphasis, kSibilance, kNoise, kGate, kFreeze,
     kSource, kWave, kOctave, kChord, kKey, kScale, kGlide, kDetune,
     kSpread, kEnsemble, kVoiceDry, kCarrierDry, kOutGain, kBypass,
+    // ENGINE: the vocoder (everything above) or VOICE FX (VoxFx.hpp: pitch, grit, robot, character)
+    kEngine,
+    kFxPitchOn, kFxPitch, kFxFormant, kFxSub,
+    kFxGritOn, kFxFry, kFxRasp, kFxRattle, kFxRattleHz, kFxDrive, kFxTone,
+    kFxRobotOn, kFxMono, kFxNote, kFxGlide, kFxRing, kFxRingHz, kFxComb, kFxCrush,
+    kFxCharOn, kFxFilter, kFxStack, kFxStackMix, kFxDouble, kFxSlap, kFxSlapMs,
+    kFxMix,
     kNumParams
 };
+
+enum EngineKind : int { kEngineVocoder = 0, kEngineVoiceFx, kNumEngines };
+static const char* const kEngineNames[] = { "Vocoder", "Voice FX" };
+static const char* const kFxFilterNamesP[] = { "Off", "Radio", "Phone", "Megaphone", "Walkie" };
+static const char* const kFxStackNamesP[] = { "Off", "Octave up", "Octave down", "Up + down" };
 
 enum Mode : int { kClassic = 0, kSpectral, kTalkbox, kConvolve, kNumModes };
 static const char* const kModeNames[] = { "Classic", "Spectral", "Talkbox", "Convolve" };
@@ -88,6 +100,35 @@ inline const std::vector<ParamSpec>& params()
     v.push_back({ "carrier_dry", "Dry Carrier", "Carrier", 0, 100, 0, PUnit::Percent, PScale::Linear, A, nullptr, 1 });
     v.push_back({ "out_gain", "Output Gain", "Output", -24, 24, 0, PUnit::dB, PScale::Linear, A, nullptr, 1 });
     v.push_back({ "bypass", "Bypass", "Bypass", 0, 1, 0, PUnit::None, PScale::Linear, A | kPBoolean | kPBypass, nullptr, 1 });
+    // ENGINE changes the signal path and the latency: not automatable (it fades out and back in)
+    v.push_back({ "engine", "Engine", "Engine", 0, kNumEngines - 1, kEngineVocoder, PUnit::None, PScale::Linear, kPInteger, kEngineNames, 1 });
+    v.push_back({ "fx_pitch_on", "FX Pitch On", "Pitch", 0, 1, 1, PUnit::None, PScale::Linear, A | kPBoolean, nullptr, 1 });
+    v.push_back({ "fx_pitch", "FX Pitch", "Pitch", -24, 24, 0, PUnit::None, PScale::Linear, A, nullptr, 1 });
+    v.push_back({ "fx_formant", "FX Formant", "Formant", -12, 12, 0, PUnit::None, PScale::Linear, A, nullptr, 1 });
+    v.push_back({ "fx_sub", "FX Sub Octave", "Sub", 0, 100, 0, PUnit::Percent, PScale::Linear, A, nullptr, 1 });
+    v.push_back({ "fx_grit_on", "FX Grit On", "Grit", 0, 1, 0, PUnit::None, PScale::Linear, A | kPBoolean, nullptr, 1 });
+    v.push_back({ "fx_fry", "FX Fry", "Fry", 0, 100, 40, PUnit::Percent, PScale::Linear, A, nullptr, 1 });
+    v.push_back({ "fx_rasp", "FX Rasp", "Rasp", 0, 100, 30, PUnit::Percent, PScale::Linear, A, nullptr, 1 });
+    v.push_back({ "fx_rattle", "FX Rattle", "Rattle", 0, 100, 20, PUnit::Percent, PScale::Linear, A, nullptr, 1 });
+    v.push_back({ "fx_rattle_hz", "FX Rattle Rate", "Rate", 10, 90, 38, PUnit::Hz, PScale::Linear, A, nullptr, 1 });
+    v.push_back({ "fx_drive", "FX Drive", "Drive", 0, 36, 9, PUnit::dB, PScale::Linear, A, nullptr, 1 });
+    v.push_back({ "fx_tone", "FX Tone", "Tone", -100, 100, 0, PUnit::Percent, PScale::Linear, A, nullptr, 1 });
+    v.push_back({ "fx_robot_on", "FX Robot On", "Robot", 0, 1, 0, PUnit::None, PScale::Linear, A | kPBoolean, nullptr, 1 });
+    v.push_back({ "fx_mono", "FX Monotone", "Mono", 0, 100, 100, PUnit::Percent, PScale::Linear, A, nullptr, 1 });
+    v.push_back({ "fx_note", "FX Robot Note", "Note", 24, 84, 45, PUnit::None, PScale::Linear, A | kPInteger, nullptr, 1 });
+    v.push_back({ "fx_glide", "FX Robot Glide", "Glide", 0, 500, 30, PUnit::ms, PScale::Power, A, nullptr, 2.0f });
+    v.push_back({ "fx_ring", "FX Ring", "Ring", 0, 100, 0, PUnit::Percent, PScale::Linear, A, nullptr, 1 });
+    v.push_back({ "fx_ring_hz", "FX Ring Frequency", "Ring Hz", 10, 2000, 110, PUnit::Hz, PScale::Log, A, nullptr, 1 });
+    v.push_back({ "fx_comb", "FX Comb", "Comb", 0, 100, 0, PUnit::Percent, PScale::Linear, A, nullptr, 1 });
+    v.push_back({ "fx_crush", "FX Crush", "Crush", 0, 100, 0, PUnit::Percent, PScale::Linear, A, nullptr, 1 });
+    v.push_back({ "fx_char_on", "FX Character On", "Character", 0, 1, 0, PUnit::None, PScale::Linear, A | kPBoolean, nullptr, 1 });
+    v.push_back({ "fx_filter", "FX Filter", "Filter", 0, 4, 0, PUnit::None, PScale::Linear, A | kPInteger, kFxFilterNamesP, 1 });
+    v.push_back({ "fx_stack", "FX Stack", "Stack", 0, 3, 0, PUnit::None, PScale::Linear, A | kPInteger, kFxStackNamesP, 1 });
+    v.push_back({ "fx_stack_mix", "FX Stack Mix", "Stack Mix", 0, 100, 50, PUnit::Percent, PScale::Linear, A, nullptr, 1 });
+    v.push_back({ "fx_double", "FX Double", "Double", 0, 100, 0, PUnit::Percent, PScale::Linear, A, nullptr, 1 });
+    v.push_back({ "fx_slap", "FX Slap", "Slap", 0, 100, 0, PUnit::Percent, PScale::Linear, A, nullptr, 1 });
+    v.push_back({ "fx_slap_ms", "FX Slap Time", "Slap ms", 20, 280, 110, PUnit::ms, PScale::Linear, A, nullptr, 1 });
+    v.push_back({ "fx_mix", "FX Mix", "Mix", 0, 100, 100, PUnit::Percent, PScale::Linear, A, nullptr, 1 });
     return v;
     }();
     return v;
@@ -125,6 +166,20 @@ inline const std::vector<Preset>& presets()
     C("Frozen vowel pad", { { "mode", 1 }, { "attack", 60 }, { "release", 1000 }, { "wave", 2 }, { "chord", 4 }, { "ensemble", 60 } });
     C("Octave-up formants", { { "bands", 0 }, { "width", 2 }, { "formant", 12 }, { "glide", 0 }, { "scale", 1 }, { "out_gain", -4 } });
     C("Broken radio", { { "mode", 3 }, { "fft_size", 0 }, { "detail", 30 }, { "smear", 100 }, { "wave", 3 }, { "out_gain", 4 } });
+    // VOICE FX (engine 1)
+    auto X = [&](const char* n, std::vector<PresetValue> p) { p.insert(p.begin(), { "engine", 1 }); v.push_back({ n, std::move(p), "VOICE FX" }); };
+    X("Electro gravel", { { "fx_pitch", -3 }, { "fx_formant", -3 }, { "fx_grit_on", 1 }, { "fx_fry", 45 }, { "fx_rasp", 30 }, { "fx_rattle", 25 }, { "fx_drive", 12 } });
+    X("Deep monster", { { "fx_pitch", -7 }, { "fx_formant", -5 }, { "fx_sub", 40 }, { "fx_grit_on", 1 }, { "fx_fry", 30 }, { "fx_rasp", 15 }, { "fx_rattle", 15 }, { "fx_drive", 6 }, { "fx_tone", -30 } });
+    X("Low and dirty", { { "fx_pitch", -5 }, { "fx_formant", -2 }, { "fx_grit_on", 1 }, { "fx_fry", 20 }, { "fx_rasp", 10 }, { "fx_rattle", 5 }, { "fx_drive", 24 }, { "fx_char_on", 1 }, { "fx_filter", 1 } });
+    X("Monotone robot", { { "fx_robot_on", 1 }, { "fx_mono", 100 }, { "fx_glide", 10 }, { "fx_comb", 25 }, { "fx_char_on", 1 }, { "fx_double", 30 } });
+    X("Sci-fi ring robot", { { "fx_pitch", -2 }, { "fx_robot_on", 1 }, { "fx_mono", 80 }, { "fx_ring", 60 }, { "fx_ring_hz", 70 } });
+    X("Tin can droid", { { "fx_robot_on", 1 }, { "fx_mono", 100 }, { "fx_comb", 70 }, { "fx_crush", 30 }, { "fx_char_on", 1 }, { "fx_filter", 2 } });
+    X("Megaphone", { { "fx_pitch_on", 0 }, { "fx_char_on", 1 }, { "fx_filter", 3 }, { "fx_slap", 25 }, { "fx_slap_ms", 90 } });
+    X("Radio host", { { "fx_pitch_on", 0 }, { "fx_char_on", 1 }, { "fx_filter", 1 }, { "fx_double", 20 } });
+    X("Chipmunk", { { "fx_pitch", 7 }, { "fx_formant", 6 } });
+    X("Gender bend down", { { "fx_pitch", -4 }, { "fx_formant", -4 } });
+    X("Octave stack", { { "fx_pitch", 0 }, { "fx_char_on", 1 }, { "fx_stack", 3 }, { "fx_stack_mix", 60 }, { "fx_double", 40 } });
+    X("Crushed droid", { { "fx_pitch", -2 }, { "fx_robot_on", 1 }, { "fx_mono", 70 }, { "fx_crush", 60 }, { "fx_ring", 20 }, { "fx_ring_hz", 300 } });
     return v;
     }();
     return v;

@@ -25,6 +25,23 @@ Last updated 2026-10-30 (pump MASTER; pump ROOM PHONE MIC; before it: ACID, X0X,
 - DPF prints `Unknown license string 'All rights reserved (c) wake'` while generating the AU plist. Harmless: DPF only
   knows SPDX names, "Proprietary" hit the same warning, and the string is not written into the plist.
 
+## pump VOX: ENGINE Voice FX (2026-10-30)
+
+The owner wanted gravelly, low electro vocals and robot voices without a vocoder or pitch correction, inside VOX.
+New parameters (appended): `engine` (Vocoder / Voice FX; not automatable, a 10 ms fade-out, switch, fade-in in
+PluginVox) and the `fx_*` set. `plugins/vox/VoxFx.hpp`: pitch::Tracker + TUNE's PSOLA (`tune::Psola`, included from
+TuneEngine.hpp) for PITCH / FORMANT / SUB and ROBOT's MONO (shift = pitch + mono x (note - sung note), the note from
+the last MIDI key held or NOTE, glided); GRIT (fry = the octave-down PSOLA voice with a peak-weighted blend, rasp =
+band-passed noise times the voice's rectified high-passed waveform, rattle = smoothed-random AM, tube drive, tilt);
+ROBOT ring / pitch-tuned comb / crush; CHARACTER filters (four presets: band limits, a peak, clip drive), stack
+(octave voices from the same PSOLA), doubler (12 / 19 ms modulated), slap. Latency is always the PSOLA's (1155 samples
+at 48 kHz) in Voice FX, so section switches never move time; with every section off it is the input delayed exactly.
+The voice comes from the routing (input, sidechain, or right channel for Split). 12 factory presets in a VOICE FX
+section. `tests/test_vox_fx.cpp`: null with sections off, pitch -5/-12/+7 within 0.25 st, formant moves the
+centroid not the pitch, monotone holds a gliding voice on the note and on a MIDI note, fry puts energy at f0/2,
+ring makes sidebands, random settings finite (ASan clean). Window screenshotted (both engines, both themes). Not
+yet heard on a real voice: the owner should try "Electro gravel" and "Deep monster" and say what to change.
+
 ## pump CONVERT, the mastering converter (2026-10-30)
 
 `convert/`: an Electron app (Mac universal, Windows x64) in MASTER's rainbow look. `engine.js` does everything that

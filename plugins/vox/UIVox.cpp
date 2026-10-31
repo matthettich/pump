@@ -95,6 +95,42 @@ public:
         outDial = addDial(kOutGain, "OUTPUT", Dial::Small, true);
         outDial->tip = "Output gain";
 
+        // ---- ENGINE and VOICE FX ----
+        engineSeg = addSegmented(kEngine, { "VOCODER", "VOICE FX" });
+        engineSeg->tip = "Engine: the vocoder, or VOICE FX (pitch and formant, grit, robot, character: no carrier needed)   (key E)";
+        auto fxDial = [&](int prm, const char* label, const char* tip, bool bip = false) { Dial* d = addDial(prm, label, Dial::Small, bip); d->tip = tip; fxCtl.push_back(d); return d; };
+        auto fxKey = [&](int prm, const char* label, const char* tip) { Button* b = addToggle(prm, label); b->tip = tip; fxCtl.push_back(b); return b; };
+        fxPitchOn = fxKey(kFxPitchOn, "PITCH", "Pitch: moves the pitch and the formants of the voice, separately (key 1)");
+        fxPitch = fxDial(kFxPitch, "PITCH", "Pitch in semitones (-24..+24): the voice deeper or higher, its formants left where they are", true);
+        fxFormant = fxDial(kFxFormant, "FORMANT", "Formant (-12..+12): the size of the voice. Down = bigger, darker (monster); up = smaller (chipmunk). Against the pitch = a gender bend", true);
+        fxSub = fxDial(kFxSub, "SUB", "Sub: a second voice an octave below, blended in");
+        fxGritOn = fxKey(kFxGritOn, "GRIT", "Grit: the gravel of an electro voice (key 2)");
+        fxFry = fxDial(kFxFry, "FRY", "Fry: a rough subharmonic under the voice (the octave below, uneven, like vocal fry)");
+        fxRasp = fxDial(kFxRasp, "RASP", "Rasp: breath noise that pulses with the voice's own waveform (throaty, not hiss)");
+        fxRattle = fxDial(kFxRattle, "RATTLE", "Rattle: a fast, uneven flutter of the level (a growl)");
+        fxRattleHz = fxDial(kFxRattleHz, "RATE", "Rattle rate (Hz)");
+        fxDrive = fxDial(kFxDrive, "DRIVE", "Drive: an asymmetric tube curve, level kept");
+        fxTone = fxDial(kFxTone, "TONE", "Tone: tilts the grit darker (-) or brighter (+)", true);
+        fxRobotOn = fxKey(kFxRobotOn, "ROBOT", "Robot: monotone, ring modulator, metal comb, crush (key 3)");
+        fxMono = fxDial(kFxMono, "MONO", "Mono: flattens the melody to one note (100 % = monotone): the MIDI note you hold, or NOTE");
+        fxNote = fxDial(kFxNote, "NOTE", "Note: the monotone's note when no MIDI note is held");
+        fxGlide = fxDial(kFxGlide, "GLIDE", "Glide: how fast the monotone moves to a new note");
+        fxRing = fxDial(kFxRing, "RING", "Ring: the voice times a sine (the classic sci-fi robot)");
+        fxRingHz = fxDial(kFxRingHz, "RING HZ", "Ring frequency: low = a wobble, 50-150 Hz = a robot, high = metallic");
+        fxComb = fxDial(kFxComb, "COMB", "Comb: a short echo tuned to the voice's pitch: metallic, a tin can");
+        fxCrush = fxDial(kFxCrush, "CRUSH", "Crush: lower sample rate and fewer bits together");
+        fxCharOn = fxKey(kFxCharOn, "CHARACTER", "Character: radio and megaphone filters, octave stack, doubler, slap echo (key 4)");
+        fxFilter = addMenu(kFxFilter); fxFilter->tip = "Filter: Radio, Phone, Megaphone or Walkie"; fxCtl.push_back(fxFilter);
+        fxFilter->textFn = [this]() { return std::string("FILTER  ") + kFxFilterNamesP[pump::clampv((int)value(kFxFilter), 0, 4)]; };
+        fxStack = addMenu(kFxStack); fxStack->tip = "Stack: voices an octave up, down or both, mixed by STACK MIX"; fxCtl.push_back(fxStack);
+        fxStack->textFn = [this]() { return std::string("STACK  ") + kFxStackNamesP[pump::clampv((int)value(kFxStack), 0, 3)]; };
+        fxStackMix = fxDial(kFxStackMix, "STACK", "Stack mix");
+        fxDouble = fxDial(kFxDouble, "DOUBLE", "Double: two slowly moving copies, left and right");
+        fxSlap = fxDial(kFxSlap, "SLAP", "Slap: a short slap-back echo");
+        fxSlapMs = fxDial(kFxSlapMs, "SLAP MS", "Slap time");
+        fxMix = fxDial(kFxMix, "MIX", "Mix: the effect against the dry voice (latency-aligned)");
+        fxOut = fxDial(kOutGain, "OUTPUT", "Output gain", true);
+
         if (auto* p = static_cast<PluginVox*>(pluginPtr())) plug = p;
         for (auto& h : hist) h = -1.0f;
         for (auto& h : histF) h = -1.0f;
@@ -119,7 +155,8 @@ protected:
         char b[32];
         switch (i)
         {
-        case kFormant: if (std::fabs(v) < 0.05f) return "0.0 st"; std::snprintf(b, sizeof b, "%+.1f st", v); return b;
+        case kFormant: case kFxPitch: case kFxFormant: if (std::fabs(v) < 0.05f) return "0.0 st"; std::snprintf(b, sizeof b, "%+.1f st", v); return b;
+        case kFxNote: { char nb[8]; return pump::pitch::noteName((int)std::lround(v), nb, sizeof nb); }
         case kWidth: std::snprintf(b, sizeof b, "x%.2f", v); return b;
         case kGate: if (v <= kGateOff + 0.05f) return "OFF"; break;
         case kOctave: if (std::lround(v) == 0) return "0"; std::snprintf(b, sizeof b, "%+d", (int)std::lround(v)); return b;
@@ -185,11 +222,45 @@ protected:
         voiceDial->r = Rect(896, y0 + 112, 62, sh);
         carrierDial->r = Rect(960, y0 + 112, 62, sh);
         outDial->r = Rect(928, y0 + 200, 62, sh);
+
+        // ENGINE in the header; VOICE FX: four section panels and an output column in the place of the vocoder's
+        { const float w = std::min(176.0f, headerExtra.w - 8.0f); engineSeg->r = Rect(headerExtra.r() - w, headerExtra.y, w, headerExtra.h); }
+        const float pw = 205.0f, gap = 10.0f;
+        for (int k = 0; k < 4; ++k) fxPanel[k] = Rect(14 + k * (pw + gap), y0, pw, ph);
+        fxOutPanel = Rect(14 + 4 * (pw + gap), y0, 1026 - (14 + 4 * (pw + gap)), ph);
+        auto cell = [&](int panel, int col, int row) { const Rect& P = fxPanel[panel]; return Rect(P.x + 4 + col * 66, P.y + 50 + row * (sh + 4), 66, sh); };
+        Button* keys[4] = { fxPitchOn, fxGritOn, fxRobotOn, fxCharOn };
+        for (int k = 0; k < 4; ++k) keys[k]->r = Rect(fxPanel[k].x + 10, y0 + 10, pw - 20, 28);
+        fxPitch->size = fxFormant->size = Dial::Large;
+        fxPitch->r = Rect(fxPanel[0].x + 10, y0 + 50, 90, Dial::heightFor(Dial::Large));
+        fxFormant->r = Rect(fxPanel[0].x + 105, y0 + 50, 90, Dial::heightFor(Dial::Large));
+        fxSub->r = cell(0, 1, 2);
+        fxFry->r = cell(1, 0, 0); fxRasp->r = cell(1, 1, 0); fxRattle->r = cell(1, 2, 0);
+        fxRattleHz->r = cell(1, 0, 1); fxDrive->r = cell(1, 1, 1); fxTone->r = cell(1, 2, 1);
+        fxMono->r = cell(2, 0, 0); fxNote->r = cell(2, 1, 0); fxGlide->r = cell(2, 2, 0);
+        fxRing->r = cell(2, 0, 1); fxRingHz->r = cell(2, 1, 1); fxComb->r = cell(2, 2, 1);
+        fxCrush->r = cell(2, 1, 2);
+        fxFilter->r = Rect(fxPanel[3].x + 10, y0 + 48, pw - 20, 24);
+        fxStack->r = Rect(fxPanel[3].x + 10, y0 + 78, pw - 20, 24);
+        { const Rect& P = fxPanel[3]; const float yy = y0 + 110;
+          fxStackMix->r = Rect(P.x + 4, yy, 66, sh); fxDouble->r = Rect(P.x + 70, yy, 66, sh); fxSlap->r = Rect(P.x + 136, yy, 66, sh);
+          fxSlapMs->r = Rect(P.x + 136, yy + sh + 4, 66, sh); }
+        fxMix->r = Rect(fxOutPanel.cx() - 33, y0 + 40, 66, sh);
+        fxOut->r = Rect(fxOutPanel.cx() - 33, y0 + 40 + sh + 14, 66, sh);
         updateVisibility();
     }
 
+    bool fxMode() const { return (int)value(kEngine) == kEngineVoiceFx; }
     void updateVisibility()
     {
+        const bool fx = fxMode();
+        for (Control* c : fxCtl) c->visible = fx;
+        for (Control* c : std::initializer_list<Control*>{ modeSeg, bandSeg, fftSeg, lowDial, highDial, widthDial, detailDial, tubeDial, driveDial, smearDial, freezeBtn,
+                                                          formantDial, attackDial, releaseDial, flattenDial, emphDial, sibDial, noiseDial, gateDial,
+                                                          routeMenu, sourceSeg, waveSeg, octaveDial, glideDial, detuneDial, keyMenu, scaleMenu, chordMenu,
+                                                          spreadDial, ensDial, voiceDial, carrierDial, outDial })
+            c->visible = !fx;
+        if (fx) return;
         const int m = pump::clampv((int)value(kMode), 0, kNumModes - 1);
         const bool classic = m == kClassic, spectral = m == kSpectral, talk = m == kTalkbox, conv = m == kConvolve;
         bandSeg->visible = lowDial->visible = highDial->visible = widthDial->visible = classic;
@@ -203,7 +274,7 @@ protected:
         const bool synth = (int)value(kRoute) == kRouteSynth;
         for (Control* c : std::initializer_list<Control*>{ sourceSeg, waveSeg, octaveDial, glideDial, detuneDial, keyMenu, scaleMenu, chordMenu }) c->enabled = synth;
     }
-    void onParamChanged(int i, float) override { if (i == kMode || i == kRoute) updateVisibility(); }
+    void onParamChanged(int i, float) override { if (i == kMode || i == kRoute || i == kEngine) updateVisibility(); }
     void onPresetApplied() override { updateVisibility(); }
 
     void tick(float dt) override
@@ -216,6 +287,26 @@ protected:
             if (pk >= hold[k]) { hold[k] = pk; holdT[k] = 1.5f; }
             else if ((holdT[k] -= dt) <= 0.0f) hold[k] = std::max(pk, hold[k] - 18.0f * dt);
         };
+        if (fxMode())
+        {
+            // VOICE FX: the voice in, the output; the pitch screen shows the voice in and out and the robot's note
+            const float vin = plug->fx.level.load(std::memory_order_relaxed);
+            lvl[0] = std::max(vin, lvl[0] - 26.0f * dt); hold[0] = std::max(vin, hold[0] - 18.0f * dt);
+            lvl[1] = hold[1] = -120.0f;
+            meter(plug->fxOutPeak[0], 2); meter(plug->fxOutPeak[1], 3);
+            histT += dt;
+            if (histT >= 1.0f / 60.0f)
+            {
+                histT = 0.0f;
+                hist[histPos] = plug->fx.inMidi.load(std::memory_order_relaxed);
+                histF[histPos] = plug->fx.outMidi.load(std::memory_order_relaxed);
+                histR[histPos] = plug->fx.robotNote.load(std::memory_order_relaxed);
+                histPos = (histPos + 1) % kHist;
+            }
+            const float im = plug->fx.inMidi.load(std::memory_order_relaxed);
+            if (im > 0.0f) { lastMidi = im; lastMidiT = 0.0f; } else lastMidiT += dt;
+            return;
+        }
         meter(e.voicePeak, 0); meter(e.carrierPeak, 1); meter(e.outPeak[0], 2); meter(e.outPeak[1], 3);
         // band display, smoothed a little
         const int n = pump::clampv(e.dispCount.load(std::memory_order_relaxed), 0, kDispArr);
@@ -252,6 +343,7 @@ protected:
 
     void drawBody() override
     {
+        if (fxMode()) { drawFx(); return; }
         drawBands();
         drawVoice();
         for (int m = 0; m < 4; ++m) drawLevelMeter(meterR[m], lvl[m], hold[m], -60.0f, 6.0f);
@@ -393,6 +485,94 @@ protected:
             strokeRect(box, theme.red, 1.5f);
             textAt(box.cx(), box.cy() + 0.5f, msg, kLabel, 12.0f, theme.red, ALIGN_CENTER | ALIGN_MIDDLE, 1.0f);
         }
+    }
+
+    // VOICE FX: the pitch over the last four seconds across the whole screen (the voice in, faint; out, neon; the
+    // robot's note in the second colour), the chain beside it, the section panels below
+    void drawFx()
+    {
+        const Rect r(screenR.x, screenR.y, screenR.w, screenR.h);
+        screenBox(r);
+        caption(r.x + 10, r.y + 14, "VOICE FX  ·  PITCH IN AND OUT");
+        char t[64];
+        const float om = plug ? plug->fx.outMidi.load() : -1.0f;
+        if (lastMidiT < 0.25f && om > 0.0f)
+        {
+            char a[8], b[8];
+            std::snprintf(t, sizeof t, "IN %s   OUT %s", pump::pitch::noteName((int)std::lround(lastMidi), a, 8), pump::pitch::noteName((int)std::lround(om), b, 8));
+            textAt(r.r() - 10, r.y + 14, t, kMono, 11.0f, theme.ink, ALIGN_RIGHT | ALIGN_MIDDLE);
+        }
+        float lo = 1e9f, hi = -1e9f;
+        for (int i = 0; i < kHist; ++i) for (float v : { hist[i], histF[i], histR[i] }) if (v > 0.0f) { lo = std::min(lo, v); hi = std::max(hi, v); }
+        if (lo > hi) { lo = 40.0f; hi = 64.0f; }
+        const float mid = 0.5f * (lo + hi), span = std::max(24.0f, hi - lo + 6.0f);
+        rangeLo += ((mid - span * 0.5f) - rangeLo) * 0.08f;
+        rangeHi += ((mid + span * 0.5f) - rangeHi) * 0.08f;
+        const Rect p(r.x + 34, r.y + 28, r.w - 44, r.h - 40);
+        auto yOf = [&](float m) { return p.b() - (m - rangeLo) / std::max(1.0f, rangeHi - rangeLo) * p.h; };
+        save(); scissor(p.x, p.y, p.w, p.h);
+        for (int n = (int)std::floor(rangeLo); n <= (int)std::ceil(rangeHi); ++n)
+            if (pump::pitch::pitchClass(n) == 0 || pump::pitch::pitchClass(n) == 7)
+            {
+                line(p.x, yOf((float)n), p.r(), yOf((float)n), pump::pitch::pitchClass(n) == 0 ? withAlpha2(theme.ink, 0.25f) : theme.grid, 1.0f);
+                char nb[8]; textAt(p.x + 3, yOf((float)n) - 6, pump::pitch::noteName(n, nb, 8), kMono, 8.0f, theme.ink2, ALIGN_LEFT | ALIGN_MIDDLE);
+            }
+        auto trace = [&](const float* h, const Color& c, float w) {
+            bool pen = false;
+            beginPath();
+            for (int k = 0; k < kHist; ++k)
+            {
+                const float v = h[(histPos + k) % kHist];
+                const float x = p.x + p.w * k / (kHist - 1);
+                if (v <= 0.0f) { pen = false; continue; }
+                if (!pen) { moveTo(x, yOf(v)); pen = true; } else lineTo(x, yOf(v));
+            }
+            strokeColor(c); strokeWidth(w); lineJoin(ROUND); stroke();
+        };
+        trace(histR, withAlpha2(theme.second, 0.8f), 2.0f);
+        trace(hist, withAlpha2(theme.ink, 0.35f), 1.5f);
+        if (theme.dark) trace(histF, theme.glow, 6.0f);
+        trace(histF, theme.neon, 3.0f);
+        restore();
+        // the chain, beside the screen
+        const Rect& v = voiceR;
+        screenBox(v);
+        caption(v.x + 10, v.y + 14, "THE CHAIN");
+        const char* names[4] = { "PITCH", "GRIT", "ROBOT", "CHARACTER" };
+        const int ons[4] = { kFxPitchOn, kFxGritOn, kFxRobotOn, kFxCharOn };
+        for (int k = 0; k < 4; ++k)
+        {
+            const bool on = value(ons[k]) >= 0.5f;
+            const Rect b(v.x + 14, v.y + 34 + k * 62, v.w - 28, 48);
+            if (on) fillRect(b, withAlpha2(theme.neon, theme.dark ? 0.25f : 0.45f));
+            strokeRect(b, on ? theme.ink : theme.dim, on ? 1.5f : 1.0f);
+            textAt(b.x + 10, b.y + 15, names[k], kLabel, 12.0f, on ? theme.ink : theme.ink2, ALIGN_LEFT | ALIGN_MIDDLE, 1.0f);
+            textAt(b.x + 10, b.y + 34, fxSummary(k), kMono, 10.0f, on ? theme.ink : theme.ink2, ALIGN_LEFT | ALIGN_MIDDLE);
+            if (k < 3) line(b.cx(), b.b(), b.cx(), b.b() + 14, theme.dim, 1.5f);
+        }
+        for (int m = 0; m < 4; ++m) if (m != 1) drawLevelMeter(meterR[m], lvl[m], hold[m], -60.0f, 6.0f);
+        textAt(meterR[0].cx(), meterR[0].y - 6, "IN", kLabel, 9.0f, theme.ink2, ALIGN_CENTER | ALIGN_MIDDLE);
+        textAt(meterR[2].r() + 1, meterR[2].y - 6, "OUT", kLabel, 9.0f, theme.ink2, ALIGN_CENTER | ALIGN_MIDDLE);
+        const char* caps[4] = { "PITCH + FORMANT", "GRIT", "ROBOT", "CHARACTER" };
+        for (int k = 0; k < 4; ++k) strokeRect(fxPanel[k], value(ons[k]) >= 0.5f ? theme.dim : withAlpha2(theme.dim, 0.5f), 1.0f);
+        strokeRect(fxOutPanel, theme.dim, 1.0f);
+        caption(fxOutPanel.x + 10, fxOutPanel.y + 16, "OUTPUT");
+        (void)caps;
+        textAt(fxPanel[0].x + 10, fxPanel[0].b() - 18, "drag the screen: pitch", kLabel, 9.5f, theme.ink2, ALIGN_LEFT | ALIGN_MIDDLE, 0.5f);
+        textAt(fxPanel[2].x + 10, fxPanel[2].b() - 18, "MIDI notes play the monotone", kLabel, 9.5f, theme.ink2, ALIGN_LEFT | ALIGN_MIDDLE, 0.5f);
+    }
+    std::string fxSummary(int k) const
+    {
+        char b[64];
+        auto pc = [&](int prm) { return (int)std::lround(value(prm)); };
+        switch (k)
+        {
+        case 0: std::snprintf(b, sizeof b, "%+.1f st  formant %+.1f", value(kFxPitch), value(kFxFormant)); break;
+        case 1: std::snprintf(b, sizeof b, "fry %d  rasp %d  drive %.0f dB", pc(kFxFry), pc(kFxRasp), value(kFxDrive)); break;
+        case 2: { char nb[8]; std::snprintf(b, sizeof b, "mono %d%% on %s", pc(kFxMono), pump::pitch::noteName(pc(kFxNote), nb, 8)); break; }
+        default: std::snprintf(b, sizeof b, "%s  double %d  slap %d", kFxFilterNamesP[pump::clampv(pc(kFxFilter), 0, 4)], pc(kFxDouble), pc(kFxSlap)); break;
+        }
+        return b;
     }
 
     void drawVoice()
@@ -544,6 +724,13 @@ protected:
     bool bodyMouseDown(float x, float y, int button, uint mod, bool dbl) override
     {
         if (!screenR.contains(x, y) || button != kMouseButtonLeft) return false;
+        if (fxMode())
+        {
+            if (dbl || cmdKey(mod)) { setParamGesture(kFxPitch, 0.0f); return false; }
+            dragFxPitch = true; dragY = y; dragStart = value(kFxPitch);
+            beginEdit(kFxPitch);
+            return true;
+        }
         if (mod & kModifierAlt) { altMouse = true; startSolo(x); return true; }
         const int h = handleAt(x, y);
         if (h)
@@ -560,6 +747,13 @@ protected:
     }
     void bodyMouseDrag(float x, float y, uint mod) override
     {
+        if (dragFxPitch)
+        {
+            const float v = dragStart + (dragY - y) * ((mod & kModifierShift) ? 0.02f : 0.1f);
+            setParam(kFxPitch, (mod & kModifierShift) ? v : std::round(v));
+            setStatus(paramStatus(kFxPitch));
+            return;
+        }
         if (altMouse) { stopSolo(); startSolo(x); return; }
         const Rect p = plotRect();
         if (dragHandle)
@@ -579,6 +773,7 @@ protected:
     }
     void bodyMouseUp(float, float) override
     {
+        if (dragFxPitch) { dragFxPitch = false; endEdit(kFxPitch); }
         if (altMouse) { altMouse = false; if (!altKey) stopSolo(); }
         if (dragHandle) { endEdit(dragHandle == 2 ? kHigh : kLow); dragHandle = 0; }
         if (dragFormant) { dragFormant = false; endEdit(kFormant); }
@@ -600,6 +795,14 @@ protected:
     {
         if ((key == kKeyAltL || key == kKeyAltR)) { altKey = true; if (screenR.contains(hoverX, hoverY)) startSolo(hoverX); return true; }
         if (cmdKey(mod)) return false;
+        if (key == 'e' || key == 'E') { setParamGesture(kEngine, fxMode() ? 0.0f : 1.0f); return true; }
+        if (fxMode() && key >= '1' && key <= '4')
+        {
+            static const int ons[4] = { kFxPitchOn, kFxGritOn, kFxRobotOn, kFxCharOn };
+            const int prm = ons[key - '1'];
+            setParamGesture(prm, value(prm) >= 0.5f ? 0.0f : 1.0f);
+            return true;
+        }
         if (key >= '1' && key <= '4') { setParamGesture(kMode, (float)(key - '1')); return true; }
         if (key == 'f' || key == 'F') { setParamGesture(kFreeze, value(kFreeze) >= 0.5f ? 0.0f : 1.0f); return true; }
         return false;
@@ -612,7 +815,9 @@ protected:
     std::vector<std::pair<std::string, std::string>> helpLines() override
     {
         return {
-            { "1 - 4", "mode: classic, spectral, talkbox, convolve" },
+            { "E", "engine: vocoder / voice FX" },
+            { "1 - 4", "vocoder: mode (classic, spectral, talkbox, convolve) · voice FX: pitch, grit, robot, character on/off" },
+            { "Voice FX: drag the screen", "up/down = pitch in semitones (Shift: fine; double-click resets)" },
             { "F", "freeze on / off (or hold the FREEZE key)" },
             { "Hold Alt on the screen", "listen to the band under the mouse (move to sweep)" },
             { "Drag on the screen", "up/down = formant; in Classic drag LOW / HIGH to set the band range" },
@@ -622,6 +827,7 @@ protected:
     std::string footerInfo() override
     {
         char buf[160];
+        if (fxMode()) { std::snprintf(buf, sizeof buf, "VOICE FX   LATENCY %d", plug ? plug->latencyNow() : 0); return buf; }
         const int m = pump::clampv((int)value(kMode), 0, kNumModes - 1);
         const int route = pump::clampv((int)value(kRoute), 0, kNumRoutes - 1);
         std::snprintf(buf, sizeof buf, "%s   %s   LATENCY %d", kModeNames[m], kRouteNames[route], plug ? plug->latencyNow() : 0);
@@ -656,6 +862,15 @@ private:
     Dial *formantDial, *attackDial, *releaseDial, *flattenDial, *emphDial, *sibDial, *noiseDial, *gateDial;
     Dial *octaveDial, *glideDial, *detuneDial, *spreadDial, *ensDial, *voiceDial, *carrierDial, *outDial;
     MenuButton *routeMenu, *keyMenu, *scaleMenu, *chordMenu;
+    Segmented* engineSeg;
+    std::vector<Control*> fxCtl;
+    Button *fxPitchOn, *fxGritOn, *fxRobotOn, *fxCharOn;
+    Dial *fxPitch, *fxFormant, *fxSub, *fxFry, *fxRasp, *fxRattle, *fxRattleHz, *fxDrive, *fxTone, *fxMono, *fxNote, *fxGlide, *fxRing, *fxRingHz,
+         *fxComb, *fxCrush, *fxStackMix, *fxDouble, *fxSlap, *fxSlapMs, *fxMix, *fxOut;
+    MenuButton *fxFilter, *fxStack;
+    Rect fxPanel[4], fxOutPanel;
+    float histR[240] = {};
+    bool dragFxPitch = false;
     Button* freezeBtn;
 
     DISTRHO_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(UIVox)
