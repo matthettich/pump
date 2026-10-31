@@ -85,6 +85,21 @@ PumpRunner* pumpfx_new_stutter(double sr);
 PumpRunner* pumpfx_new_chop(double sr);
 PumpRunner* pumpfx_new_twang(double sr);
 PumpRunner* pumpfx_new_master(double sr);
+int pumpfx_tel_tube();
+int pumpfx_tel_snap();
+int pumpfx_tel_gate();
+int pumpfx_tel_echo();
+int pumpfx_tel_spring();
+int pumpfx_tel_verb();
+int pumpfx_tel_grain();
+int pumpfx_tel_vox();
+int pumpfx_tel_tune();
+int pumpfx_tel_crush();
+int pumpfx_tel_swirl();
+int pumpfx_tel_stutter();
+int pumpfx_tel_chop();
+int pumpfx_tel_twang();
+int pumpfx_tel_master();
 
 namespace pumpwasm {
 
@@ -419,9 +434,17 @@ public:
     int telemetry(float* t) override
     {
         t[0] = (float)latencyNow(); t[1] = lin(outPk[0]); t[2] = lin(outPk[1]); t[3] = lin(inPk[0]); t[4] = lin(inPk[1]);
-        return 5 + runner->status(t + 5);   // MASTER: t[5] learning, t[6] an analysis in use, t[7] its loudness (LUFS)
+        return 5 + runner->status(t + 5);   // the window's feeds (each wasm/fx/<name>.cpp says what)
     }
-    void hold(int kind, float a, float, float, float) override { if (kind == 3) runner->command(toInt(a)); }   // MASTER: LEARN 1 / finish 2 / cancel 3
+    int numRings() const override { return runner->numRings(); }
+    const pump::ScopeRing* ring(int k) const override { return runner->ring(k); }
+    // kind 3: the plugin's command (a, b: see its wasm/fx/<name>.cpp); kind 4: a momentary parameter, never saved
+    // (a = index, b = value: CHOP's pad triggers from the window); kind 5: the plugin's second command (c = kind 3's b)
+    void hold(int kind, float a, float b, float c, float) override
+    {
+        if (kind == 3) runner->command(toInt(a), b, c);
+        else if (kind == 4) { const int i = toInt(a); if (i >= 0 && i < numParams) runner->setParam((uint32_t)i, specs[i].clamp(b)); }
+    }
     void midi(int frame, int status, int d1, int d2) override
     {
         if (nq >= kMaxMidi) return;
@@ -470,6 +493,7 @@ inline HostBase* make(int type, double sr)
     default: return nullptr;
     }
 }
+int shimTel(int type);
 inline int telLen(int type)
 {
     switch (type)
@@ -483,8 +507,31 @@ inline int telLen(int type)
     case kWide: return 18;
     case kHeat: return 21;
     case kMeter: return 24;
-    case kMaster: return 8;
-    default: return type >= kFirstShim && type < kNumTypes ? 5 : 0;
+    default: return type >= kFirstShim && type < kNumTypes ? 5 + shimTel(type) : 0;
+    }
+}
+
+// the creative effects' window feeds: the most floats each writes after the common five (wasm/fx/<name>.cpp)
+int shimTel(int type)
+{
+    switch (type)
+    {
+    case kTube: return pumpfx_tel_tube();
+    case kSnap: return pumpfx_tel_snap();
+    case kGate: return pumpfx_tel_gate();
+    case kEcho: return pumpfx_tel_echo();
+    case kSpring: return pumpfx_tel_spring();
+    case kVerb: return pumpfx_tel_verb();
+    case kGrain: return pumpfx_tel_grain();
+    case kVox: return pumpfx_tel_vox();
+    case kTune: return pumpfx_tel_tune();
+    case kCrush: return pumpfx_tel_crush();
+    case kSwirl: return pumpfx_tel_swirl();
+    case kStutter: return pumpfx_tel_stutter();
+    case kChop: return pumpfx_tel_chop();
+    case kTwang: return pumpfx_tel_twang();
+    case kMaster: return pumpfx_tel_master();
+    default: return 0;
     }
 }
 
@@ -492,7 +539,7 @@ pumpwasm_handles::HandleTable<HostBase> slots;
 float stage[kStage];
 const bool stageCleared = [] { for (float& v : stage) v = std::numeric_limits<float>::quiet_NaN(); return true; }();   // unwritten = default
 float io[4][kMaxBlock];
-float tel[512];
+float tel[4096];
 float ringBuf[1 << 15];
 char text[1 << 16];   // pump_text(): state keys and values in and out
 

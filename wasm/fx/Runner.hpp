@@ -3,6 +3,7 @@
 // would clash in one) and ends with PUMP_RUNNER(name, PluginName), which defines `PumpRunner* pumpfx_new_<name>(sr)`.
 #pragma once
 #include <cstdint>
+#include "dsp/Util.hpp"   // pump::ScopeRing
 
 struct PumpRunnerMidi { uint32_t frame; uint8_t status, d1, d2; };
 
@@ -17,9 +18,13 @@ struct PumpRunner {
     virtual void transport(double bpm, double ppq, bool playing) = 0;
     virtual const char* getState(const char* key) = 0;   // valid until the next call
     virtual void setState(const char* key, const char* value) = 0;
-    // a plugin's own commands and status, where it has any (MASTER: LEARN; see RunnerExtra below)
-    virtual void command(int) {}
-    virtual int status(float*) { return 0; }
+    // What the plugin's window reads and does besides its parameters (RunnerExtra below): a command (kind, a, b), the
+    // window's feeds after the five common telemetry values (status: at most telMax() floats), sample rings.
+    virtual void command(int kind, float a, float b) = 0;
+    virtual int status(float*) = 0;
+    virtual int telMax() const = 0;
+    virtual int numRings() const = 0;
+    virtual const pump::ScopeRing* ring(int) const = 0;
 };
 
 #ifdef PUMP_SHIM_NS
@@ -28,7 +33,13 @@ struct PumpRunner {
 
 namespace PUMP_SHIM_NS {
 // What a plugin's window would do that isn't a parameter: none by default; a plugin's unit specializes it (master.cpp).
-template <class P> struct RunnerExtra { static void command(P&, int) {} static int status(P&, float*) { return 0; } };
+template <class P> struct RunnerExtra {
+    static constexpr int kTel = 0;   // the most floats status() writes
+    static void command(P&, int, float, float) {}
+    static int status(P&, float*) { return 0; }
+    static int rings(const P&) { return 0; }
+    static const pump::ScopeRing* ring(const P&, int) { return nullptr; }
+};
 
 template <class P>
 class RunnerOf final : public PumpRunner {
@@ -65,8 +76,11 @@ public:
     }
     const char* getState(const char* key) override { st = static_cast<Plugin*>(p)->getState(key).c_str(); return st.c_str(); }
     void setState(const char* key, const char* value) override { static_cast<Plugin*>(p)->setState(key, value); }
-    void command(int c) override { RunnerExtra<P>::command(*p, c); }
+    void command(int kind, float a, float b) override { RunnerExtra<P>::command(*p, kind, a, b); }
     int status(float* t) override { return RunnerExtra<P>::status(*p, t); }
+    int telMax() const override { return RunnerExtra<P>::kTel; }
+    int numRings() const override { return RunnerExtra<P>::rings(*p); }
+    const pump::ScopeRing* ring(int k) const override { return RunnerExtra<P>::ring(*p, k); }
 
 private:
     void setPos(double q)
@@ -91,5 +105,6 @@ private:
 #else
  #define PUMP_RUNNER_API
 #endif
-#define PUMP_RUNNER(name, Cls) PUMP_RUNNER_API PumpRunner* pumpfx_new_##name(double sr) { return new PUMP_SHIM_NS::RunnerOf<PUMP_SHIM_NS::Cls>(sr); }
+#define PUMP_RUNNER(name, Cls) PUMP_RUNNER_API PumpRunner* pumpfx_new_##name(double sr) { return new PUMP_SHIM_NS::RunnerOf<PUMP_SHIM_NS::Cls>(sr); } \
+    PUMP_RUNNER_API int pumpfx_tel_##name() { return PUMP_SHIM_NS::RunnerExtra<PUMP_SHIM_NS::Cls>::kTel; }
 #endif
