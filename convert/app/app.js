@@ -296,8 +296,8 @@ async function init() {
   if (!caps.ok) { eng.textContent = 'FFMPEG MISSING: ' + caps.error; eng.classList.add('bad'); $('#go').disabled = true; }
   else
   {
-    eng.textContent = `SoX VHQ ${caps.soxr ? '✓' : '✗ (fallback resampler)'}  ·  LAME ${caps.lame ? '✓' : '✗'}  ·  AAC ${caps.appleAac ? 'APPLE' : 'BUILT-IN'}`;
-    if (!caps.soxr) eng.classList.add('bad');
+    eng.textContent = `RESAMPLER ${caps.soxr ? 'SoX VHQ' : 'KAISER 256'}  ·  LAME ${caps.lame ? '✓' : '✗'}  ·  AAC ${caps.appleAac ? 'APPLE' : 'BUILT-IN'}`;
+    if (!caps.lame) eng.classList.add('bad');
   }
   preview();
 }

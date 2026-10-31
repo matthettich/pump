@@ -44,8 +44,9 @@ function fit(x, rate, freqs) {
 }
 
 const caps = await E.capabilities();
+if (process.env.PUMP_NO_SOXR) caps.soxr = false;   // test the fallback resampler here
 console.log(`== pump CONVERT (ffmpeg ${caps.version}; SoX resampler ${caps.soxr ? 'yes' : 'NO'}; LAME ${caps.lame ? 'yes' : 'NO'}; Apple AAC ${caps.appleAac ? 'yes' : 'no'})`);
-check(caps.ok && caps.soxr && caps.lame, 'ffmpeg with the SoX resampler and LAME');
+check(caps.ok && caps.lame, `ffmpeg with LAME (resampler: ${caps.soxr ? 'SoX VHQ' : 'long Kaiser filter, built in'})`);
 
 // ---- sources: 24-bit / 96 kHz (1 kHz at -6 dBFS, 30 kHz at -20 dBFS), 32-bit float / 48 kHz (1 kHz and 20 kHz at -12)
 const s96 = path.join(tmp, 'Song One.wav'), s48 = path.join(tmp, 'Song Two.wav'), quiet = path.join(tmp, 'Quiet.wav');
@@ -125,7 +126,7 @@ check(allOk && !fs.readdirSync(path.join(out, 'MP3')).some((f) => f.endsWith('.p
   const x = decode(path.join(out, 'WAV float 48', '01 Song One.wav'), 48000);   // 96 kHz 24-bit -> 48 kHz float
   const r = fit(x, 48000, [1000]);
   check(Math.abs(r.amps[0] - 20 * Math.log10(0.5)) < 0.01, `96 -> 48 kHz: 1 kHz at ${r.amps[0].toFixed(3)} dBFS (source ${(20 * Math.log10(0.5)).toFixed(3)})`);
-  check(r.residual < -125, `96 -> 48 kHz: the 30 kHz tone gone, nothing aliased: residue ${r.residual.toFixed(1)} dBFS`);
+  check(r.residual < -135, `96 -> 48 kHz: the 30 kHz tone gone, nothing aliased: residue ${r.residual.toFixed(1)} dBFS`);
   const y = decode(path.join(out, 'WAV float 48', '02 Sóng Twö.wav'), 48000);   // float 48 -> float 48: untouched
   const r2 = fit(y, 48000, [1000, 20000]);
   check(r2.residual < -140, `48 kHz float to 48 kHz float: residue ${r2.residual.toFixed(1)} dBFS`);
@@ -158,6 +159,8 @@ check(allOk && !fs.readdirSync(path.join(out, 'MP3')).some((f) => f.endsWith('.p
   check(E.fill('{track:02} {missing} {khz}', { track: 3, khz: '44.1' }) === '03 {missing} 44.1', 'template tokens and padding');
   const p = E.parseProbe(`Input #0, wav, from 'x.wav':\n  Metadata:\n    title           : Hello: World\n    artist          : wake\n  Duration: 00:03:21.50, bitrate: 4608 kb/s\n  Stream #0:0: Audio: pcm_s24le ([1][0][0][0] / 0x0001), 96000 Hz, stereo, s32 (24 bit), 4608 kb/s\n`);
   check(p.rate === 96000 && p.bits === 24 && p.channels === 2 && Math.abs(p.duration - 201.5) < 1e-9 && p.tags.title === 'Hello: World', 'probe parser');
+  const pw = E.parseProbe(`Input #0, wav, from 'x.wav':\r\n  Metadata:\r\n    title           : Hi\r\n  Duration: 00:00:04.00, bitrate: 1 kb/s\r\n  Stream #0:0: Audio: pcm_s16le, 44100 Hz, stereo, s16, 1411 kb/s\r\n`);
+  check(pw.tags.title === 'Hi' && pw.rate === 44100 && pw.bits === 16, 'probe parser with Windows line ends');
 }
 
 fs.rmSync(tmp, { recursive: true, force: true });

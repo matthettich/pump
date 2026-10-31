@@ -38,9 +38,10 @@ screenshotted). ffmpeg is not ours: `build.sh` fetches static builds (ffmpeg-sta
 Verified here (Linux, the system ffmpeg 6.1 with soxr): `node convert/test.mjs`: every format and its tags read back
 (UTF-16 in ID3, artwork in FLAC/MP3/AAC), 96->48 kHz level 0.001 dB and residue -141 dBFS (no aliasing of a 30 kHz
 tone), 48->44.1 kHz flat at 20 kHz, 16-bit TPDF at its theoretical floor (-93.3 dB under a full-scale sine), a -90 dBFS
-tone dithered without harmonics (undithered: the 3rd harmonic 20 dB up). **Not yet run as an app** (no Electron
-here) and the shipped ffmpeg builds are untested until CI runs build.sh: if the test there says no SoX resampler,
-pick another static build that has it.
+tone dithered without harmonics (undithered: the 3rd harmonic 20 dB up). The ffmpeg-static builds have no SoX
+resampler: then ffmpeg's own with a 256-tap Kaiser filter (beta 16) is used, which measures the same (residue -152 /
+-155 dBFS, flat to 0.0001 dB at 20 kHz; `PUMP_NO_SOXR=1 node convert/test.mjs` tests it here). Windows ffmpeg prints
+CRLF: parseProbe strips it (the first CI run read no tags there). **Not yet run as an app** (no Electron here).
 
 Known limit: AAC with artwork gets the iTunes tags only (ffmpeg's MP4 writer drops the cover when it writes freeform
 tags, so ISRC and your own tags are left out of the .m4a when there is a cover). Writing the freeform atoms ourselves
