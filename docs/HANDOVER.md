@@ -75,13 +75,23 @@ in Punch/Warm), STEREO (low-end side fold when wide, width pull in Open/Punch), 
 peak limiting at medium; Target = solve the makeup through the loss curve; LIMIT's engine in its Dynamic style).
 INTENSITY 50 % = medium.
 
-**Calibration.** The owner likes a commercial online mastering service's subtle style at 50 % and sent a song with
-that master. Measured: +0.9 LU, peaks untouched (PLR unchanged, true peak went to +0.8 dBTP), no downward
-compression, quiet sections lifted ~1 dB more than loud ones, a linear-phase EQ of about +-1.5 dB, width unchanged.
-Balanced at 50 % reproduces its EQ within 0.47 dB rms (31 Hz..16 kHz) and its section gains within ~0.3 dB on that
-song (with ceiling 0; the default -1 dBTP gives less level). The style table's Balanced row came from a grid search
-over tilt/body/air/sub/strength against that pair; one song can overfit, so re-check with another pair when the
-owner sends one (they may send the same service at 100 %: calibrate INTENSITY's top end then).
+**Calibration.** The owner likes a commercial online mastering service's subtle style at 50 %. First calibrated on
+one pair (a song already near -14.5 LUFS, which made the service look gentle), then re-fitted on six pairs
+(2026-10-31). What the six show: the output always lands at about -13.5 LUFS integrated (-13.35 .. -13.67; a song
+already at -13.4 still got +0.5 LU), sample peaks at -0.1 dBFS (true peaks up to +1.2 dBTP: no true-peak limiting),
+peak-only limiting of 1-3 dB on the loudest hits, quiet sections ~1 dB up, no downward compression, the side
+~0.3 dB up, and a zero-phase EQ toward one fixed target that corrects about half of a song's difference from it
+above 400 Hz (less in the lows), with cuts and boosts up to ~5-6 dB on songs far from it. So: the target is now a
+31-point table (`baseTargetTable`, styles shape it with tilt/body/air/sub), Balanced uses strength 0.50 with
+`lowStr` 0.44 and no soft limit below ~10 dB, `widen` +0.3 dB, and the default is TARGET mode at -13.5 LUFS with
+a +0.5 LU nudge for songs already about at the target (fading out 2.5 LU over it). Tone-shape error against the
+service, rendered through the engine (`tools/master_render.cpp`): 0.97 -> 0.70 dB rms over the six songs
+(leave-one-out fit 1.16 -> 0.84); loudness within 0.4 LU of the service on all six. `tools/master_calibrate.cpp`
+redoes the fit from pairs (raw float in + measured mid transfer per third octave). The darkest song (needs
++6 dB at 12 kHz) is still the worst fit (~1 dB). The default -1 dBTP ceiling gives a little less punch than the
+service (which lets true peaks over 0); the reference EQ is linear phase, ours is minimum phase.
+
+**Destination presets:** Club -9, Vinyl -12 (also bass mono below 150 Hz), Streaming -14 (TARGET dial = any value).
 
 Verified: `tests/test_master.cpp` (null before LEARN and with every stage off, target loudness within 1 LU, true
 peak under the ceiling, gentle limits, the analysis text round trip, LEARN through process(), random setting jumps,

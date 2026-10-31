@@ -196,8 +196,8 @@ struct Settings {
     float intensity = 50.0f;                              // percent
     bool toneOn = true, dynOn = true, stereoOn = true, loudOn = true;
     float toneAmt = 100.0f, dynAmt = 100.0f, stereoAmt = 100.0f;   // percent
-    float target = -12.0f, ceiling = -1.0f;              // LUFS, dBTP
-    int loudMode = kGentle;                               // Gentle: only as loud as the peaks allow; Target: to TARGET
+    float target = -13.5f, ceiling = -1.0f;              // LUFS, dBTP (the reference lands at about -13.5)
+    int loudMode = kToTarget;                              // Gentle: only as loud as the peaks allow; Target: to TARGET
     bool compare = false;
     // ADVANCED: offsets on top of the auto plan, and details
     float toneTrim[kEq] = {};                             // dB per tone filter
@@ -238,19 +238,23 @@ struct StyleDef {
     float lift;        // dB the leveler lifts quiet sections by at medium
     float widthPull;   // how far the width moves toward the style's (0 = left alone)
     float width;       // dB of side/mid the style aims for, relative to a typical master
+    float lowStr = 1.0f;   // share of `strength` used below about 100 Hz (rising to all of it by about 400 Hz)
+    float widen = 0.0f;    // dB added to the side above the low-mono crossover at medium (not on near-mono mixes)
 };
 
-// Balanced is calibrated on a reference pair (a song and a commercial service's subtle master of it at 50 %):
-// a gentle, mostly broad EQ (more sub, less extreme top, about a third of the way to the target), quiet sections
-// lifted about 1 dB more than loud ones, no downward compression, no width change, about +1 dB of level.
+// Balanced is calibrated on six reference pairs (songs and a commercial online service's subtle master of each at
+// 50 %, tools/master_calibrate.cpp): an EQ toward one fixed target (the base table) correcting about half of the
+// difference above 400 Hz and under half of it in the lows, cuts and boosts of up to about 5 dB when a song is far
+// off; no downward compression; quiet sections lifted about 1 dB; the side about 0.3 dB up; loudness to about
+// -13.5 LUFS (see Settings). The other styles shape the same target.
 inline const StyleDef& styleDef(int s)
 {
     static const StyleDef d[kNumStyles] = {
-        //  tilt   body   air   sub   str    max   ratio depth lift  pull  width
-        {  0.20f,  0.0f, -4.0f, 6.0f, 0.40f, 2.5f, 1.0f, 5.0f, 0.8f, 0.0f,  0.0f },   // Balanced
-        { -0.15f,  1.0f, -5.0f, 6.0f, 0.40f, 2.5f, 1.2f, 5.0f, 0.8f, 0.0f,  0.0f },   // Warm
-        {  0.45f, -1.0f, -2.0f, 5.0f, 0.40f, 3.0f, 1.0f, 5.0f, 0.8f, 0.4f,  1.0f },   // Open
-        {  0.20f,  1.0f, -3.0f, 7.0f, 0.45f, 3.0f, 1.6f, 6.0f, 0.5f, 0.2f,  0.0f },   // Punch
+        //  tilt   body   air   sub   str    max    ratio depth lift  pull  width lowStr widen
+        {  0.00f,  0.0f,  0.0f, 0.0f, 0.50f, 10.0f, 1.0f, 5.0f, 0.8f, 0.0f,  0.0f, 0.44f, 0.3f },   // Balanced
+        { -0.35f,  1.0f, -1.0f, 0.0f, 0.50f, 10.0f, 1.2f, 5.0f, 0.8f, 0.0f,  0.0f, 0.44f, 0.0f },   // Warm
+        {  0.25f, -1.0f,  2.0f,-1.0f, 0.50f, 10.0f, 1.0f, 5.0f, 0.8f, 0.4f,  1.0f, 0.44f, 0.3f },   // Open
+        {  0.00f,  1.0f,  1.0f, 1.0f, 0.55f, 10.0f, 1.6f, 6.0f, 0.5f, 0.2f,  0.0f, 0.60f, 0.0f },   // Punch
     };
     return d[clampv(s, 0, kNumStyles - 1)];
 }
@@ -267,13 +271,25 @@ inline BandSpec eqSpec(int i, double gainDb)
     return b;
 }
 
-// The style's target on the pink-flat scale (dB per third octave, relative): flat to 200 Hz, then falling
-// 1.6 dB/oct, and 2 dB/oct more above 8 kHz; the style's tilt, body and air on top.
-inline double targetDb(double f, const StyleDef& st)
+// The base target on the pink-flat scale (dB per third octave, 20 Hz .. 20 kHz, relative): fitted to six reference
+// pairs (tools/master_calibrate.cpp). The style's tilt, body, air and sub go on top (all zero for Balanced).
+inline const float* baseTargetTable()
+{
+    static const float t[kBands] = {
+        9.82f, 9.15f, 8.47f, 7.73f, 6.84f, 5.76f, 4.55f, 3.32f, 2.23f, 1.46f, 1.11f, 1.26f, 1.81f, 2.58f, 3.30f, 3.70f, 3.63f, 3.05f, 2.03f, 0.69f, -0.83f, -2.30f, -3.51f, -4.41f, -5.05f, -5.63f, -6.39f, -7.51f, -8.91f, -10.42f, -11.92f
+    };
+    return t;
+}
+inline double baseTargetAt(double f, const float* t)
+{
+    const double x = clampv(3.0 * std::log2(std::max(f, 1.0) / 1000.0) + 17.0, 0.0, (double)(kBands - 1));
+    const int i = std::min((int)x, kBands - 2);
+    return t[i] + (t[i + 1] - t[i]) * (x - i);
+}
+inline double targetDb(double f, const StyleDef& st, const float* base = nullptr)
 {
     const double o = std::log2(std::max(f, 10.0) / 1000.0);
-    double t = -1.6 * std::max(o, std::log2(200.0 / 1000.0));
-    if (f > 8000.0) t -= 2.0 * std::log2(f / 8000.0);
+    double t = baseTargetAt(f, base ? base : baseTargetTable());
     t += st.tilt * clampv(o, -4.0, 4.0);
     t += st.body / (1.0 + std::pow(f / 150.0, 2.0));
     t += st.air / (1.0 + std::pow(10000.0 / std::max(f, 1.0), 2.0));
@@ -491,6 +507,7 @@ public:
     int latency() const { return lat; }
     // Calibration tools only: plan with this style instead of the table's (nullptr = the table)
     const StyleDef* styleOverride = nullptr;
+    const float* targetOverride = nullptr;   // and this base target (kBands values) instead of the table's
     void replan() { planDirty = true; applyPlan(false); }
     bool hasAnalysis() const { return ana.valid; }
     const Analysis& analysis() const { return ana; }   // audio thread / tests only
@@ -818,7 +835,7 @@ private:
         for (int b = 0; b < kBands; ++b)
         {
             const double f = bandFreq(b);
-            d[b] = targetDb(f, st) - sm[b];
+            d[b] = targetDb(f, st, targetOverride) - sm[b];
             if (f >= 100.0 && f <= 5000.0) { off += d[b]; offW += 1.0; }
         }
         off = offW > 0.0 ? off / offW : 0.0;
@@ -829,11 +846,12 @@ private:
             const double dev = d[b] - off;   // + = the song is short of the target here
             double maxCut = st.toneMax, maxBoost = 0.7 * st.toneMax;
             if (f < 50.0 || f > 12000.0) { maxCut *= 0.5; maxBoost *= 0.5; }
-            double v = st.strength * dev;
+            const double lowT = clampv(std::log2(f / 100.0) / 2.0, 0.0, 1.0);   // 0 under 100 Hz .. 1 from 400 Hz
+            double v = st.strength * (st.lowStr + (1.0 - st.lowStr) * lowT) * dev;
             v = v > 0.0 ? maxBoost * std::tanh(v / maxBoost) : maxCut * std::tanh(v / maxCut);
             if (sm[b] < loudest - 35.0) v = std::min(v, 0.0);   // nothing there: never lift noise
             c[b] = v;
-            p.target[b] = targetDb(f, st) - off;
+            p.target[b] = targetDb(f, st, targetOverride) - off;
             p.measured[b] = sm[b];
         }
         double g[kEq];
@@ -907,7 +925,7 @@ private:
             p.autoSideLo = clampv(1.0 - 0.5 * wide * p.stereoK, 0.0, 1.0);
             p.sideLo = cur.stereoOn ? clampv(p.autoSideLo - cur.lowMonoTrim * 0.01, 0.0, 1.0) : 1.0;
             // nudge the width above 120 Hz toward a typical master (side about 8 dB under mid) and the style
-            double wdb = clampv(st.widthPull * ((-8.0 + st.width) - hiSide), -1.0, 1.0);
+            double wdb = clampv(st.widthPull * ((-8.0 + st.width) - hiSide) + st.widen, -1.0, 1.5);
             if (hiSide < -25.0) wdb = std::min(wdb, 0.0);   // near mono: widening would only lift artefacts
             p.autoSideHi = dbToGain(wdb * p.stereoK);
             p.sideHi = cur.stereoOn ? p.autoSideHi * dbToGain(cur.widthTrim) : 1.0;
@@ -919,11 +937,20 @@ private:
         const double pre = ana.lufs + p.eqDeltaDb + p.compDeltaDb;
         if (cur.loudOn)
         {
-            double mk = cur.target - pre;
+            // a song already about at the target still comes up half a LU, as the reference does (a song 0.1 LU over
+            // a -13.5 target got +0.5 LU); the extra fades out for songs further over it (2.5 LU over: the target)
+            double tgt = cur.target;
+            if (cur.loudMode == kToTarget)
+            {
+                const double d = ana.lufs - cur.target;
+                if (d > -0.5 && d <= 0.5) tgt += d + 0.5;
+                else if (d > 0.5 && d < 2.5) tgt += 1.0 - 0.5 * (d - 0.5);
+            }
+            double mk = tgt - pre;
             for (int it = 0; it < 12; ++it)
             {
                 const double h = (pre - ana.lufs) + mk - cur.ceiling;
-                const double want = cur.target - pre - lossAt(ana, h);
+                const double want = tgt - pre - lossAt(ana, h);
                 if (std::fabs(want - mk) < 0.005) { mk = want; break; }
                 mk += 0.8 * (want - mk);
             }

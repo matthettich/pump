@@ -1,5 +1,5 @@
 // pump MASTER engine: nothing changes before LEARN or with every stage at zero (null against the delayed input);
-// after learning the test mix the output lands on the loudness target under the true-peak ceiling; medium stays
+// after learning the test mix the output lands on the loudness target (-13.5 by default) under the true-peak ceiling; medium stays
 // subtle (tone moves within a few dB, compression of a couple of dB); intensity scales the tone curve; the tone
 // stage moves the spectrum toward the target and cuts a deliberate bump in pink noise; an already loud song is
 // turned down; COMPARE is level matched; the analysis survives its text form and garbage is rejected; stage
@@ -132,7 +132,7 @@ int main()
         Engine r; r.prepare(sr); Settings ts; ts.loudMode = kToTarget; r.set(ts); r.setAnalysis(a);
         const Stereo o = run(r, mix2);
         const Loud out = measure(o, sr, mix.L.size());   // the second pass (the limiter and compressor settled)
-        CHECK(std::fabs(out.I - (-12.0)) < 1.0, "output %.2f LUFS (target -12)", out.I);
+        CHECK(std::fabs(out.I - ts.target) < 1.0, "output %.2f LUFS (target %.1f)", out.I, ts.target);
         CHECK(out.tp <= -1.0 + 0.15, "true peak %.2f dBTP (ceiling -1)", out.tp);
         float gr = r.compGR.exchange(0.0f);
         CHECK(gr < 6.0f, "largest compressor reduction %.2f dB", gr);
@@ -150,14 +150,14 @@ int main()
 
     // ---- GENTLE: only as loud as the peaks allow (at most 2 dB of peak limiting at medium), never past the target
     {
-        Engine g; g.prepare(sr); g.setAnalysis(a);
+        Engine g; g.prepare(sr); Settings gs; gs.loudMode = kGentle; g.set(gs); g.setAnalysis(a);
         const Stereo o = run(g, mix2);
         const Loud lo = measure(o, sr, mix.L.size());
         const Plan& p = g.plan();
         CHECK(p.peakOverDb <= 2.01 && p.limitLossDb > -0.6 && lo.tp <= -0.85 && lo.I < -12.0,
               "gentle: makeup %+.2f dB, peaks %.2f dB into the limiter, loudness cost %.2f dB, output %.2f LUFS at %.2f dBTP",
               p.makeupDb, p.peakOverDb, p.limitLossDb, lo.I, lo.tp);
-        Settings s; s.intensity = 25.0f; g.set(s); g.replan();
+        Settings s; s.intensity = 25.0f; s.loudMode = kGentle; g.set(s); g.replan();
         CHECK(g.plan().peakOverDb <= 1.01, "gentle at 25 %%: at most %.2f dB into the limiter", g.plan().peakOverDb);
     }
 
@@ -315,10 +315,11 @@ int main()
                 pl = l; pr = r;
             }
         }
-        // the reference: the loudest these settings can make it, held steady (target -6, everything at 100 %)
+        // the reference: the loudest these settings can make it, held steady (target -6, everything at 100 %, each style)
+        for (int style = 0; style < kNumStyles; ++style)
         {
             Engine ref; ref.prepare(sr); ref.setAnalysis(a);
-            Settings s; s.target = -6.0f; s.intensity = 100.0f; s.toneAmt = 200.0f; s.loudMode = kToTarget; ref.set(s);
+            Settings s; s.target = -6.0f; s.intensity = 100.0f; s.toneAmt = 200.0f; s.loudMode = kToTarget; s.style = style; ref.set(s);
             const Stereo o2 = run(ref, mix);
             float ql = 0, qr = 0;
             for (size_t i = 0; i < o2.L.size(); ++i) { refStep = std::max(refStep, (double)std::max(std::fabs(o2.L[i] - ql), std::fabs(o2.R[i] - qr))); ql = o2.L[i]; qr = o2.R[i]; }
@@ -333,7 +334,7 @@ int main()
         r.learnBuffer(mix.L.data(), mix.R.data(), (int)mix.L.size());   // (the mix played at another rate: a different song, fine)
         const Stereo o = run(r, mix2);
         const Loud lo = measure(o, rate, mix.L.size());
-        CHECK(r.hasAnalysis() && std::fabs(lo.I + 12.0) < 1.0 && maxAbsCurve(r) < 3.5, "%.1f kHz: output %.2f LUFS, tone within %.2f dB",
+        CHECK(r.hasAnalysis() && std::fabs(lo.I - ts.target) < 1.0 && maxAbsCurve(r) < 6.0, "%.1f kHz: output %.2f LUFS, tone within %.2f dB",
               rate / 1000.0, lo.I, maxAbsCurve(r));
     }
 

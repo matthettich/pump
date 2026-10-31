@@ -45,11 +45,11 @@ inline const std::vector<ParamSpec>& params()
     v.push_back({ "stereo_on", "Stereo On", "Stereo", 0, 1, 1, PUnit::None, PScale::Linear, A | kPBoolean, nullptr, 1 });
     v.push_back({ "stereo_amount", "Stereo Amount", "Stereo Amt", 0, 200, 100, PUnit::Percent, PScale::Linear, A, nullptr, 1 });
     v.push_back({ "loud_on", "Loudness On", "Loudness", 0, 1, 1, PUnit::None, PScale::Linear, A | kPBoolean, nullptr, 1 });
-    v.push_back({ "target", "Loudness Target", "Target", -20, -6, -12, PUnit::LU, PScale::Linear, A, nullptr, 1 });
+    v.push_back({ "target", "Loudness Target", "Target", -20, -6, -13.5f, PUnit::LU, PScale::Linear, A, nullptr, 1 });
     v.push_back({ "ceiling", "True Peak Ceiling", "Ceiling", -3, 0, -1, PUnit::dB, PScale::Linear, A, nullptr, 1 });
     v.push_back({ "compare", "Compare (level matched)", "Compare", 0, 1, 0, PUnit::None, PScale::Linear, A | kPBoolean | kPNoUndo, nullptr, 1 });
     v.push_back({ "bypass", "Bypass", "Bypass", 0, 1, 0, PUnit::None, PScale::Linear, A | kPBoolean | kPBypass, nullptr, 1 });
-    v.push_back({ "loud_mode", "Loudness Mode", "Mode", 0, kNumLoudModes - 1, kGentle, PUnit::None, PScale::Linear, A | kPInteger, kLoudModeNames, 1 });
+    v.push_back({ "loud_mode", "Loudness Mode", "Mode", 0, kNumLoudModes - 1, kToTarget, PUnit::None, PScale::Linear, A | kPInteger, kLoudModeNames, 1 });
     // ADVANCED
     {
         static const char* const sym[9] = { "tone_trim_60", "tone_trim_125", "tone_trim_250", "tone_trim_500", "tone_trim_1k",
@@ -102,12 +102,15 @@ inline const std::vector<Preset>& presets()
     v.push_back({ "Default", {} });
     v.push_back({ "Light touch", { { "intensity", 25 } } });
     v.push_back({ "Medium", { { "intensity", 50 } } });
+    v.push_back({ "Gentle level", { { "loud_mode", kGentle } } });
     v.push_back({ "Strong", { { "intensity", 80 } } });
     v.push_back({ "Warm", { { "style", kWarm } } });
     v.push_back({ "Open", { { "style", kOpen } } });
     v.push_back({ "Punch", { { "style", kPunch } } });
+    // destinations: the loudness each one wants (TARGET mode); vinyl also folds the bass to mono below 150 Hz
+    v.push_back({ "Club -9", { { "target", -9 }, { "loud_mode", kToTarget }, { "intensity", 60 } } });
+    v.push_back({ "Vinyl -12", { { "target", -12 }, { "loud_mode", kToTarget }, { "mono_freq", 150 }, { "low_mono_trim", 60 } } });
     v.push_back({ "Streaming -14", { { "target", -14 }, { "loud_mode", kToTarget } } });
-    v.push_back({ "Loud -9", { { "target", -9 }, { "loud_mode", kToTarget }, { "intensity", 60 } } });
     v.push_back({ "Tone only", { { "dyn_on", 0 }, { "stereo_on", 0 }, { "loud_on", 0 } } });
     v.push_back({ "Loudness only", { { "tone_on", 0 }, { "dyn_on", 0 }, { "stereo_on", 0 } } });
     v.push_back({ "No dynamics", { { "dyn_on", 0 } } });
