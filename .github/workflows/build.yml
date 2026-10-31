@@ -205,14 +205,18 @@ jobs:
           build_component au "bin/*.component" "/Library/Audio/Plug-Ins/Components"
           build_component clap "bin/*.clap" "/Library/Audio/Plug-Ins/CLAP"
           build_component app "bin/*.app" "/Applications"
-          # first: installed pump plugins this version doesn't have (renamed or removed) move to
+          # first: System EQ quit if running, and installed pump plugins this version doesn't have (renamed or removed) move to
           # /Library/Audio/Plug-Ins/pump-previous, as do copies in the user's ~/Library; last: the Audio Unit cache
           # is refreshed
           mkdir -p scripts-cleanup scripts-refresh
           cp installer/macos/pump-cleanup.sh scripts-cleanup/postinstall
           (cd bin && ls -d *.vst3 *.component *.clap 2>/dev/null) > scripts-cleanup/pump-plugins.txt
-          printf '#!/bin/sh\nkillall -9 AudioComponentRegistrar >/dev/null 2>&1\nexit 0\n' > scripts-refresh/postinstall
-          chmod +x scripts-cleanup/postinstall scripts-refresh/postinstall
+          # a running System EQ quits before anything is installed and opens again (the new one) at the end, so an old
+          # copy never keeps playing after an update
+          cp installer/macos/pump-system-eq.sh scripts-cleanup/ && cp installer/macos/pump-system-eq.sh scripts-refresh/
+          printf '#!/bin/sh\nsh "$(dirname "$0")/pump-system-eq.sh" stop\nexit 0\n' > scripts-cleanup/preinstall
+          printf '#!/bin/sh\nkillall -9 AudioComponentRegistrar >/dev/null 2>&1\nsh "$(dirname "$0")/pump-system-eq.sh" start\nexit 0\n' > scripts-refresh/postinstall
+          chmod +x scripts-cleanup/postinstall scripts-cleanup/preinstall scripts-refresh/postinstall scripts-cleanup/pump-system-eq.sh scripts-refresh/pump-system-eq.sh
           pkgbuild --nopayload --scripts scripts-cleanup --identifier com.wake.pump.cleanup --version "$VERSION" pkgs-cleanup.pkg
           pkgbuild --nopayload --scripts scripts-refresh --identifier com.wake.pump.refresh --version "$VERSION" pkgs-refresh.pkg
           args="--package pkgs-cleanup.pkg"; for p in pkgs/*.pkg; do args="$args --package $p"; done; args="$args --package pkgs-refresh.pkg"

@@ -122,6 +122,17 @@ column there: IN (glue threshold marked), COMP GR, LEVEL (lift), LIMIT GR, OUT (
 **Next:** pump METER's LUFS readout looks fuzzy on the owner's Windows PC (high-DPI gaming screen). Later: a
 linear-phase TONE (the reference is linear phase).
 
+## Installer quits a running System EQ (2026-10-31)
+
+The owner updated with System EQ running and kept using the old copy (it looked like a bug in the new one).
+`installer/macos/pump-system-eq.sh`: the pkg's first package runs it as `preinstall` (`stop`: quits System EQ the
+normal way as the logged-in user, so it removes its tap and writes its clean-exit marker and the guardian leaves it
+closed; after 10 s the guardian, then the app, are killed by exact executable, wherever the app lives; notes it was
+running in /private/tmp) and its last package as `postinstall` (`start`: opens /Applications/System EQ.app again
+if it was running). Processes are matched by their executable, never by text in their command lines. Simulated
+here with a stand-in binary (app + guardian stopped, marker, reopen, nothing running); **not yet run by a real
+Installer**.
+
 ## System EQ and pump ROOM after sleep (2026-10-30)
 
 The owner's Mac: after waking, apps were silent with System EQ on until each app was quit and reopened (the tap kept
