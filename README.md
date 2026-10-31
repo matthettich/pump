@@ -16,6 +16,7 @@ offset block, Share Tech Mono, one light-neon colour per plugin, light or dark. 
 | **pump HEAT** Saturator | coral | multiband warm/tape/tube/triode/retro/clip saturation, oversampled |
 | **pump METER** Loudness Meter | yellow | LUFS (momentary, short-term, integrated), LRA, true peak, PLR/PSR, history |
 | **pump ROOM** Room Correction | amber | applies a room profile made with the pump ROOM measurement app: per-speaker correction, time alignment, headroom; minimum or linear phase, amount |
+| **pump MASTER** Auto Mastering | rainbow (Thunder Plus's Simple rainbow: every key its own colour) | LEARN the song, then one subtle master: broad tone EQ toward a style (Balanced, Warm, Open, Punch), a slow leveler that lifts quiet sections, optional glue, low-end/width care, and loudness that only goes as far as the peaks allow (Gentle) or to a target; INTENSITY for everything, an on/off key and an amount per stage, level-matched COMPARE |
 
 ### Creative effects
 

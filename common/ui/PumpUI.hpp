@@ -81,6 +81,7 @@ struct Control {
     std::string label;
     std::string tip;           // shown in the status line on hover
     int tabGroup = 0;          // controls sharing a group > 0 are a Tab ring when typing values
+    float tint = -1.0f;        // >= 0: the control's own hue in degrees (Theme::tint, the rainbow look); < 0: the theme's
     virtual ~Control() {}
     virtual void draw(PumpUI& ui) = 0;
     virtual bool mouseDown(PumpUI&, float, float, int /*button*/, uint /*mod*/) { return false; }
@@ -911,7 +912,14 @@ protected:
         drawHeader();
         drawBody();
         for (auto& c : fControls)
-            if (c->visible) c->draw(*this);
+        {
+            if (!c->visible) continue;
+            if (c->tint < 0.0f) { c->draw(*this); continue; }
+            const Theme keep = theme;
+            theme.tint(c->tint);
+            c->draw(*this);
+            theme = keep;
+        }
         drawOverlay();
         drawFooter();
         drawResizeGrip();

@@ -2626,3 +2626,17 @@ BREAK 119 s16_bend
 BREAK 120 s16_level
 BREAK 121 s16_decay
 BREAK 122 s16_rev
+MASTER 0 style
+MASTER 1 intensity
+MASTER 2 tone_on
+MASTER 3 tone_amount
+MASTER 4 dyn_on
+MASTER 5 dyn_amount
+MASTER 6 stereo_on
+MASTER 7 stereo_amount
+MASTER 8 loud_on
+MASTER 9 target
+MASTER 10 ceiling
+MASTER 11 compare
+MASTER 12 bypass
+MASTER 13 loud_mode

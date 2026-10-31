@@ -56,6 +56,7 @@
 #include "../plugins/x0x/X0xParams.hpp"
 #include "../plugins/gloss/GlossParams.hpp"
 #include "../plugins/break/BreakParams.hpp"
+#include "../plugins/master/MasterParams.hpp"
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -239,6 +240,7 @@ int main()
         { "X0X", x0x::params(), x0x::presets(), x0x::kNumParams },
         { "GLOSS", gloss::params(), gloss::presets(), gloss::kNumParams },
         { "BREAK", brk::params(), brk::presets(), brk::kNumParams },
+        { "MASTER", master::params(), master::presets(), master::kNumParams },
     };
     std::map<std::string, int> sections;
     std::vector<std::vector<std::string>> chains;

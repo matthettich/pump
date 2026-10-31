@@ -2,11 +2,11 @@
 
 The pick-up doc: where things stand, what is verified and what is not, and what is open. Conventions and the layout
 are in [DEVELOPING.md](DEVELOPING.md) and the plan is in [ROADMAP.md](ROADMAP.md); this file does not repeat them.
-Last updated 2026-10-30 (pump ROOM PHONE MIC; before it: ACID, X0X, GLOSS; pump ROOM, GUI pass, COIL modulation, LIFE sound, AU crash fix).
+Last updated 2026-10-30 (pump MASTER; pump ROOM PHONE MIC; before it: ACID, X0X, GLOSS; pump ROOM, GUI pass, COIL modulation, LIFE sound, AU crash fix).
 
 ## State
 
-- 33 plugins (effects, mastering, instruments, and ROOM room correction), VST3 + CLAP everywhere, AU on macOS. All build on macOS with
+- 34 plugins (effects, mastering, instruments, and ROOM room correction), VST3 + CLAP everywhere, AU on macOS. All build on macOS with
   `make -C plugins/<name> MACOS=true` (serial per plugin, see "Build gotchas").
 - CI (`.github/workflows/build.yml`) builds Windows x64 (MinGW cross-compile), macOS universal, Linux, runs the DSP
   tests and the licence-boundary check, and refreshes the `latest` pre-release on every push to `main`.
@@ -24,6 +24,38 @@ Last updated 2026-10-30 (pump ROOM PHONE MIC; before it: ACID, X0X, GLOSS; pump 
   It ignores comments that merely mention MACHINE. Negative-tested against six injected violations.
 - DPF prints `Unknown license string 'All rights reserved (c) wake'` while generating the AU plist. Harmless: DPF only
   knows SPDX names, "Proprietary" hit the same warning, and the string is not written into the plist.
+
+## pump MASTER, auto mastering (2026-10-30)
+
+`plugins/master`: LEARN measures the song (BS.1770 loudness, LRA, true peak; 1/3-octave mid and side spectra; level
+quantiles of the detector and of short-term loudness; crest; a model limiter's loudness loss at 49 drives), the
+analysis is a state ("analysis", text), and the plan is a pure function of it and the parameters
+(`computePlan` in `MasterEngine.hpp`). Stages: TONE (9 broad filters, least-squares fit of a soft-limited share of
+target minus the smoothed spectrum), DYNAMICS (slow K-weighted leveler lifting quiet sections; glue compressor only
+in Punch/Warm), STEREO (low-end side fold when wide, width pull in Open/Punch), LOUDNESS (Gentle = at most 2 dB of
+peak limiting at medium; Target = solve the makeup through the loss curve; LIMIT's engine in its Dynamic style).
+INTENSITY 50 % = medium.
+
+**Calibration.** The owner likes a commercial online mastering service's subtle style at 50 % and sent a song with
+that master. Measured: +0.9 LU, peaks untouched (PLR unchanged, true peak went to +0.8 dBTP), no downward
+compression, quiet sections lifted ~1 dB more than loud ones, a linear-phase EQ of about +-1.5 dB, width unchanged.
+Balanced at 50 % reproduces its EQ within 0.47 dB rms (31 Hz..16 kHz) and its section gains within ~0.3 dB on that
+song (with ceiling 0; the default -1 dBTP gives less level). The style table's Balanced row came from a grid search
+over tilt/body/air/sub/strength against that pair; one song can overfit, so re-check with another pair when the
+owner sends one (they may send the same service at 100 %: calibrate INTENSITY's top end then).
+
+Verified: `tests/test_master.cpp` (null before LEARN and with every stage off, target loudness within 1 LU, true
+peak under the ceiling, gentle limits, the analysis text round trip, LEARN through process(), random setting jumps,
+44.1/96 kHz; ASan clean). Window screenshotted (light/dark) with `PUMP_TEST_LEARN=<seconds>` (standalone builds
+only). Not yet: in a host. Not in the wasm build (Thunder Plus) yet.
+
+**Rainbow look.** `Control::tint` (a hue) makes PumpUI draw that control with `Theme::tint` (OKLCH colours, as in
+Thunder Plus's Simple rainbow skin: hue = (column + row) x 30 + 10 degrees); MASTER is the first plugin using it.
+
+**Next (asked for):** an ADVANCED view with offsets on top of the auto plan (per-filter tone trims dragged on the
+curve, leveler and glue details, low-mono crossover/amount, width trim, gain trim, limiter lookahead/release), then
+pump METER's LUFS readout looks fuzzy on Windows (owner's report). Later: a linear-phase TONE (the reference is
+linear phase).
 
 ## System EQ and pump ROOM after sleep (2026-10-30)
 

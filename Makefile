@@ -125,7 +125,7 @@ tests: licence-check $(TESTS) $(SYNC_TESTS) build/tests/wasm_wrapper $(PARITY_TE
 #   make tests-asan      memory errors and undefined behaviour
 #   make tests-tsan      data races
 # (SAN_TESTS names the quick, self-contained ones; add to it as more are checked.)
-SAN_TESTS ?= wav biquad dsp presets table eq band wide heat gate tune sing_bank boing room acid x0x gloss break
+SAN_TESTS ?= wav biquad dsp presets table eq band wide heat gate tune sing_bank boing room acid x0x gloss break master
 ASAN_FLAGS = -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=undefined
 TSAN_FLAGS = -O1 -g -fno-omit-frame-pointer -fsanitize=thread
 

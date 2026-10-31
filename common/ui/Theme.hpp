@@ -4,6 +4,7 @@
 #pragma once
 
 #include "Color.hpp"
+#include <cmath>
 
 namespace pump {
 
@@ -38,6 +39,27 @@ inline Color wheelColour(int i, bool deep)
     return hexColor(deep ? ink[k] : neon[k]);
 }
 inline Color wheelInk(int i, bool dark) { return dark ? mixColor(wheelColour(i, false), hexColor(0xFFFFFF), 0.18f) : wheelColour(i, true); }
+
+// OKLCH (lightness 0..1, chroma, hue in degrees) to sRGB, clipped: colours of equal lightness read at the same
+// strength whatever their hue (Thunder Plus's Simple rainbow skin is built on it).
+inline Color oklchColor(float L, float C, float hDeg, float alpha = 1.0f)
+{
+    const double h = hDeg * 3.14159265358979323846 / 180.0;
+    const double a = C * std::cos(h), b = C * std::sin(h);
+    const double l_ = L + 0.3963377774 * a + 0.2158037573 * b;
+    const double m_ = L - 0.1055613458 * a - 0.0638541728 * b;
+    const double s_ = L - 0.0894841775 * a - 1.2914855480 * b;
+    const double l = l_ * l_ * l_, m = m_ * m_ * m_, s3 = s_ * s_ * s_;
+    double rgb[3] = { 4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s3,
+                      -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s3,
+                      -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s3 };
+    for (double& c : rgb)
+    {
+        c = c < 0.0 ? 0.0 : (c > 1.0 ? 1.0 : c);
+        c = c <= 0.0031308 ? 12.92 * c : 1.055 * std::pow(c, 1.0 / 2.4) - 0.055;
+    }
+    return Color((float)rgb[0], (float)rgb[1], (float)rgb[2], alpha);
+}
 
 // The suite's accents (one per plugin).
 namespace accents {
@@ -92,6 +114,8 @@ namespace accents {
     inline Accent chop()   { return { "chop",   hexColor(0xC6FF6B), hexColor(0x3E6100), hexColor(0xD45CFF) }; }   // lime
     // room measurement and correction (the app in room/ uses it too, in app.js)
     inline Accent room()   { return { "room",   hexColor(0xFFC86B), hexColor(0x6E4300), hexColor(0x2F7BFF) }; }   // amber
+    // auto mastering
+    inline Accent master() { return { "master", hexColor(0xDCDCE3), hexColor(0x3B3B44), hexColor(0x9A63FF) }; }   // grey, the controls in rainbow
 }
 
 struct Theme {
@@ -135,6 +159,31 @@ struct Theme {
             grid   = withAlpha(a.neon, 0.10f);
             screen = mixColor(black, a.neon, 0.04f);
             glow   = withAlpha(a.neon, 0.22f);
+        }
+    }
+
+    // One control's own colour (Thunder Plus's Simple rainbow skin): its outline, text and "on" fill take the hue at
+    // one OKLCH lightness, the rest of the theme stays. PumpUI applies it around a control whose `tint` is set.
+    void tint(float hueDeg)
+    {
+        if (!dark)
+        {
+            ink = oklchColor(0.55f, 0.17f, hueDeg);
+            ink2 = oklchColor(0.62f, 0.12f, hueDeg);
+            dim = oklchColor(0.86f, 0.07f, hueDeg);
+            neon = oklchColor(0.72f, 0.14f, hueDeg);
+            neonInk = oklchColor(0.30f, 0.10f, hueDeg);
+            on = hexColor(0xFFFFFF);
+        }
+        else
+        {
+            ink = oklchColor(0.80f, 0.14f, hueDeg);
+            ink2 = oklchColor(0.68f, 0.11f, hueDeg);
+            dim = oklchColor(0.40f, 0.08f, hueDeg);
+            neon = oklchColor(0.72f, 0.15f, hueDeg);
+            neonInk = oklchColor(0.18f, 0.04f, hueDeg);
+            on = bg;
+            glow = withAlpha(neon, 0.22f);
         }
     }
 };
