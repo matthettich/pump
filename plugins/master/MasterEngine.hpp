@@ -199,7 +199,32 @@ struct Settings {
     float target = -12.0f, ceiling = -1.0f;              // LUFS, dBTP
     int loudMode = kGentle;                               // Gentle: only as loud as the peaks allow; Target: to TARGET
     bool compare = false;
+    // ADVANCED: offsets on top of the auto plan, and details
+    float toneTrim[kEq] = {};                             // dB per tone filter
+    float liftTrim = 0.0f, liftAt = 0.0f;                 // dB on the lift; LU: + = the leveler starts closer to the song's level
+    float ratioTrim = 0.0f, glueThrTrim = 0.0f, glueAttack = 20.0f, glueRelease = 250.0f;
+    float monoFreq = 120.0f, lowMonoTrim = 0.0f, widthTrim = 0.0f;   // Hz, percent of fold, dB
+    float gainTrim = 0.0f, limRelease = 100.0f;
+    int limStyle = limit::kDynamic;
+    struct Band { bool on = false; int shape = kUBell; float freq = 1000.0f, gain = 0.0f, q = 1.0f;
+                  bool operator!=(const Band& o) const { return on != o.on || shape != o.shape || freq != o.freq || gain != o.gain || q != o.q; } };
+    Band band[kNumUserBands];
 };
+
+inline BandSpec userBandSpec(const Settings::Band& b)
+{
+    BandSpec s;
+    s.freq = clampv(b.freq, 10.0f, 30000.0f); s.gainDb = b.gain; s.q = clampv(b.q, 0.1f, 20.0f); s.slope = 12;
+    switch (b.shape)
+    {
+    case kULowShelf: s.shape = Shape::LowShelf; break;
+    case kUHighShelf: s.shape = Shape::HighShelf; break;
+    case kULowCut: s.shape = Shape::LowCut; s.slope = 24; break;
+    case kUHighCut: s.shape = Shape::HighCut; s.slope = 24; break;
+    default: s.shape = Shape::Bell; break;
+    }
+    return s;
+}
 
 struct StyleDef {
     float tilt;        // dB/oct added to the target around 1 kHz (+ brighter)
@@ -265,6 +290,8 @@ struct Plan {
     double sideLo = 1.0, sideHi = 1.0;            // stereo stage gains (linear)
     double makeupDb = 0.0, limitLossDb = 0.0, eqDeltaDb = 0.0, compDeltaDb = 0.0, outLufs = -70.0, compareDb = 0.0, peakOverDb = 0.0;
     double toneK = 0.0, dynK = 0.0, stereoK = 0.0;
+    // what auto chose, before the ADVANCED offsets (for the window)
+    double autoEq[kEq] = {}, autoLift = 0.0, autoRatio = 1.0, autoThr = 0.0, autoSideLo = 1.0, autoSideHi = 1.0, autoMakeup = 0.0;
 };
 
 // The leveler's lift (dB) for a short-term loudness lvl, given the song's loudness ref: nothing within 5 LU of it,
@@ -322,7 +349,8 @@ public:
     // ---- UI feeds (any thread reads) ----
     AnalysisSlot published;                       // the analysis in use (written by the audio thread only)
     std::atomic<float> uiCurve[kCurvePts] = {}, uiTarget[kBands] = {}, uiMeasured[kBands] = {};
-    std::atomic<float> uiEqGain[kEq] = {};
+    std::atomic<float> uiEqGain[kEq] = {}, uiAutoEq[kEq] = {}, uiBandsCurve[kCurvePts] = {};
+    std::atomic<float> uiAutoLift { 0.0f }, uiAutoRatio { 1.0f }, uiAutoThr { 0.0f }, uiAutoMakeup { 0.0f }, uiAutoSideLo { 0.0f }, uiAutoSideHi { 0.0f };
     std::atomic<float> uiLift { 0.0f }, uiLiftMax { 0.0f }, uiThr { 0.0f }, uiRatio { 1.0f }, uiSideLoDb { 0.0f }, uiSideHiDb { 0.0f }, uiMakeup { 0.0f },
         uiOutLufs { -70.0f }, uiCompare { 0.0f }, uiPeakOver { 0.0f }, uiEqDelta { 0.0f }, uiCompDelta { 0.0f }, uiLimitLoss { 0.0f };
     std::atomic<bool> uiPlanValid { false };
@@ -397,14 +425,16 @@ public:
         for (auto& c : kwRun) for (auto& st : c) st.reset();
         levAcc = levP = levDb = 0.0; levN = 0;
         rmsP = 0.0;
-        gcar.setup(20.0, 250.0, sr);
+        gcar.setup(clampv(cur.glueAttack, 0.5f, 500.0f), clampv(cur.glueRelease, 5.0f, 5000.0f), sr);
         gcar.reset(0.0);
         // stereo
-        for (auto& s : sideSplit) { s.set(kStereoXover, sr); s.reset(); }
-        midAp.set(kStereoXover, sr); midAp.reset();
+        for (auto& s : sideSplit) { s.set(clampv(cur.monoFreq, 20.0f, 1000.0f), sr); s.reset(); }
+        midAp.set(clampv(cur.monoFreq, 20.0f, 1000.0f), sr); midAp.reset();
+        for (int b = 0; b < kNumUserBands; ++b) { ub[b].reset(); bandDirty[b] = true; }
+        updateBands();
         // limiter: LIMIT's transparent style, true peak, 2x
-        lim.setStyle(limit::kDynamic);   // brief, peak-only limiting: no slow leveling stage pulling the loud parts down
-        lim.setLookahead(5.0f); lim.setAttack(50.0f); lim.setRelease(100.0f); lim.setLinks(75.0f, 100.0f);
+        lim.setStyle(cur.limStyle);   // default Dynamic: brief, peak-only limiting, no slow leveling stage pulling the loud parts down
+        lim.setLookahead(5.0f); lim.setAttack(50.0f); lim.setRelease(clampv(cur.limRelease, 1.0f, 2000.0f)); lim.setLinks(75.0f, 100.0f);
         lim.setTruePeak(true); lim.setOversampling(1); lim.setDC(false); lim.setDither(0, 0); lim.setUnity(false);
         lim.setGain(0.0f); lim.setCeiling(cur.ceiling);
         lim.prepare(sr, kMaxChunk);
@@ -433,11 +463,28 @@ public:
 
     void set(const Settings& s)
     {
-        const bool planChange = s.style != cur.style || s.intensity != cur.intensity || s.toneOn != cur.toneOn || s.dynOn != cur.dynOn
+        bool planChange = s.style != cur.style || s.intensity != cur.intensity || s.toneOn != cur.toneOn || s.dynOn != cur.dynOn
             || s.stereoOn != cur.stereoOn || s.loudOn != cur.loudOn || s.toneAmt != cur.toneAmt || s.dynAmt != cur.dynAmt
             || s.stereoAmt != cur.stereoAmt || s.target != cur.target || s.ceiling != cur.ceiling || s.loudMode != cur.loudMode;
+        bool adv = s.liftTrim != cur.liftTrim || s.liftAt != cur.liftAt || s.ratioTrim != cur.ratioTrim || s.glueThrTrim != cur.glueThrTrim
+            || s.lowMonoTrim != cur.lowMonoTrim || s.widthTrim != cur.widthTrim || s.gainTrim != cur.gainTrim;
+        for (int i = 0; i < kEq; ++i) adv = adv || s.toneTrim[i] != cur.toneTrim[i];
+        if (s.glueAttack != cur.glueAttack) gcar.setAttack(clampv(s.glueAttack, 0.5f, 500.0f), sr);
+        if (s.glueRelease != cur.glueRelease) gcar.setRelease(clampv(s.glueRelease, 5.0f, 5000.0f), sr);
+        if (s.monoFreq != cur.monoFreq)
+        {
+            const double f = clampv(s.monoFreq, 20.0f, 1000.0f);
+            sideSplit[0].set(f, sr); midAp.set(f, sr);
+        }
+        if (s.limRelease != cur.limRelease) lim.setRelease(clampv(s.limRelease, 1.0f, 2000.0f));
+        if (s.limStyle != cur.limStyle) lim.setStyle(s.limStyle);
+        for (int b = 0; b < kNumUserBands; ++b) if (s.band[b] != cur.band[b] || s.toneOn != cur.toneOn) bandDirty[b] = true;
+        if (adv) planChange = true;
+        const bool planChange2 = planChange;
         cur = s;
         lim.setCeiling(clampv(cur.ceiling, -3.0f, 0.0f));
+        if (planChange2) planDirty = true;
+        return;
         if (planChange) planDirty = true;
     }
 
@@ -479,6 +526,7 @@ public:
         }
         if (resetOutMeter.exchange(false, std::memory_order_acq_rel)) outMeter.reset();
         applyPlan(false);
+        updateBands();
 
         for (int off = 0; off < n; off += kMaxChunk)
         {
@@ -526,6 +574,23 @@ private:
         kWeightCoeffs(shelf, hp);
         const double w = kTwoPi * std::min(f, 0.49 * sr) / sr;
         return shelf.magSq(w) * hp.magSq(w);
+    }
+
+    // the free bands: redesigned when their settings change (block start); a band switched on starts from rest
+    void updateBands()
+    {
+        bool any = false;
+        for (int b = 0; b < kNumUserBands; ++b)
+        {
+            if (!bandDirty[b]) continue;
+            bandDirty[b] = false; any = true;
+            const Settings::Band& sb = cur.band[b];
+            const bool on = sb.on && cur.toneOn;
+            if (on && !ubOn[b]) ub[b].reset();
+            ubOn[b] = on;
+            if (on) ub[b].d.design(analogPrototype(userBandSpec(sb), sr), sr);
+        }
+        if (any) publishPlan();
     }
 
     void redesign(int i, double g)
@@ -773,7 +838,11 @@ private:
         }
         double g[kEq];
         leastSquares(basis, w, c, 0.05, g);
-        for (int i = 0; i < kEq; ++i) p.eqGain[i] = clampv(g[i] * p.toneK, -12.0, 12.0);
+        for (int i = 0; i < kEq; ++i)
+        {
+            p.autoEq[i] = clampv(g[i] * p.toneK, -12.0, 12.0);
+            p.eqGain[i] = cur.toneOn ? clampv(p.autoEq[i] + cur.toneTrim[i], -12.0, 12.0) : 0.0;
+        }
 
         // predicted loudness change of the tone stage (K-weighted, on the song's own spectrum)
         {
@@ -792,10 +861,13 @@ private:
         // ---- dynamics: a slow leveler that lifts quiet sections (by short-term loudness), and a glue compressor
         const double loud = ana.q[kQuantiles - 1];
         double dense = clampv((ana.crest - 6.0) / 4.0, 0.25, 1.0);   // crest under ~10 dB: already dense
-        p.thr = loud - st.depth;
-        p.ratio = 1.0 + (st.ratio - 1.0) * p.dynK * dense;
-        p.lift = st.lift * p.dynK;
-        p.liftRef = ana.lufs + p.eqDeltaDb;
+        p.autoThr = loud - st.depth;
+        p.autoRatio = 1.0 + (st.ratio - 1.0) * p.dynK * dense;
+        p.autoLift = st.lift * p.dynK;
+        p.thr = p.autoThr + (cur.dynOn ? cur.glueThrTrim : 0.0f);
+        p.ratio = cur.dynOn ? clampv(p.autoRatio + cur.ratioTrim, 1.0, 20.0) : 1.0;
+        p.lift = cur.dynOn ? clampv(p.autoLift + cur.liftTrim, 0.0, 12.0) : 0.0;
+        p.liftRef = ana.lufs + p.eqDeltaDb + (cur.dynOn ? cur.liftAt : 0.0f);
         {
             GainComputer gc; gc.threshold = p.thr; gc.ratio = p.ratio; gc.knee = 8.0;
             double a0 = 0.0, a1 = 0.0;
@@ -832,11 +904,13 @@ private:
             const double hiSide = hm > 0.0 ? 10.0 * std::log10(hs / hm + 1e-12) : -60.0;
             // fold the lows toward mono when they are wide (side within 10 dB of mid)
             const double wide = clampv((lowSide + 10.0) / 8.0, 0.0, 1.0);
-            p.sideLo = clampv(1.0 - 0.5 * wide * p.stereoK, 0.0, 1.0);
+            p.autoSideLo = clampv(1.0 - 0.5 * wide * p.stereoK, 0.0, 1.0);
+            p.sideLo = cur.stereoOn ? clampv(p.autoSideLo - cur.lowMonoTrim * 0.01, 0.0, 1.0) : 1.0;
             // nudge the width above 120 Hz toward a typical master (side about 8 dB under mid) and the style
             double wdb = clampv(st.widthPull * ((-8.0 + st.width) - hiSide), -1.0, 1.0);
             if (hiSide < -25.0) wdb = std::min(wdb, 0.0);   // near mono: widening would only lift artefacts
-            p.sideHi = dbToGain(wdb * p.stereoK);
+            p.autoSideHi = dbToGain(wdb * p.stereoK);
+            p.sideHi = cur.stereoOn ? p.autoSideHi * dbToGain(cur.widthTrim) : 1.0;
         }
 
         // ---- loudness
@@ -862,7 +936,8 @@ private:
                 const double peakAfter = ana.truePeak + std::max(0.0, p.eqDeltaDb);
                 mk = std::min(mk, cur.ceiling + over - peakAfter);
             }
-            p.makeupDb = clampv(mk, -24.0, 30.0);
+            p.autoMakeup = clampv(mk, -24.0, 30.0);
+            p.makeupDb = clampv(p.autoMakeup + cur.gainTrim, -30.0, 36.0);
             p.limitLossDb = lossAt(ana, (pre - ana.lufs) + p.makeupDb - cur.ceiling);
         }
         p.outLufs = pre + p.makeupDb + p.limitLossDb;
@@ -915,9 +990,18 @@ private:
             double db = 0.0;
             for (int i = 0; i < kEq; ++i)
                 if (pl.valid && std::fabs(pl.eqGain[i]) > 1e-6) db += 10.0 * std::log10(std::max(1e-30, d[i].magSq(wv)));
+            double ubDb = 0.0;
+            for (int b = 0; b < kNumUserBands; ++b)
+                if (ubOn[b]) ubDb += 10.0 * std::log10(std::max(1e-30, ub[b].d.magSq(wv)));
             uiCurve[k].store((float)db, std::memory_order_relaxed);
+            uiBandsCurve[k].store((float)ubDb, std::memory_order_relaxed);
         }
         uiThr.store((float)pl.thr, std::memory_order_relaxed);
+        for (int i = 0; i < kEq; ++i) uiAutoEq[i].store((float)pl.autoEq[i], std::memory_order_relaxed);
+        uiAutoLift.store((float)pl.autoLift, std::memory_order_relaxed); uiAutoRatio.store((float)pl.autoRatio, std::memory_order_relaxed);
+        uiAutoThr.store((float)pl.autoThr, std::memory_order_relaxed); uiAutoMakeup.store((float)pl.autoMakeup, std::memory_order_relaxed);
+        uiAutoSideLo.store((float)gainToDb(std::max(pl.autoSideLo, 1e-6)), std::memory_order_relaxed);
+        uiAutoSideHi.store((float)gainToDb(pl.autoSideHi), std::memory_order_relaxed);
         uiRatio.store((float)pl.ratio, std::memory_order_relaxed);
         uiLiftMax.store((float)pl.lift, std::memory_order_relaxed);
         uiSideLoDb.store((float)gainToDb(std::max(pl.sideLo, 1e-6)), std::memory_order_relaxed);
@@ -959,6 +1043,12 @@ private:
                 {
                     if (eqFlat[i]) continue;
                     l = eq[i].process(0, l); r = eq[i].process(1, r);
+                }
+                // ADVANCED: the free bands
+                for (int b = 0; b < kNumUserBands; ++b)
+                {
+                    if (!ubOn[b]) continue;
+                    l = ub[b].process(0, l); r = ub[b].process(1, r);
                 }
                 // DYNAMICS: the leveler (short-term loudness of the K-weighted signal, updated every 32 samples, its
                 // lift gliding with a 1 s time constant) and the glue compressor (feed-forward, stereo-linked RMS
@@ -1073,6 +1163,9 @@ private:
     double kw[kBands] = {};
     double curGain[kEq] = {}, tgtGain[kEq] = {}, eqDesigned[kEq] = {};
     bool eqFlat[kEq] = {};
+
+    BandFilter<2> ub[kNumUserBands];
+    bool ubOn[kNumUserBands] = {}, bandDirty[kNumUserBands] = {};
 
     // dynamics
     BandFilter<1> det[2];

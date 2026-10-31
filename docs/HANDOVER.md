@@ -52,10 +52,15 @@ only). Not yet: in a host. Not in the wasm build (Thunder Plus) yet.
 **Rainbow look.** `Control::tint` (a hue) makes PumpUI draw that control with `Theme::tint` (OKLCH colours, as in
 Thunder Plus's Simple rainbow skin: hue = (column + row) x 30 + 10 degrees); MASTER is the first plugin using it.
 
-**Next (asked for):** an ADVANCED view with offsets on top of the auto plan (per-filter tone trims dragged on the
-curve, leveler and glue details, low-mono crossover/amount, width trim, gain trim, limiter lookahead/release), then
-pump METER's LUFS readout looks fuzzy on Windows (owner's report). Later: a linear-phase TONE (the reference is
-linear phase).
+**ADVANCED view** (A key / ADVANCED; remembered in the "ui" state): every value is an offset on top of the auto plan
+(`Plan::auto*` keeps auto's own values for the window): nine tone trims (squares on the curve, dragged), leveler lift
+and where it starts, glue ratio/threshold/attack/release, low-mono crossover and amount, width, gain into the limiter
+(its threshold, in effect), limiter release and style; plus eight free EQ bands (bell, shelves, 24 dB/oct cuts:
+click the curve to add, drag, wheel = Q, right-click = shape, double-click = remove) after the tone stage, working
+even before LEARN. Tested in test_master (trims add exactly; a +6 dB band gives +6.00 dB; off = null).
+
+**Next:** pump METER's LUFS readout looks fuzzy on the owner's Windows PC (high-DPI gaming screen). Later: a
+linear-phase TONE (the reference is linear phase).
 
 ## System EQ and pump ROOM after sleep (2026-10-30)
 

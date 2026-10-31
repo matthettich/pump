@@ -217,6 +217,33 @@ int main()
               l.analysis().lufs, l.plan().makeupDb, l.plan().limitLossDb, lo.I);
     }
 
+    // ---- ADVANCED: offsets land on top of auto; the free bands are an EQ of their own
+    {
+        Engine e2; e2.prepare(sr); e2.setAnalysis(a);
+        const Plan base = e2.plan();
+        Settings s; s.toneTrim[3] = 2.0f; s.gainTrim = 1.5f; s.ratioTrim = 0.5f; s.liftTrim = -0.3f; s.widthTrim = 1.0f; s.lowMonoTrim = 40.0f;
+        e2.set(s); e2.replan();
+        const Plan& p = e2.plan();
+        CHECK(std::fabs(p.eqGain[3] - (base.eqGain[3] + 2.0)) < 1e-9 && std::fabs(p.autoEq[3] - base.eqGain[3]) < 1e-9,
+              "tone trim: %+.2f auto + 2 = %+.2f", p.autoEq[3], p.eqGain[3]);
+        CHECK(std::fabs(p.makeupDb - (p.autoMakeup + 1.5)) < 1e-6 && std::fabs(p.ratio - 1.5) < 1e-6 && std::fabs(p.lift - (base.lift - 0.3)) < 1e-6
+              && std::fabs(gainToDb(p.sideHi) - (gainToDb(p.autoSideHi) + 1.0)) < 1e-6 && std::fabs(p.sideLo - (p.autoSideLo - 0.4)) < 1e-6,
+              "gain, glue ratio, lift, width and low-mono trims add to auto (makeup %+.2f = %+.2f + 1.5, ratio %.2f, lift %.2f, width %+.2f dB on %+.2f, side lo %.2f on %.2f)",
+              p.makeupDb, p.autoMakeup, p.ratio, p.lift, gainToDb(p.sideHi), gainToDb(p.autoSideHi), p.sideLo, p.autoSideLo);
+        // a +6 dB bell at 1 kHz, Q 1, with no analysis (bands work before LEARN): a 1 kHz tone comes out 6 dB up
+        Engine b; b.prepare(sr);
+        Settings bs; bs.band[2].on = true; bs.band[2].freq = 1000.0f; bs.band[2].gain = 6.0f; bs.band[2].q = 1.0f; b.set(bs);
+        const int n = (int)sr;
+        Stereo t; t.L.resize((size_t)n); for (int i = 0; i < n; ++i) t.L[i] = 0.1f * (float)std::sin(kTwoPi * 1000.0 * i / sr); t.R = t.L;
+        const Stereo o = run(b, t);
+        double pk = 0.0; for (int i = n / 2; i < n; ++i) pk = std::max(pk, (double)std::fabs(o.L[i]));
+        CHECK(std::fabs(gainToDb(pk / 0.1) - 6.0) < 0.1, "free band: +6 dB bell at 1 kHz gives %+.2f dB", gainToDb(pk / 0.1));
+        bs.band[2].on = false; b.set(bs);
+        const Stereo o2 = run(b, t);
+        double mx = 0.0; for (int i = n / 2; i < n; ++i) mx = std::max(mx, (double)std::fabs(o2.L[i] - t.L[i - b.latency()]));
+        CHECK(mx < 1e-6, "free band off: transparent again (diff %.2g)", mx);
+    }
+
     // ---- the analysis as text
     {
         const std::string t = serializeAnalysis(a);

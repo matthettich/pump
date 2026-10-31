@@ -95,6 +95,16 @@ protected:
         s.stereoOn = pv(kStereoOn) >= 0.5f; s.stereoAmt = pv(kStereoAmt);
         s.loudOn = pv(kLoudOn) >= 0.5f; s.target = pv(kTarget); s.ceiling = pv(kCeiling); s.loudMode = (int)pv(kLoudMode);
         s.compare = pv(kCompare) >= 0.5f;
+        for (int i = 0; i < kEq; ++i) s.toneTrim[i] = pv(kToneTrim0 + i);
+        s.liftTrim = pv(kLiftTrim); s.liftAt = pv(kLiftAt); s.ratioTrim = pv(kRatioTrim); s.glueThrTrim = pv(kGlueThrTrim);
+        s.glueAttack = pv(kGlueAttack); s.glueRelease = pv(kGlueRelease);
+        s.monoFreq = pv(kMonoFreq); s.lowMonoTrim = pv(kLowMonoTrim); s.widthTrim = pv(kWidthTrim);
+        s.gainTrim = pv(kGainTrim); s.limRelease = pv(kLimRelease); s.limStyle = (int)pv(kLimStyle);
+        for (int b = 0; b < kNumUserBands; ++b)
+        {
+            s.band[b].on = pv(bandParam(b, kBOn)) >= 0.5f; s.band[b].shape = (int)pv(bandParam(b, kBShape));
+            s.band[b].freq = pv(bandParam(b, kBFreq)); s.band[b].gain = pv(bandParam(b, kBGain)); s.band[b].q = pv(bandParam(b, kBQ));
+        }
         engine.set(s);
     }
 
