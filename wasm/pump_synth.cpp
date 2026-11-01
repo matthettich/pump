@@ -1,4 +1,4 @@
-// pump's instruments in WebAssembly: MONO, POLY, COIL, ORBIT, FOLD, GLOSS, TRACT, STRIKE, BOING and X0X behind one C interface, for Thunder Plus's synth engines.
+// pump's instruments in WebAssembly: MONO, POLY, COIL, ORBIT, FOLD, GLOSS, TRACT, STRIKE, BOING, X0X and LIFE behind one C interface, for Thunder Plus's synth engines.
 //
 // Each Synth<Name> below runs its plugin's own DSP side, plugins/<name>/<Name>Dsp.hpp (the settings from the
 // parameters, the output trim, the engine and the safety limiter: the code the plugin runs, not a copy), on SynthBase,
@@ -11,7 +11,7 @@
 // Build: wasm/build.sh builds this into pump-synth.wasm next to pump.wasm (no threads: -DPUMP_SYNC_KERNELS=1).
 //
 // Interface (all exported, "C"):
-//   psyn_types()                         number of instrument types (10); ids are the Type enum's order: mono, poly, coil, orbit, fold, gloss, tract, strike, boing, x0x
+//   psyn_types()                         number of instrument types (11); ids are the Type enum's order: mono, poly, coil, orbit, fold, gloss, tract, strike, boing, x0x, life
 //   psyn_nparams(type)                   parameter count (parameter i is params()[i] of that plugin)
 //   psyn_stage()                         float[512]: write a new instance's values here before psyn_new (values not
 //                                        written are the parameter's default: psyn_new clears the stage after use)
@@ -44,6 +44,8 @@
 #include "../plugins/boing/BoingEngine.hpp"
 #include "../plugins/x0x/X0xParams.hpp"
 #include "../plugins/x0x/X0xEngine.hpp"
+#include "../plugins/life/LifeParams.hpp"
+#include "../plugins/life/LifeEngine.hpp"
 #include <algorithm>
 #include <memory>
 
@@ -59,7 +61,7 @@ using pump::ParamSpec;
 constexpr int kMaxBlock = 4096, kStage = 512, kMaxEvents = 512, kChunk = 256;
 
 // (the newer types are kT<Name>: a plugin's own parameter names (FOLD's kFold) must not be hidden by these)
-enum Type : int { kMono = 0, kPoly, kCoil, kOrbit, kTFold, kTGloss, kTTract, kTStrike, kTBoing, kTX0x, kNumTypes };
+enum Type : int { kMono = 0, kPoly, kCoil, kOrbit, kTFold, kTGloss, kTTract, kTStrike, kTBoing, kTX0x, kTLife, kNumTypes };
 
 inline const std::vector<ParamSpec>& specsOf(int type)
 {
@@ -74,6 +76,7 @@ inline const std::vector<ParamSpec>& specsOf(int type)
     case kTStrike: return pump::strike::params();
     case kTBoing: return pump::boing::params();
     case kTX0x: return pump::x0x::params();
+    case kTLife: return pump::life::params();
     default: return pump::coil::params();
     }
 }
@@ -386,6 +389,42 @@ private:
     pump::Transport tr;   // stopped: a host that isn't playing (the sequencer is off in Thunder Plus)
 };
 
+// ---------------------------------------------------------------- LIFE (PluginLife.hpp's sync() and run() body: keep in step;
+// a stopped host, so the grid waits: in Thunder Plus the tracker plays its tones, C-4 up the white keys)
+class SynthLife : public SynthBase {
+public:
+    explicit SynthLife(double rate) : SynthBase(kTLife, rate) {}
+    static constexpr float kTrimDb = +2.0f;   // PluginLife::kTrimDb
+    void activate() override { sync(); engine.prepare(sr, kMaxBlock); outLimit.prepare(sr); sync(); anyChanged = false; }
+    void sync() override
+    {
+        using namespace pump::life;
+        Settings s;
+        s.volumeDb = pv(kVolume) + kTrimDb; s.drive = pv(kDrive) * 0.01; s.fmAll = pv(kFmAll) * 0.01; s.decayAll = pv(kDecayAll) * 0.01;
+        s.pitchRange = pv(kPitchRange); s.lfoRate = pv(kLfoRate); s.lfoDepth = pv(kLfoDepth) * 0.01; s.width = pv(kWidth) * 0.01;
+        s.mode = (int)pv(kMode); s.rate = (int)pv(kRate); s.length = (int)pv(kLength); s.offset = (int)pv(kOffset); s.sens = pv(kSens) * 0.01;
+        s.xWrap = (int)pv(kXWrap); s.yWrap = (int)pv(kYWrap); s.colour = (int)pv(kColour); s.cols = (int)pv(kCols); s.rows = (int)pv(kRows);
+        s.rule = (int)pv(kRule); s.trigger = (int)pv(kTrigger); s.pattern = (int)pv(kPattern); s.reseed = pv(kReseed) >= 0.5f;
+        s.shift = pv(kShift); s.grain = pv(kGrain) * 0.001; s.time = pv(kTime) * 0.001; s.feedback = pv(kFeedback) * 0.01;
+        s.filter = pv(kFilter) * 0.01; s.fxDecay = pv(kFxDecay) * 0.001; s.mix = pv(kMix) * 0.01;
+        s.fmLoop = pv(kFmLoop) >= 0.5f;
+        for (int t = 0; t < kTones; ++t)
+        {
+            ToneSettings& o = s.tone[t];
+            o.pitch = pv(tone(t, kTPitch)); o.kick = pv(tone(t, kTKick)) * 0.01; o.fm = pv(tone(t, kTFm)) * 0.01; o.ring = pv(tone(t, kTRing)) * 0.01;
+            o.decay = pv(tone(t, kTDecay)) * 0.001; o.level = pv(tone(t, kTLevel)) * 0.01; o.mute = pv(tone(t, kTMute)) >= 0.5f;
+            o.fxSend = pv(fxSend(t)) * 0.01;
+        }
+        engine.setSettings(s);
+    }
+    void render(float* l, float* r, int n, const pump::synth::Midi* ev, int nev) override { engine.setTransport(tr); engine.process(l, r, n, ev, nev); outLimit.process(l, r, n); tr.ppq += n * tr.bpm / 60.0 / sr; }
+
+private:
+    pump::life::Engine engine;
+    pump::SafetyLimiter outLimit;
+    pump::Transport tr;
+};
+
 inline SynthBase* make(int type, double sr)
 {
     switch (type)
@@ -400,6 +439,7 @@ inline SynthBase* make(int type, double sr)
     case kTStrike: return new SynthStrike(sr);
     case kTBoing: return new SynthBoing(sr);
     case kTX0x: return new SynthX0x(sr);
+    case kTLife: return new SynthLife(sr);
     default: return nullptr;
     }
 }
