@@ -34,12 +34,12 @@ for f in pump_types pump_nparams pump_stage pump_new pump_free pump_values pump_
          pump_midi pump_transport pump_text pump_state_get pump_state_set; do EXPORTS="$EXPORTS -Wl,--export=$f"; done
 "$WASI_SDK/bin/clang++" $FLAGS -mexec-model=reactor -Wl,--export=_initialize $EXPORTS -Wl,--strip-all -Wl,-z,stack-size=1048576 \
   -Wl,--initial-memory=16777216 "$O/pump.o" $FXO "$O/pffft.o" -o "$OUT/pump.wasm"
-# the instruments: no input audio, MIDI in (pump_synth.cpp); COIL's tanks are SPRING's (its own SIMD, no pffft)
+# the instruments: no input audio, MIDI in (pump_synth.cpp); COIL's tanks are SPRING's (its own SIMD); FREEZE needs pffft
 "$WASI_SDK/bin/clang++" $FLAGS -std=c++17 -fno-exceptions -fno-rtti -Wall -Wno-unused-parameter -Wno-unused-private-field -I"$H/common" -c "$H/wasm/pump_synth.cpp" -o "$O/synth.o"
 SEXPORTS=""
-for f in psyn_types psyn_nparams psyn_stage psyn_new psyn_free psyn_values psyn_commit psyn_midi psyn_out psyn_process psyn_latency; do SEXPORTS="$SEXPORTS -Wl,--export=$f"; done
+for f in psyn_types psyn_nparams psyn_stage psyn_new psyn_free psyn_values psyn_commit psyn_midi psyn_out psyn_process psyn_latency psyn_tempo; do SEXPORTS="$SEXPORTS -Wl,--export=$f"; done
 "$WASI_SDK/bin/clang++" $FLAGS -mexec-model=reactor -Wl,--export=_initialize $SEXPORTS -Wl,--strip-all -Wl,-z,stack-size=1048576 \
-  -Wl,--initial-memory=16777216 "$O/synth.o" -o "$OUT/pump-synth.wasm"
+  -Wl,--initial-memory=16777216 "$O/synth.o" "$O/pffft.o" -o "$OUT/pump-synth.wasm"
 # the parameter and preset tables, from the plugins' own headers
 ${CXX:-c++} -std=c++17 -O1 -I"$H/common" "$H/wasm/pump_meta.cpp" -o "$O/pump_meta"
 "$O/pump_meta" > "$O/meta.json"

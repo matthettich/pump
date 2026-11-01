@@ -1,4 +1,4 @@
-// pump's instruments in WebAssembly: MONO, POLY, COIL, ORBIT, FOLD, GLOSS, TRACT, STRIKE, BOING, X0X and LIFE behind one C interface, for Thunder Plus's synth engines.
+// pump's instruments in WebAssembly: MONO, POLY, COIL, ORBIT, FOLD, GLOSS, TRACT, STRIKE, BOING, X0X, LIFE, FREEZE and WOB behind one C interface, for Thunder Plus's synth engines.
 //
 // Each Synth<Name> below runs its plugin's own DSP side, plugins/<name>/<Name>Dsp.hpp (the settings from the
 // parameters, the output trim, the engine and the safety limiter: the code the plugin runs, not a copy), on SynthBase,
@@ -11,7 +11,7 @@
 // Build: wasm/build.sh builds this into pump-synth.wasm next to pump.wasm (no threads: -DPUMP_SYNC_KERNELS=1).
 //
 // Interface (all exported, "C"):
-//   psyn_types()                         number of instrument types (11); ids are the Type enum's order: mono, poly, coil, orbit, fold, gloss, tract, strike, boing, x0x, life
+//   psyn_types()                         number of instrument types (13); ids are the Type enum's order: mono, poly, coil, orbit, fold, gloss, tract, strike, boing, x0x, life, freeze, wob
 //   psyn_nparams(type)                   parameter count (parameter i is params()[i] of that plugin)
 //   psyn_stage()                         float[512]: write a new instance's values here before psyn_new (values not
 //                                        written are the parameter's default: psyn_new clears the stage after use)
@@ -25,7 +25,16 @@
 //   psyn_out(ch)                         float[4096] output buffers: 0 = L, 1 = R
 //   psyn_process(h, n)                   n <= 4096 samples into psyn_out(0/1), playing the queued messages
 //   psyn_latency(h)                      the latency the plugin reports (samples): MONO's half-band decimator
+//   psyn_tempo(h, bpm)                   the host's tempo (WOB's synced wobble; 120 until set)
 #include <limits>
+#include <mutex>
+#if defined(__wasm__) && !defined(__wasm_threads__)
+// wasi has no threads, so no std::mutex: SING's engine (PRISM's sources render with it, for FREEZE) keeps one for its
+// lyrics, set from another thread in the plugin. Nothing here is on another thread: a lock that does nothing.
+namespace std {
+struct mutex { void lock() {} void unlock() {} bool try_lock() { return true; } };
+}
+#endif
 #include "Handles.hpp"
 #include "../plugins/mono/MonoDsp.hpp"
 #include "../plugins/poly/PolyDsp.hpp"
@@ -46,6 +55,11 @@
 #include "../plugins/x0x/X0xEngine.hpp"
 #include "../plugins/life/LifeParams.hpp"
 #include "../plugins/life/LifeEngine.hpp"
+#include "../plugins/freeze/FreezeParams.hpp"
+#include "../plugins/freeze/FreezeEngine.hpp"
+#include "../plugins/prism/PrismAudio.hpp"
+#include "../plugins/wob/WobParams.hpp"
+#include "../plugins/wob/WobEngine.hpp"
 #include <algorithm>
 #include <memory>
 
@@ -61,7 +75,7 @@ using pump::ParamSpec;
 constexpr int kMaxBlock = 4096, kStage = 512, kMaxEvents = 512, kChunk = 256;
 
 // (the newer types are kT<Name>: a plugin's own parameter names (FOLD's kFold) must not be hidden by these)
-enum Type : int { kMono = 0, kPoly, kCoil, kOrbit, kTFold, kTGloss, kTTract, kTStrike, kTBoing, kTX0x, kTLife, kNumTypes };
+enum Type : int { kMono = 0, kPoly, kCoil, kOrbit, kTFold, kTGloss, kTTract, kTStrike, kTBoing, kTX0x, kTLife, kTFreeze, kTWob, kNumTypes };
 
 inline const std::vector<ParamSpec>& specsOf(int type)
 {
@@ -77,6 +91,8 @@ inline const std::vector<ParamSpec>& specsOf(int type)
     case kTBoing: return pump::boing::params();
     case kTX0x: return pump::x0x::params();
     case kTLife: return pump::life::params();
+    case kTFreeze: return pump::freeze::params();
+    case kTWob: return pump::wob::params();
     default: return pump::coil::params();
     }
 }
@@ -94,6 +110,7 @@ public:
     virtual void sync() = 0;
     virtual void render(float* l, float* r, int n, const pump::synth::Midi* ev, int nev) = 0;
     virtual int latency() const { return 0; }
+    virtual void tempo(double) {}   // the host's tempo (WOB's wobble); the rest ignore it
 
     void commit()
     {
@@ -425,6 +442,83 @@ private:
     pump::Transport tr;
 };
 
+// ---------------------------------------------------------------- FREEZE (PluginFreeze.hpp's sync() and run() body: keep in
+// step). Its built-in sounds are PRISM's (PrismAudio.hpp) cut into spectra as FreezeSources.hpp does, but here, with no
+// threads, made the first time one is asked for (about a second's work) and kept. No file source (0) here: silent.
+class SynthFreeze : public SynthBase {
+public:
+    explicit SynthFreeze(double rate) : SynthBase(kTFreeze, rate) {}
+    static constexpr float kTrimDb = -8.0f;   // PluginFreeze::kTrimDb
+    void activate() override { sync(); engine.prepare(sr, kMaxBlock); outLimit.prepare(sr); sync(); anyChanged = false; }
+    void sync() override
+    {
+        using namespace pump::freeze;
+        Settings s;
+        s.position = pv(kPosition) * 0.01; s.speed = pv(kSpeed) * 0.01; s.spray = pv(kSpray) * 0.01; s.grains = (int)pv(kGrains); s.blur = pv(kBlur) * 0.01;
+        s.root = (int)pv(kRoot); s.track = pv(kTrack) * 0.01; s.stretch = pv(kStretch) * 0.01; s.tilt = pv(kTilt) * 0.01; s.shimmer = pv(kShimmer) * 0.01;
+        s.low = pv(kLow); s.high = pv(kHigh); s.phase = pv(kPhase) * 0.01; s.width = pv(kWidth) * 0.01;
+        s.attack = pv(kAttack) * 0.001; s.decay = pv(kDecay) * 0.001; s.sustain = pv(kSustain) * 0.01; s.release = pv(kRelease) * 0.001;
+        s.velocity = pv(kVelocity) * 0.01; s.voices = (int)pv(kVoices); s.voiceMode = (int)pv(kVoiceMode); s.glide = pv(kGlide); s.octave = (int)pv(kOctave);
+        s.volumeDb = pv(kVolume) + kTrimDb;
+        engine.setSettings(s);
+    }
+    void render(float* l, float* r, int n, const pump::synth::Midi* ev, int nev) override
+    {
+        engine.setSource(source((int)pv(pump::freeze::kSource)));
+        engine.process(l, r, n, ev, nev); outLimit.process(l, r, n);
+    }
+
+private:
+    // FreezeSources.hpp's Builtins, made on this thread: the notes they were played at, as there
+    static const pump::freeze::Spectra* source(int id)
+    {
+        static std::shared_ptr<pump::freeze::Spectra> set[pump::freeze::kNumSources];
+        static const int roots[8] = { 60, 57, 48, 60, 45, 45, 69, 43 };
+        if (id < 1 || id >= pump::freeze::kNumSources || id > 7) return nullptr;
+        if (!set[id]) set[id] = pump::freeze::makeSpectra(pump::prism::detail::builtinAudio(id, 48000.0), 48000.0, pump::freeze::kSourceNames[id], roots[id]);
+        return set[id].get();
+    }
+    pump::freeze::Engine engine;
+    pump::SafetyLimiter outLimit;
+};
+
+// ---------------------------------------------------------------- WOB (PluginWob.hpp's sync() and run() body: keep in step).
+// Its wobble follows the tempo: psyn_tempo() sets it (the host's, 120 until then); the transport is stopped, so the
+// wobble runs free at that tempo, as in a host that isn't playing.
+class SynthWob : public SynthBase {
+public:
+    explicit SynthWob(double rate) : SynthBase(kTWob, rate) {}
+    static constexpr float kTrimDb = -8.5f;   // PluginWob::kTrimDb
+    void activate() override { sync(); engine.prepare(sr, kMaxBlock); outLimit.prepare(sr); sync(); anyChanged = false; }
+    void tempo(double bpm) override { if (bpm > 1.0 && bpm < 1000.0) tr.bpm = bpm; }
+    void sync() override
+    {
+        using namespace pump::wob;
+        Settings s;
+        s.octave = (int)pv(kOctave); s.tune = pv(kTune); s.shape = pv(kShape) * 0.01; s.partials = (int)pv(kPartials);
+        s.tilt = pv(kTilt) * 0.01; s.oddEven = pv(kOddEven) * 0.01; s.stretch = pv(kStretch) * 0.01;
+        s.filterMode = (int)pv(kFilterMode); s.cutoff = pv(kCutoff); s.res = pv(kRes) * 0.01; s.filterEnv = pv(kFilterEnv);
+        s.filterDecay = pv(kFilterDecay) * 0.001; s.keyTrack = pv(kKeyTrack) * 0.01;
+        s.vowel = pv(kVowel) * 0.01; s.formant = pv(kFormant) * 0.01; s.combFreq = pv(kCombFreq) * 0.01; s.comb = pv(kComb) * 0.01;
+        s.detune = pv(kDetune); s.width = pv(kWidth) * 0.01; s.sub = pv(kSub) * 0.01; s.subOct = (int)pv(kSubOct);
+        s.wobSync = pv(kWobSync) >= 0.5f; s.wobDiv = (int)pv(kWobDiv); s.wobRate = pv(kWobRate); s.wobShape = (int)pv(kWobShape);
+        s.wobRetrig = pv(kWobRetrig) >= 0.5f; s.wobPhase = pv(kWobPhase) * 0.01; s.wobSmooth = pv(kWobSmooth) * 0.01;
+        s.wobDelay = pv(kWobDelay); s.wobFade = pv(kWobFade); s.wobDepth = pv(kWobDepth) * 0.01; s.wheel = pv(kWheel) * 0.01;
+        s.wobCut = pv(kWobCut); s.wobVowel = pv(kWobVowel) * 0.01; s.wobComb = pv(kWobComb) * 0.01; s.wobAmp = pv(kWobAmp) * 0.01; s.wobPitch = pv(kWobPitch);
+        s.attack = pv(kAttack) * 0.001; s.decay = pv(kDecay) * 0.001; s.sustain = pv(kSustain) * 0.01; s.release = pv(kRelease) * 0.001;
+        s.glide = pv(kGlide); s.legato = pv(kLegato) >= 0.5f; s.drive = pv(kDrive) * 0.01; s.volumeDb = pv(kVolume) + kTrimDb;
+        s.shapeB = pv(kShapeB) * 0.01; s.tiltB = pv(kTiltB) * 0.01; s.morph = pv(kMorph) * 0.01; s.wobMorph = pv(kWobMorph) * 0.01;
+        s.inharm = pv(kInharm) * 0.01; s.spray = pv(kSpray) * 0.01; s.drift = pv(kDrift) * 0.01; s.driftRate = pv(kDriftRate);
+        engine.setSettings(s);
+    }
+    void render(float* l, float* r, int n, const pump::synth::Midi* ev, int nev) override { engine.setTransport(tr); engine.process(l, r, n, ev, nev); outLimit.process(l, r, n); }
+
+private:
+    pump::wob::Engine engine;
+    pump::SafetyLimiter outLimit;
+    pump::Transport tr;
+};
+
 inline SynthBase* make(int type, double sr)
 {
     switch (type)
@@ -440,6 +534,8 @@ inline SynthBase* make(int type, double sr)
     case kTBoing: return new SynthBoing(sr);
     case kTX0x: return new SynthX0x(sr);
     case kTLife: return new SynthLife(sr);
+    case kTFreeze: return new SynthFreeze(sr);
+    case kTWob: return new SynthWob(sr);
     default: return nullptr;
     }
 }
@@ -482,3 +578,4 @@ PUMP_API void psyn_process(int h, int n)
     s->run(out[0], out[1], n > kMaxBlock ? kMaxBlock : n);
 }
 PUMP_API int psyn_latency(int h) { SynthBase* s = at(h); return s ? s->latency() : 0; }
+PUMP_API void psyn_tempo(int h, double bpm) { if (SynthBase* s = at(h)) s->tempo(bpm); }

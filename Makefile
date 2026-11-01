@@ -71,7 +71,7 @@ build/tests/wasm_wrapper: tests/wasm_wrapper.cpp wasm/pump_wasm.cpp build/tests/
 # real plugin through DPF's exporter on the test mix, every factory preset, the same output and latency.
 PARITY := eq:EQ:kEQ comp:Comp:kComp limit:Limit:kLimit calm:Calm:kCalm tone:Tone:kTone band:Band:kBand wide:Wide:kWide heat:Heat:kHeat meter:Meter:kMeter
 PARITY_TESTS := $(foreach p,$(PARITY),build/tests/parity_$(word 1,$(subst :, ,$(p))))
-PARITY_FLAGS = -O2 -std=c++17 -DPUMP_SYNC_KERNELS=1 -DPFFFT_STATIC_DEFINE -fno-finite-math-only -Wno-unused-parameter -Idpf/distrho -Idpf/distrho/src -Icommon -Itests
+PARITY_FLAGS = -O2 -std=c++17 -DDGL_USE_FILE_BROWSER -DPUMP_SYNC_KERNELS=1 -DPFFFT_STATIC_DEFINE -fno-finite-math-only -Wno-unused-parameter -Idpf/distrho -Idpf/distrho/src -Icommon -Itests
 define PARITY_RULE
 build/tests/parity_$(1): tests/parity.cpp wasm/pump_wasm.cpp wasm/Handles.hpp plugins/$(1)/Plugin$(2).cpp build/tests/pffft.o $$(WASM_FX_OBJS) $$(wildcard common/*.hpp common/dsp/*.hpp tests/*.hpp plugins/*/*.hpp) | dpf-patches
 	@mkdir -p build/tests
@@ -79,12 +79,15 @@ build/tests/parity_$(1): tests/parity.cpp wasm/pump_wasm.cpp wasm/Handles.hpp pl
 endef
 $(foreach p,$(PARITY),$(eval $(call PARITY_RULE,$(word 1,$(subst :, ,$(p))),$(word 2,$(subst :, ,$(p))),$(word 3,$(subst :, ,$(p))))))
 # and the instruments in wasm/pump_synth.cpp (tests/parity_synth.cpp: a MIDI phrase, every factory preset)
-PARITY_SYNTH := mono:Mono:kMono poly:Poly:kPoly coil:Coil:kCoil orbit:Orbit:kOrbit fold:Fold:kTFold gloss:Gloss:kTGloss tract:Tract:kTTract strike:Strike:kTStrike boing:Boing:kTBoing x0x:X0x:kTX0x life:Life:kTLife
+PARITY_SYNTH := mono:Mono:kMono poly:Poly:kPoly coil:Coil:kCoil orbit:Orbit:kOrbit fold:Fold:kTFold gloss:Gloss:kTGloss tract:Tract:kTTract strike:Strike:kTStrike boing:Boing:kTBoing x0x:X0x:kTX0x life:Life:kTLife freeze:Freeze:kTFreeze wob:Wob:kTWob
 PARITY_TESTS += $(foreach p,$(PARITY_SYNTH),build/tests/parity_$(word 1,$(subst :, ,$(p))))
+# FREEZE makes its built-in sounds on a thread: its test waits for them (PUMP_WAIT_SOURCES, a test hook) so the plugin
+# side has them from the first note, as the wasm side does
+PARITY_EXTRA_freeze := -DPUMP_TEST_HOOKS=1
 define PARITY_SYNTH_RULE
 build/tests/parity_$(1): tests/parity_synth.cpp wasm/pump_synth.cpp wasm/Handles.hpp plugins/$(1)/Plugin$(2).cpp build/tests/pffft.o $$(wildcard common/*.hpp common/dsp/*.hpp plugins/*/*.hpp) | dpf-patches
 	@mkdir -p build/tests
-	$$(CXX) $$(PARITY_FLAGS) -Iplugins/$(1) -DPTYPE=$(3) -DPNS=$(1) tests/parity_synth.cpp plugins/$(1)/Plugin$(2).cpp build/tests/pffft.o -lpthread -o $$@
+	$$(CXX) $$(PARITY_FLAGS) $$(PARITY_EXTRA_$(1)) -Iplugins/$(1) -DPTYPE=$(3) -DPNS=$(1) tests/parity_synth.cpp plugins/$(1)/Plugin$(2).cpp build/tests/pffft.o -lpthread -o $$@
 endef
 $(foreach p,$(PARITY_SYNTH),$(eval $(call PARITY_SYNTH_RULE,$(word 1,$(subst :, ,$(p))),$(word 2,$(subst :, ,$(p))),$(word 3,$(subst :, ,$(p))))))
 
@@ -124,7 +127,7 @@ licence-check:
 	@sh tools/check-licence-boundary.sh
 
 tests: licence-check $(TESTS) $(SYNC_TESTS) build/tests/wasm_wrapper $(PARITY_TESTS)
-	@for t in $(TESTS) $(SYNC_TESTS) build/tests/wasm_wrapper $(PARITY_TESTS); do echo "== $$t"; ./$$t || exit 1; done
+	@for t in $(TESTS) $(SYNC_TESTS) build/tests/wasm_wrapper $(PARITY_TESTS); do echo "== $$t"; PUMP_WAIT_SOURCES=1 ./$$t || exit 1; done
 
 # --- sanitizer runs: the same DSP tests built with ASan+UBSan, or with TSan (the engines hand data to the UI through
 # atomic feeds and to a worker thread, which TSan checks). Sanitized builds go to build/asan, build/tsan, and the
