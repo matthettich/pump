@@ -37,7 +37,7 @@ for f in pump_types pump_nparams pump_stage pump_new pump_free pump_values pump_
 # the instruments: no input audio, MIDI in (pump_synth.cpp); COIL's tanks are SPRING's (its own SIMD); FREEZE needs pffft
 "$WASI_SDK/bin/clang++" $FLAGS -std=c++17 -fno-exceptions -fno-rtti -Wall -Wno-unused-parameter -Wno-unused-private-field -I"$H/common" -c "$H/wasm/pump_synth.cpp" -o "$O/synth.o"
 SEXPORTS=""
-for f in psyn_types psyn_nparams psyn_stage psyn_new psyn_free psyn_values psyn_commit psyn_midi psyn_out psyn_process psyn_latency psyn_tempo; do SEXPORTS="$SEXPORTS -Wl,--export=$f"; done
+for f in psyn_types psyn_nparams psyn_stage psyn_new psyn_free psyn_values psyn_commit psyn_midi psyn_out psyn_process psyn_latency psyn_tempo psyn_buf psyn_file; do SEXPORTS="$SEXPORTS -Wl,--export=$f"; done
 "$WASI_SDK/bin/clang++" $FLAGS -mexec-model=reactor -Wl,--export=_initialize $SEXPORTS -Wl,--strip-all -Wl,-z,stack-size=1048576 \
   -Wl,--initial-memory=16777216 "$O/synth.o" "$O/pffft.o" -o "$OUT/pump-synth.wasm"
 # the parameter and preset tables, from the plugins' own headers

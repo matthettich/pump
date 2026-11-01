@@ -26,6 +26,7 @@
 //   psyn_process(h, n)                   n <= 4096 samples into psyn_out(0/1), playing the queued messages
 //   psyn_latency(h)                      the latency the plugin reports (samples): MONO's half-band decimator
 //   psyn_tempo(h, bpm)                   the host's tempo (WOB's synced wobble; 120 until set)
+//   psyn_buf(n)                          float[n] to write a sound into (mono), then psyn_file(h, n, sr): FREEZE's File source
 #include <limits>
 #include <mutex>
 #if defined(__wasm__) && !defined(__wasm_threads__)
@@ -111,6 +112,7 @@ public:
     virtual void render(float* l, float* r, int n, const pump::synth::Midi* ev, int nev) = 0;
     virtual int latency() const { return 0; }
     virtual void tempo(double) {}   // the host's tempo (WOB's wobble); the rest ignore it
+    virtual void file(const float*, int, double, const char*) {}   // a sound of the host's (FREEZE's File source); the rest ignore it
 
     void commit()
     {
@@ -444,7 +446,8 @@ private:
 
 // ---------------------------------------------------------------- FREEZE (PluginFreeze.hpp's sync() and run() body: keep in
 // step). Its built-in sounds are PRISM's (PrismAudio.hpp) cut into spectra as FreezeSources.hpp does, but here, with no
-// threads, made the first time one is asked for (about a second's work) and kept. No file source (0) here: silent.
+// threads, made the first time one is asked for (about a second's work) and kept. The File source (0) is the host's
+// sound, handed over by psyn_file.
 class SynthFreeze : public SynthBase {
 public:
     explicit SynthFreeze(double rate) : SynthBase(kTFreeze, rate) {}
@@ -462,9 +465,19 @@ public:
         s.volumeDb = pv(kVolume) + kTrimDb;
         engine.setSettings(s);
     }
+    // FILE (owner, 1 Nov): a sound of the host's, cut into spectra as PluginFreeze::setState does (mono, its first 20 s,
+    // ROOT the note it is at); SOURCE 0 (File) plays it
+    void file(const float* x, int n, double rate, const char* name) override
+    {
+        if (!x || n <= 0 || !(rate > 1000.0)) { fileSp.reset(); return; }
+        const size_t m = std::min((size_t)n, (size_t)(rate * 20.0));
+        fileSp = pump::freeze::makeSpectra(std::vector<float>(x, x + m), rate, name ? name : "File", (int)pv(pump::freeze::kRoot));
+    }
     void render(float* l, float* r, int n, const pump::synth::Midi* ev, int nev) override
     {
-        engine.setSource(source((int)pv(pump::freeze::kSource)));
+        const int a = (int)pv(pump::freeze::kSource);
+        if (a == 0 && fileSp && fileSp->root != (int)pv(pump::freeze::kRoot)) fileSp->root = (int)pv(pump::freeze::kRoot);   // ROOT is read again (the plugin's rootNow)
+        engine.setSource(a == 0 ? fileSp.get() : source(a));
         engine.process(l, r, n, ev, nev); outLimit.process(l, r, n);
     }
 
@@ -478,6 +491,7 @@ private:
         if (!set[id]) set[id] = pump::freeze::makeSpectra(pump::prism::detail::builtinAudio(id, 48000.0), 48000.0, pump::freeze::kSourceNames[id], roots[id]);
         return set[id].get();
     }
+    std::shared_ptr<pump::freeze::Spectra> fileSp;
     pump::freeze::Engine engine;
     pump::SafetyLimiter outLimit;
 };
@@ -579,3 +593,6 @@ PUMP_API void psyn_process(int h, int n)
 }
 PUMP_API int psyn_latency(int h) { SynthBase* s = at(h); return s ? s->latency() : 0; }
 PUMP_API void psyn_tempo(int h, double bpm) { if (SynthBase* s = at(h)) s->tempo(bpm); }
+namespace pumpsynth { std::vector<float> fileBuf; }
+PUMP_API float* psyn_buf(int n) { if (n < 1 || n > 192000 * 40) return nullptr; pumpsynth::fileBuf.assign((size_t)n, 0.0f); return pumpsynth::fileBuf.data(); }
+PUMP_API void psyn_file(int h, int n, double sr) { if (SynthBase* s = at(h)) s->file(n > 0 && n <= (int)pumpsynth::fileBuf.size() ? pumpsynth::fileBuf.data() : nullptr, n, sr, "File"); }
