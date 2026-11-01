@@ -37,6 +37,12 @@
 #include "../plugins/poly/PolyParams.hpp"
 #include "../plugins/coil/CoilParams.hpp"
 #include "../plugins/orbit/OrbitParams.hpp"
+#include "../plugins/fold/FoldParams.hpp"
+#include "../plugins/gloss/GlossParams.hpp"
+#include "../plugins/tract/TractParams.hpp"
+#include "../plugins/strike/StrikeParams.hpp"
+#include "../plugins/boing/BoingParams.hpp"
+#include "../plugins/x0x/X0xParams.hpp"
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -113,11 +119,17 @@ int main(int argc, char** argv)
 {
     if (argc > 1 && std::strcmp(argv[1], "synth") == 0)
     {
-        std::printf("{\"version\":1,\"types\":[\"mono\",\"poly\",\"coil\",\"orbit\"],\"synth\":{\n");
+        std::printf("{\"version\":1,\"types\":[\"mono\",\"poly\",\"coil\",\"orbit\",\"fold\",\"gloss\",\"tract\",\"strike\",\"boing\",\"x0x\"],\"synth\":{\n");
         dump("mono", "MONO", "Analog Mono Synth", mono::params(), mono::presets(), false);
         dump("poly", "POLY", "Vintage Poly Synth", poly::params(), poly::presets(), false);
         dump("coil", "COIL", "Spring Synth", coil::params(), coil::presets(), false);
-        dump("orbit", "ORBIT", "Chaos Synth", orbit::params(), orbit::presets(), true);
+        dump("orbit", "ORBIT", "Chaos Synth", orbit::params(), orbit::presets(), false);
+        dump("fold", "FOLD", "West Coast Synth", fold::params(), fold::presets(), false);
+        dump("gloss", "GLOSS", "Hyperpop Synth", gloss::params(), gloss::presets(), false);
+        dump("tract", "TRACT", "Vocal Tract Pad", tract::params(), tract::presets(), false);
+        dump("strike", "STRIKE", "Drum Synth", strike::params(), strike::presets(), false);
+        dump("boing", "BOING", "Spring Drums", boing::params(), boing::presets(), false);
+        dump("x0x", "X0X", "Rhythm Machine", x0x::params(), x0x::presets(), true);
         std::printf("}}\n");
         return 0;
     }

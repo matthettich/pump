@@ -1,4 +1,4 @@
-// pump's instruments in WebAssembly: MONO, POLY, COIL and ORBIT behind one C interface, for Thunder Plus's synth engines.
+// pump's instruments in WebAssembly: MONO, POLY, COIL, ORBIT, FOLD, GLOSS, TRACT, STRIKE, BOING and X0X behind one C interface, for Thunder Plus's synth engines.
 //
 // Each Synth<Name> below runs its plugin's own DSP side, plugins/<name>/<Name>Dsp.hpp (the settings from the
 // parameters, the output trim, the engine and the safety limiter: the code the plugin runs, not a copy), on SynthBase,
@@ -11,7 +11,7 @@
 // Build: wasm/build.sh builds this into pump-synth.wasm next to pump.wasm (no threads: -DPUMP_SYNC_KERNELS=1).
 //
 // Interface (all exported, "C"):
-//   psyn_types()                         number of instrument types (4); ids are kTypeNames' order: mono, poly, coil, orbit
+//   psyn_types()                         number of instrument types (10); ids are the Type enum's order: mono, poly, coil, orbit, fold, gloss, tract, strike, boing, x0x
 //   psyn_nparams(type)                   parameter count (parameter i is params()[i] of that plugin)
 //   psyn_stage()                         float[512]: write a new instance's values here before psyn_new (values not
 //                                        written are the parameter's default: psyn_new clears the stage after use)
@@ -32,6 +32,18 @@
 #include "../plugins/coil/CoilDsp.hpp"
 #include "../plugins/orbit/OrbitParams.hpp"
 #include "../plugins/orbit/OrbitEngine.hpp"
+#include "../plugins/fold/FoldParams.hpp"
+#include "../plugins/fold/FoldEngine.hpp"
+#include "../plugins/gloss/GlossParams.hpp"
+#include "../plugins/gloss/GlossEngine.hpp"
+#include "../plugins/tract/TractParams.hpp"
+#include "../plugins/tract/TractEngine.hpp"
+#include "../plugins/strike/StrikeParams.hpp"
+#include "../plugins/strike/StrikeEngine.hpp"
+#include "../plugins/boing/BoingParams.hpp"
+#include "../plugins/boing/BoingEngine.hpp"
+#include "../plugins/x0x/X0xParams.hpp"
+#include "../plugins/x0x/X0xEngine.hpp"
 #include <algorithm>
 #include <memory>
 
@@ -46,7 +58,8 @@ namespace pumpsynth {
 using pump::ParamSpec;
 constexpr int kMaxBlock = 4096, kStage = 512, kMaxEvents = 512, kChunk = 256;
 
-enum Type : int { kMono = 0, kPoly, kCoil, kOrbit, kNumTypes };
+// (the newer types are kT<Name>: a plugin's own parameter names (FOLD's kFold) must not be hidden by these)
+enum Type : int { kMono = 0, kPoly, kCoil, kOrbit, kTFold, kTGloss, kTTract, kTStrike, kTBoing, kTX0x, kNumTypes };
 
 inline const std::vector<ParamSpec>& specsOf(int type)
 {
@@ -55,6 +68,12 @@ inline const std::vector<ParamSpec>& specsOf(int type)
     case kMono: return pump::mono::params();
     case kPoly: return pump::poly::params();
     case kOrbit: return pump::orbit::params();
+    case kTFold: return pump::fold::params();
+    case kTGloss: return pump::gloss::params();
+    case kTTract: return pump::tract::params();
+    case kTStrike: return pump::strike::params();
+    case kTBoing: return pump::boing::params();
+    case kTX0x: return pump::x0x::params();
     default: return pump::coil::params();
     }
 }
@@ -194,6 +213,179 @@ private:
     pump::SafetyLimiter outLimit;
 };
 
+// ---------------------------------------------------------------- FOLD (PluginFold.hpp's sync() and run() body: keep in step)
+class SynthFold : public SynthBase {
+public:
+    explicit SynthFold(double rate) : SynthBase(kTFold, rate) {}
+    static constexpr float kTrimDb = 2.0f;   // PluginFold::kTrimDb
+    // the engine's prepare() starts its voices afresh: the settings again after it, as the plugin's first run() does
+    void activate() override { sync(); engine.prepare(sr, kMaxBlock); outLimit.prepare(sr); sync(); anyChanged = false; }
+    void sync() override
+    {
+        using namespace pump::fold;
+        Settings s;
+        s.shape = pv(kShape) * 0.01; s.modWave = (int)pv(kModWaveP); s.modRatio = pv(kModRatio); s.modDetune = pv(kModDetune);
+        s.fm = pv(kFmIndex) * 0.01; s.am = pv(kAmDepth) * 0.01; s.modFold = pv(kModFold) * 0.01;
+        s.fold = pv(kFold) * 0.01; s.symmetry = pv(kSymmetry) * 0.01; s.edge = pv(kEdge) * 0.01; s.stages = (int)pv(kStages);
+        s.gateMode = (int)pv(kGateModeP); s.gateOpen = pv(kGateOpen) * 0.01; s.vactrol = pv(kVactrol) * 0.01; s.gateReso = pv(kGateReso) * 0.01;
+        s.funcMode = (int)pv(kFuncModeP); s.rise = pv(kRise) * 0.001; s.fall = pv(kFall) * 0.001; s.funcGate = pv(kFuncGate) * 0.01;
+        s.funcFold = pv(kFuncFold) * 0.01; s.funcFm = pv(kFuncFm) * 0.01; s.funcPitch = pv(kFuncPitch);
+        s.randRate = pv(kRandRate); s.randSmooth = pv(kRandSmooth) * 0.01; s.randFold = pv(kRandFold) * 0.01; s.randFm = pv(kRandFm) * 0.01; s.randPitch = pv(kRandPitch);
+        s.velocity = pv(kVelocity) * 0.01; s.spread = pv(kSpread) * 0.01; s.voices = (int)pv(kVoices); s.voiceMode = (int)pv(kVoiceMode);
+        s.glide = pv(kGlide); s.octave = (int)pv(kOctave); s.fine = pv(kFine);
+        s.volumeDb = pv(kVolume) + kTrimDb;
+        engine.setSettings(s);
+    }
+    void render(float* l, float* r, int n, const pump::synth::Midi* ev, int nev) override { engine.process(l, r, n, ev, nev); outLimit.process(l, r, n); }
+
+private:
+    pump::fold::Engine engine;
+    pump::SafetyLimiter outLimit;
+};
+
+// ---------------------------------------------------------------- GLOSS (PluginGloss.hpp's sync() and run() body: keep in step)
+class SynthGloss : public SynthBase {
+public:
+    explicit SynthGloss(double rate) : SynthBase(kTGloss, rate) {}
+    // the engine's prepare() starts its voices afresh: the settings again after it, as the plugin's first run() does
+    void activate() override { sync(); engine.prepare(sr, kMaxBlock); outLimit.prepare(sr); sync(); anyChanged = false; }
+    int latency() const override { return engine.latency(); }
+    void sync() override
+    {
+        using namespace pump::gloss;
+        Settings s;
+        s.machine = (int)pv(kMachine); s.a = pv(kA) * 0.01; s.b = pv(kB) * 0.01; s.c = pv(kC) * 0.01; s.d = pv(kD) * 0.01;
+        s.tune = pv(kTune); s.pitchEnv = pv(kPitchEnv); s.pitchTime = pv(kPitchTime) * 0.001; s.glide = pv(kGlide); s.mode = (int)pv(kMode);
+        s.filterType = (int)pv(kFilterType); s.cutoff = pv(kCutoff); s.res = pv(kRes) * 0.01; s.filterEnv = pv(kFilterEnv) * 0.01;
+        s.filterDecay = pv(kFilterDecay) * 0.001; s.keyTrack = pv(kKeyTrack) * 0.01;
+        s.attack = pv(kAttack) * 0.001; s.decay = pv(kDecay) * 0.001; s.sustain = pv(kSustain) * 0.01; s.release = pv(kRelease) * 0.001; s.velAmp = pv(kVelAmp) * 0.01;
+        s.drive = pv(kDrive) * 0.01; s.driveType = (int)pv(kDriveType); s.crushBits = pv(kCrushBits); s.crushRate = pv(kCrushRate); s.width = pv(kWidth) * 0.01;
+        s.lfoShape = (int)pv(kLfoShape); s.lfoRate = pv(kLfoRate); s.lfoDepth = pv(kLfoDepth) * 0.01; s.lfoDest = (int)pv(kLfoDest);
+        s.bendRange = pv(kBendRange); s.volumeDb = pv(kVolume);
+        engine.setSettings(s);
+    }
+    void render(float* l, float* r, int n, const pump::synth::Midi* ev, int nev) override { engine.process(l, r, n, ev, nev); outLimit.process(l, r, n); }
+
+private:
+    pump::gloss::Engine engine;
+    pump::SafetyLimiter outLimit;
+};
+
+// ---------------------------------------------------------------- TRACT (PluginTract.hpp's sync() and run() body: keep in step)
+class SynthTract : public SynthBase {
+public:
+    explicit SynthTract(double rate) : SynthBase(kTTract, rate) {}
+    static constexpr float kTrimDb = -5.0f;   // PluginTract::kTrimDb
+    // the engine's prepare() starts its voices afresh: the settings again after it, as the plugin's first run() does
+    void activate() override { sync(); engine.prepare(sr, kMaxBlock); outLimit.prepare(sr); sync(); anyChanged = false; }
+    void sync() override
+    {
+        using namespace pump::tract;
+        Settings s;
+        s.vowel = pv(kVowel) * 0.01; s.motion = pv(kMotion) * 0.01; s.motionRate = pv(kMotionRate); s.size = pv(kSize) * 0.01;
+        s.tense = pv(kTense) * 0.01; s.breath = pv(kBreath) * 0.01; s.vibrato = pv(kVibrato) * 0.01; s.vibRate = pv(kVibRate); s.jitter = pv(kJitter) * 0.01;
+        s.singers = (int)pv(kSingers); s.detune = pv(kDetune); s.sizeSpread = pv(kSizeSpread) * 0.01; s.vowelSpread = pv(kVowelSpread) * 0.01;
+        s.spread = pv(kSpread) * 0.01; s.bright = pv(kBright) * 0.01;
+        s.attack = pv(kAttack) * 0.001; s.decay = pv(kDecay) * 0.001; s.sustain = pv(kSustain) * 0.01; s.release = pv(kRelease) * 0.001;
+        s.velocity = pv(kVelocity) * 0.01; s.voices = (int)pv(kVoices); s.voiceMode = (int)pv(kVoiceMode); s.glide = pv(kGlide); s.octave = (int)pv(kOctave);
+        s.volumeDb = pv(kVolume) + kTrimDb;
+        engine.setSettings(s);
+    }
+    void render(float* l, float* r, int n, const pump::synth::Midi* ev, int nev) override { engine.process(l, r, n, ev, nev); outLimit.process(l, r, n); }
+
+private:
+    pump::tract::Engine engine;
+    pump::SafetyLimiter outLimit;
+};
+
+// ---------------------------------------------------------------- STRIKE (PluginStrike.hpp's sync() and run() body: keep in step)
+class SynthStrike : public SynthBase {
+public:
+    explicit SynthStrike(double rate) : SynthBase(kTStrike, rate) {}
+    static constexpr float kTrimDb = 1.0f;   // PluginStrike::kTrimDb
+    // the engine's prepare() starts its voices afresh: the settings again after it, as the plugin's first run() does
+    void activate() override { sync(); engine.prepare(sr, kMaxBlock); outLimit.prepare(sr); sync(); anyChanged = false; }
+    void sync() override
+    {
+        using namespace pump::strike;
+        Settings s;
+        for (int p = 0; p < kPads; ++p)
+        {
+            PadSettings& q = s.pad[p];
+            q.engine = (int)pv(pp(p, kEngine)); q.pitch = pv(pp(p, kPitch)); q.decay = pv(pp(p, kDecay)) * 0.001; q.tone = pv(pp(p, kTone)) * 0.01;
+            q.a = pv(pp(p, kCharA)) * 0.01; q.b = pv(pp(p, kCharB)) * 0.01; q.bend = pv(pp(p, kBend)); q.bendTime = pv(pp(p, kBendTime)) * 0.001;
+            q.noise = pv(pp(p, kNoise)) * 0.01; q.level = pv(pp(p, kLevel)); q.pan = pv(pp(p, kPan)) * 0.01;
+        }
+        s.choke = pv(kChoke) >= 0.5f; s.velocity = pv(kVelocity) * 0.01; s.drive = pv(kDrive) * 0.01; s.volumeDb = pv(kVolume) + kTrimDb;
+        engine.setSettings(s);
+    }
+    void render(float* l, float* r, int n, const pump::synth::Midi* ev, int nev) override { engine.process(l, r, n, ev, nev); outLimit.process(l, r, n); }
+
+private:
+    pump::strike::Engine engine;
+    pump::SafetyLimiter outLimit;
+};
+
+// ---------------------------------------------------------------- BOING (PluginBoing.hpp's sync() and run() body: keep in step)
+class SynthBoing : public SynthBase {
+public:
+    explicit SynthBoing(double rate) : SynthBase(kTBoing, rate) {}
+    static constexpr float kTrimDb = -2.0f;   // PluginBoing::kTrimDb
+    // the engine's prepare() starts its voices afresh: the settings again after it, as the plugin's first run() does
+    void activate() override { sync(); engine.prepare(sr, kMaxBlock); outLimit.prepare(sr); sync(); anyChanged = false; }
+    void sync() override
+    {
+        using namespace pump::boing;
+        Settings s;
+        for (int p = 0; p < kPads; ++p)
+        {
+            PadSettings& q = s.pad[p];
+            q.tank = (int)pv(pp(p, kTank)); q.wave = (int)pv(pp(p, kWave)); q.blend = pv(pp(p, kBlend)) * 0.01; q.pitch = pv(pp(p, kPitch));
+            q.decay = pv(pp(p, kDecay)) * 0.001; q.harmonic = pv(pp(p, kHarmonic)) * 0.01; q.spread = pv(pp(p, kSpread)) * 0.01; q.drip = pv(pp(p, kDrip));
+            q.bend = pv(pp(p, kBend)); q.bendTime = pv(pp(p, kBendTime)) * 0.001; q.noise = pv(pp(p, kNoise)) * 0.01; q.noiseTone = pv(pp(p, kNoiseTone)) * 0.01;
+            q.click = pv(pp(p, kClick)) * 0.01; q.hits = (int)pv(pp(p, kHits)); q.level = pv(pp(p, kLevel)); q.pan = pv(pp(p, kPan)) * 0.01; q.send = pv(pp(p, kSend)) * 0.01;
+        }
+        s.tankModel = (int)pv(kTankModel); s.tankDecay = pv(kTankDecay); s.tankLevel = pv(kTankLevel) * 0.01; s.choke = pv(kChoke) >= 0.5f;
+        s.velocity = pv(kVelocity) * 0.01; s.drive = pv(kDrive) * 0.01; s.volumeDb = pv(kVolume) + kTrimDb;
+        engine.setSettings(s);
+    }
+    void render(float* l, float* r, int n, const pump::synth::Midi* ev, int nev) override { engine.process(l, r, n, ev, nev); outLimit.process(l, r, n); }
+
+private:
+    pump::boing::Engine engine;
+    pump::SafetyLimiter outLimit;
+};
+
+// ---------------------------------------------------------------- X0X (PluginX0x.hpp's sync() and run() body: keep in step)
+class SynthX0x : public SynthBase {
+public:
+    explicit SynthX0x(double rate) : SynthBase(kTX0x, rate) {}
+    // the engine's prepare() starts its voices afresh: the settings again after it, as the plugin's first run() does
+    void activate() override { sync(); engine.prepare(sr, kMaxBlock); outLimit.prepare(sr); sync(); anyChanged = false; }
+    void sync() override
+    {
+        using namespace pump::x0x;
+        Settings s;
+        for (int i = 0; i < kInstr; ++i)
+        {
+            InstrSettings& q = s.in[i];
+            q.machine = (int)pv(ip(i, kMachine)); q.tune = pv(ip(i, kTune)); q.decay = pv(ip(i, kDecay)) * 0.01; q.tone = pv(ip(i, kTone)) * 0.01;
+            q.snap = pv(ip(i, kSnap)) * 0.01; q.levelDb = pv(ip(i, kLevel)); q.pan = pv(ip(i, kPan)) * 0.01;
+        }
+        s.accent = pv(kAccent) * 0.01; s.drive = pv(kDrive) * 0.01; s.volumeDb = pv(kVolume); s.velocity = pv(kVelocity) * 0.01;
+        s.accentVel = (int)pv(kAccentVel); s.seqMode = (int)pv(kSeqMode); s.length = (int)pv(kSeqLength); s.rate = (int)pv(kSeqRate);
+        s.swing = pv(kSwing) * 0.01;
+        s.pattern = patternFrom([this](int i) { return pv((uint32_t)i); });
+        engine.setSettings(s);
+    }
+    void render(float* l, float* r, int n, const pump::synth::Midi* ev, int nev) override { engine.setTransport(tr); engine.process(l, r, n, ev, nev); outLimit.process(l, r, n); tr.ppq += n * tr.bpm / 60.0 / sr; }
+
+private:
+    pump::x0x::Engine engine;
+    pump::SafetyLimiter outLimit;
+    pump::Transport tr;   // stopped: a host that isn't playing (the sequencer is off in Thunder Plus)
+};
+
 inline SynthBase* make(int type, double sr)
 {
     switch (type)
@@ -202,6 +394,12 @@ inline SynthBase* make(int type, double sr)
     case kPoly: return new SynthPoly(sr);
     case kCoil: return new SynthCoil(sr);
     case kOrbit: return new SynthOrbit(sr);
+    case kTFold: return new SynthFold(sr);
+    case kTGloss: return new SynthGloss(sr);
+    case kTTract: return new SynthTract(sr);
+    case kTStrike: return new SynthStrike(sr);
+    case kTBoing: return new SynthBoing(sr);
+    case kTX0x: return new SynthX0x(sr);
     default: return nullptr;
     }
 }
