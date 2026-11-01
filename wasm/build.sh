@@ -1,7 +1,7 @@
 #!/bin/sh
 # Builds pump.wasm (the nine mastering engines and the creative effects behind wasm/pump_wasm.cpp's C interface, for Thunder Plus's track effects) and
 # pump-meta.js (every plugin's parameter table and factory presets, from the same Params.hpp tables), into OUT; and
-# pump-synth.wasm (the instruments MONO, POLY and COIL behind wasm/pump_synth.cpp, for Thunder Plus's synth engines)
+# pump-synth.wasm (the instruments MONO, POLY, COIL and ORBIT behind wasm/pump_synth.cpp, for Thunder Plus's synth engines)
 # with pump-synth-meta.js (their parameters and factory presets).
 #
 # Toolchain: wasi-sdk 25 (https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-25/

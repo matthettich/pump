@@ -1,4 +1,4 @@
-// pump's instruments in WebAssembly: MONO, POLY and COIL behind one C interface, for Thunder Plus's synth engines.
+// pump's instruments in WebAssembly: MONO, POLY, COIL and ORBIT behind one C interface, for Thunder Plus's synth engines.
 //
 // Each Synth<Name> below runs its plugin's own DSP side, plugins/<name>/<Name>Dsp.hpp (the settings from the
 // parameters, the output trim, the engine and the safety limiter: the code the plugin runs, not a copy), on SynthBase,
@@ -11,7 +11,7 @@
 // Build: wasm/build.sh builds this into pump-synth.wasm next to pump.wasm (no threads: -DPUMP_SYNC_KERNELS=1).
 //
 // Interface (all exported, "C"):
-//   psyn_types()                         number of instrument types (3); ids are kTypeNames' order: mono, poly, coil
+//   psyn_types()                         number of instrument types (4); ids are kTypeNames' order: mono, poly, coil, orbit
 //   psyn_nparams(type)                   parameter count (parameter i is params()[i] of that plugin)
 //   psyn_stage()                         float[512]: write a new instance's values here before psyn_new (values not
 //                                        written are the parameter's default: psyn_new clears the stage after use)
@@ -30,6 +30,8 @@
 #include "../plugins/mono/MonoDsp.hpp"
 #include "../plugins/poly/PolyDsp.hpp"
 #include "../plugins/coil/CoilDsp.hpp"
+#include "../plugins/orbit/OrbitParams.hpp"
+#include "../plugins/orbit/OrbitEngine.hpp"
 #include <algorithm>
 #include <memory>
 
@@ -44,7 +46,7 @@ namespace pumpsynth {
 using pump::ParamSpec;
 constexpr int kMaxBlock = 4096, kStage = 512, kMaxEvents = 512, kChunk = 256;
 
-enum Type : int { kMono = 0, kPoly, kCoil, kNumTypes };
+enum Type : int { kMono = 0, kPoly, kCoil, kOrbit, kNumTypes };
 
 inline const std::vector<ParamSpec>& specsOf(int type)
 {
@@ -52,6 +54,7 @@ inline const std::vector<ParamSpec>& specsOf(int type)
     {
     case kMono: return pump::mono::params();
     case kPoly: return pump::poly::params();
+    case kOrbit: return pump::orbit::params();
     default: return pump::coil::params();
     }
 }
@@ -160,6 +163,37 @@ public:
     void render(float* l, float* r, int n, const pump::synth::Midi* ev, int nev) override { renderChunk(l, r, n, ev, nev); }
 };
 
+// ---------------------------------------------------------------- ORBIT (no OrbitDsp split: PluginOrbit's sync() and
+// the body of its run(), the engine then the safety limiter on each 256-sample chunk; keep in step with PluginOrbit.hpp)
+class SynthOrbit : public SynthBase {
+public:
+    explicit SynthOrbit(double rate) : SynthBase(kOrbit, rate) {}
+    static constexpr float kTrimDb = -4.0f;   // PluginOrbit::kTrimDb
+    // the engine's prepare() starts its voices afresh (their envelopes too): the settings again after it, as the plugin's
+    // first run() does (its parameters are still flagged as changed after activate())
+    void activate() override { sync(); engine.prepare(sr, kMaxBlock); outLimit.prepare(sr); sync(); anyChanged = false; }
+    void sync() override
+    {
+        using namespace pump::orbit;
+        Settings s;
+        s.system = (int)pv(kSystem); s.chaos = pv(kChaos) * 0.01; s.sync = pv(kSync) * 0.01; s.axis = pv(kAxis) * 0.01; s.width = pv(kWidth) * 0.01;
+        s.drive = pv(kDrive) * 0.01; s.cutoff = pv(kCutoff); s.reso = pv(kReso) * 0.01; s.keytrack = pv(kKeytrack) * 0.01;
+        s.envCut = pv(kEnvCut) * 0.01; s.envChaos = pv(kEnvChaos) * 0.01;
+        s.modA = pv(kModA) * 0.001; s.modD = pv(kModD) * 0.001; s.modS = pv(kModS) * 0.01; s.modR = pv(kModR) * 0.001;
+        s.driftRate = pv(kDriftRate); s.driftPitch = pv(kDriftPitch) * 0.01; s.driftCut = pv(kDriftCut) * 0.01; s.driftChaos = pv(kDriftChaos) * 0.01;
+        s.attack = pv(kAttack) * 0.001; s.decay = pv(kDecay) * 0.001; s.sustain = pv(kSustain) * 0.01; s.release = pv(kRelease) * 0.001;
+        s.velocity = pv(kVelocity) * 0.01; s.voices = (int)pv(kVoices); s.voiceMode = (int)pv(kVoiceMode); s.glide = pv(kGlide);
+        s.octave = (int)pv(kOctave); s.fine = pv(kFine);
+        s.volumeDb = pv(kVolume) + kTrimDb;
+        engine.setSettings(s);
+    }
+    void render(float* l, float* r, int n, const pump::synth::Midi* ev, int nev) override { engine.process(l, r, n, ev, nev); outLimit.process(l, r, n); }
+
+private:
+    pump::orbit::Engine engine;
+    pump::SafetyLimiter outLimit;
+};
+
 inline SynthBase* make(int type, double sr)
 {
     switch (type)
@@ -167,6 +201,7 @@ inline SynthBase* make(int type, double sr)
     case kMono: return new SynthMono(sr);
     case kPoly: return new SynthPoly(sr);
     case kCoil: return new SynthCoil(sr);
+    case kOrbit: return new SynthOrbit(sr);
     default: return nullptr;
     }
 }

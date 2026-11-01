@@ -36,6 +36,7 @@
 #include "../plugins/mono/MonoParams.hpp"
 #include "../plugins/poly/PolyParams.hpp"
 #include "../plugins/coil/CoilParams.hpp"
+#include "../plugins/orbit/OrbitParams.hpp"
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -112,10 +113,11 @@ int main(int argc, char** argv)
 {
     if (argc > 1 && std::strcmp(argv[1], "synth") == 0)
     {
-        std::printf("{\"version\":1,\"types\":[\"mono\",\"poly\",\"coil\"],\"synth\":{\n");
+        std::printf("{\"version\":1,\"types\":[\"mono\",\"poly\",\"coil\",\"orbit\"],\"synth\":{\n");
         dump("mono", "MONO", "Analog Mono Synth", mono::params(), mono::presets(), false);
         dump("poly", "POLY", "Vintage Poly Synth", poly::params(), poly::presets(), false);
-        dump("coil", "COIL", "Spring Synth", coil::params(), coil::presets(), true);
+        dump("coil", "COIL", "Spring Synth", coil::params(), coil::presets(), false);
+        dump("orbit", "ORBIT", "Chaos Synth", orbit::params(), orbit::presets(), true);
         std::printf("}}\n");
         return 0;
     }
