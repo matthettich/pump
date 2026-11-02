@@ -37,6 +37,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cmath>
 #include <memory>
 #include <string>
 #include <thread>
@@ -364,11 +365,21 @@ std::wstring describe(DWORD code)
 // The level hold: everything plays at the lowest preamp of the library's profiles (kept in the settings, so it
 // never rises by itself). With a profile the active file makes up the difference between the profile's own preamp and
 // the held level; with none it holds that level. Only quitting Room Profiles gives the full level back.
+// The hold never goes below kHoldFloorDb: a profile asking for more cut (a measurement with huge boosts, or an
+// unreadable preamp) stays out of it, so one bad file can't hold everything tens of dB down for good.
+constexpr double kHoldFloorDb = -24.0;
+
+double storedHold()
+{
+    const double v = _wtof(iniGet(L"state", L"heldLevelDb", L"0").c_str());
+    return std::isfinite(v) ? std::min(0.0, std::max(kHoldFloorDb, v)) : 0.0;
+}
+
 double heldLevel()
 {
-    double held = std::min(0.0, _wtof(iniGet(L"state", L"heldLevelDb", L"0").c_str()));
-    for (const Entry& e : library()) held = std::min(held, e.preamp);
-    held = std::max(held, -60.0);
+    double held = storedHold();
+    for (const Entry& e : library())
+        if (std::isfinite(e.preamp) && e.preamp >= kHoldFloorDb) held = std::min(held, e.preamp);
     wchar_t buf[32];
     swprintf(buf, 32, L"%.3f", held);
     iniSet(L"state", L"heldLevelDb", buf);
@@ -584,7 +595,7 @@ void showMenu()
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(menu, MF_STRING | (loginOn() ? MF_CHECKED : 0), ID_LOGIN, L"Open at Login");
     {
-        const double held = std::min(0.0, _wtof(iniGet(L"state", L"heldLevelDb", L"0").c_str()));
+        const double held = storedHold();
         wchar_t buf[96];
         swprintf(buf, 96, L"Level held at %.1f dB (quit for full level)", held);
         AppendMenuW(menu, MF_STRING | MF_GRAYED, 0, buf);
@@ -631,7 +642,7 @@ void showMenu()
     else if (cmd == ID_QUIT)
     {
         // quitting is the one way back to full level: say so when that is louder
-        const double held = std::min(0.0, _wtof(iniGet(L"state", L"heldLevelDb", L"0").c_str()));
+        const double held = storedHold();
         if (!gApo.empty() && held < -0.5)
         {
             wchar_t msg[320];

@@ -149,7 +149,9 @@ The owner's Mac: after waking, apps were silent with System EQ on until each app
 reading the apps' old streams). System EQ now pauses the device at will-sleep (the tap stays, so nothing plays
 unprocessed or above the level hold), and 2 s after did-wake or screens-did-wake builds tap + device fresh
 (`restartAfter:`); a watchdog in `idleCheck` restarts a running device whose IO count (`Engine::ioCalls`) hasn't moved
-for 3 s; Restart Audio in the menu; a wake that went unannounced is assumed after 15 idle ticks. **Not tried on a
+for 3 s; a stale-tap check there rebuilds when apps are playing (`otherProcessPlaying`) but `silentFrames` passed 4 s
+(at most 3 rebuilds, 30 s then 2 min apart, reset when sound flows, on wake and on Restart Audio — a real tap gone stale
+after a wake left the Mac silent until Restart Audio); a `resume()` that fails rebuilds too; Restart Audio in the menu; a wake that went unannounced is assumed after 15 idle ticks. **Not tried on a
 Mac yet** (built by CI only): the owner should sleep and wake with music playing. pump ROOM's page resumes a
 suspended context and restarts audio whose track ended or whose clock stood still for 2 checks (`watchAudio`;
 tested in room_e2e.mjs).
@@ -458,3 +460,10 @@ ASan+UBSan: the crash only appears with damaged input.
   The MACHINE firmware (C, from the machine's repo) has had no sanitizer pass and is the likeliest place for another
   memory-safety bug.
 - TSan was run on 10 tests, not the whole suite.
+
+### Level hold floor (Nov 2026)
+
+`kHoldFloorDb` (−24 dB) in `system/main.mm` and `system/windows/room-profiles.cpp`: profiles whose preamp is below it
+(or unreadable: `parsePreamp` gives NAN) are left out of the hold and shown "re-measure" in the Mac menu; a stored
+`heldLevelDb` below it is raised to it (`storedHold`). With correction on, the trim is `min(0, held − own)`, so a
+too-low active profile plays at its own level and never gets added gain.

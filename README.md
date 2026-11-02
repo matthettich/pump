@@ -94,12 +94,15 @@ window; `pump-macos.pkg` installs it in Applications, and `system-eq-macos.zip` 
 - **Level hold:** turning *Room Correction* off, choosing *No Profile* or switching profiles never gets louder.
   Everything plays at the lowest preamp of your profiles (the menu shows it); quitting System EQ is the way back to
   full level, and turning the EQ off asks first when that would be louder. *Reset Level Hold…* works it out again
-  from the library. Room Profiles on Windows does the same: quitting it (it asks) gives full level back.
+  from the library. Room Profiles on Windows does the same: quitting it (it asks) gives full level back. The hold never
+  goes below −24 dB: a profile asking for more cut than that (or whose preamp can't be read) is left out of it and
+  marked *re-measure* in the menu, so one bad measurement can't hold everything far down.
 - **EQ On** in the menu turns it off and gives the Mac its untouched output back. *Open at Login* (off until you
   turn it on) starts it when you log in. *Restart After a Crash* (on) opens it again if it ever crashes, at most three
   times in ten minutes; quitting from the menu always leaves it closed (a Force Quit counts as a crash).
 - **Sleep:** System EQ rebuilds its audio a couple of seconds after the Mac (or its displays) wakes, and restarts it
-  by itself if the audio device stops. If an app is still silent, *Restart Audio* in the menu rebuilds it by hand:
+  by itself if the audio device stops, or if apps are playing but nothing has reached it for 4 s (it tries three
+  times, backing off, then waits for sound or a change). If an app is still silent, *Restart Audio* in the menu rebuilds it by hand:
   no need to quit and reopen your apps. pump ROOM likewise restarts its audio if it stops (RESTART AUDIO by hand).
 - The first start asks for permission to record system audio (that's how it hears other apps). If you hear nothing,
   *Audio Recording Permission…* in the menu opens the right page in System Settings. Unsigned builds may ask again

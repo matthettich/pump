@@ -11,7 +11,8 @@
 // Sleep: the device is paused before the Mac sleeps (the tap stays, still muting) and the tap and device are built
 // fresh after it wakes (and when the displays wake: their speakers come and go with them). Across a sleep, the tap can keep reading apps' old audio streams and
 // hear nothing, which looked like every app going silent until it was reopened. A watchdog restarts the device if
-// its IO stops while it should be running, and Restart Audio (menu) does the same by hand.
+// its IO stops while it should be running, or if apps are playing but the tap has heard only silence for 4 s (a stale
+// tap: rebuilt up to three times, backing off), and Restart Audio (menu) does the same by hand.
 //
 // Audio path:   every app (except this one) -> tap -> private aggregate device [tap + output device]
 //               -> IOProc -> pump EQ (AudioUnitRender) -> pump ROOM (when Room Correction is on) -> output device
@@ -164,6 +165,8 @@ struct Engine
     std::atomic<uint64_t> silentFrames { 0 };
     // IO callbacks so far: the watchdog's sign of life (audio thread writes, main thread reads)
     std::atomic<uint64_t> ioCalls { 0 };
+    // slices that carried sound (audio thread writes, main thread reads): the stale-tap check's sign of life
+    std::atomic<uint64_t> soundSlices { 0 };
 
     Engine() : inL(kMaxFrames), inR(kMaxFrames), outL(kMaxFrames), outR(kMaxFrames), midL(kMaxFrames), midR(kMaxFrames),
                trimL(kMaxFrames), trimR(kMaxFrames) {}
@@ -261,6 +264,8 @@ struct Engine
             bool sound = false;
             for (UInt32 i = 0; i < n && !sound; ++i)
                 sound = std::fabs(e->inL[i]) > 1.0e-6f || std::fabs(e->inR[i]) > 1.0e-6f;   // above -120 dBFS
+            if (sound)
+                e->soundSlices.fetch_add(1, std::memory_order_relaxed);
             const uint64_t silent = sound ? 0 : e->silentFrames.load(std::memory_order_relaxed) + n;
             e->silentFrames.store(silent, std::memory_order_relaxed);
             if (silent > dozeAfter)
@@ -604,13 +609,16 @@ struct Engine
             paused = true;
     }
 
-    void resume()
+    // false when the device wouldn't start again (the tap is still muting: the caller rebuilds everything)
+    bool resume()
     {
         if (!running || !paused)
-            return;
+            return true;
         silentFrames = 0;
-        if (AudioDeviceStart(aggregate, ioProc) == noErr)
-            paused = false;
+        if (AudioDeviceStart(aggregate, ioProc) != noErr)
+            return false;
+        paused = false;
+        return true;
     }
 
     void stop()
@@ -751,6 +759,9 @@ static NSView* keyViewIn(NSView* v)
     uint64_t lastIoCalls;                // the watchdog: IO callbacks at the last check,
     unsigned stalledChecks;              // and how many checks in a row saw none
     unsigned asleepTicks;                // idle checks seen while "asleep": the Mac is clearly awake (a missed wake)
+    unsigned staleRetries;               // rebuilds for "apps playing, tap hearing nothing" since sound last came through
+    NSTimeInterval nextStaleRetry;       // not before this time
+    uint64_t lastSoundSlices;            // Engine::soundSlices at the last check
 }
 
 static NSUserDefaults* prefs() { return NSUserDefaults.standardUserDefaults; }
@@ -917,7 +928,7 @@ static NSString* currentOutputKey()
 - (void)toggle:(id)sender
 {
     // turning System EQ off removes the level hold too: say so when that makes the Mac louder
-    const double held = std::min(0.0, [prefs() doubleForKey:@"heldLevelDb"]);
+    const double held = storedHold();
     if (wantOn && held < -0.5)
     {
         NSAlert* a = [NSAlert new];
@@ -1024,6 +1035,8 @@ static OSStatus deviceListener(AudioObjectID obj, UInt32 count, const AudioObjec
 - (void)didWake:(NSNotification*)note
 {
     asleep = NO;
+    staleRetries = 0;
+    nextStaleRetry = 0;
     if (wantOn)
         [self restartAfter:2.0];
 }
@@ -1041,6 +1054,8 @@ static OSStatus deviceListener(AudioObjectID obj, UInt32 count, const AudioObjec
     if (!wantOn)
         return;
     NSLog(@"%@: restarting audio (menu)", kAppName);
+    staleRetries = 0;
+    nextStaleRetry = 0;
     [self restartAfter:0.1];
 }
 
@@ -1077,8 +1092,11 @@ static OSStatus processListener(AudioObjectID, UInt32, const AudioObjectProperty
         return std::find(procs.begin(), procs.end(), p) == procs.end();
     }), watchedProcesses.end());
 
-    if (playing && engine.paused && !asleep)
-        engine.resume();
+    if (playing && engine.paused && !asleep && !engine.resume())
+    {
+        NSLog(@"%@: the audio device wouldn't start again; rebuilding it", kAppName);
+        [self restartAfter:0.1];
+    }
 }
 
 - (void)idleCheck
@@ -1092,8 +1110,14 @@ static OSStatus processListener(AudioObjectID, UInt32, const AudioObjectProperty
             [self didWake:nil];   // the timer only runs while the Mac is awake: a wake went unannounced
         return;
     }
-    if (engine.running && engine.paused && otherProcessPlaying())
-        engine.resume();   // fallback if a resume was missed or failed
+    if (engine.running && engine.paused && otherProcessPlaying() && !engine.resume())
+    {
+        // fallback if a resume was missed; a device that won't start again is rebuilt (a failed rebuild removes the
+        // tap, which gives the apps their own output back rather than leaving them muted)
+        NSLog(@"%@: the audio device wouldn't start again; rebuilding it", kAppName);
+        [self restartAfter:0.1];
+        return;
+    }
     // the watchdog: a device that should be running but has had no IO for 3 checks in a row is restarted
     if (engine.running && !engine.paused && !asleep)
     {
@@ -1111,6 +1135,30 @@ static OSStatus processListener(AudioObjectID, UInt32, const AudioObjectProperty
         stalledChecks = 0;
     if (!engine.running || engine.paused || engine.auRate <= 0.0)
         return;
+    // a stale tap: the device runs and apps are playing, but the tap has delivered only silence for 4 s. Across a sleep
+    // or an audio hiccup the tap can keep reading streams the apps no longer use, so the apps stay muted and nothing
+    // comes out (what Restart Audio fixes by hand). Rebuild it, then again after 30 s and 2 min; an app that really
+    // plays silence (a paused page holding its output open) costs at most those three rebuilds, each a few ms of the
+    // same silence. Sound coming through starts the count over.
+    {
+        const uint64_t silent = engine.silentFrames.load(), sound = engine.soundSlices.load();
+        if (sound != lastSoundSlices)
+        {
+            staleRetries = 0;   // real sound since the last check (a rebuild's fresh silence count doesn't count)
+            nextStaleRetry = 0;
+        }
+        lastSoundSlices = sound;
+        if (silent > (uint64_t)(4.0 * engine.auRate) && staleRetries < 3 &&
+                 NSDate.timeIntervalSinceReferenceDate >= nextStaleRetry && otherProcessPlaying())
+        {
+            static const NSTimeInterval kWait[] = { 30.0, 120.0, 0.0 };
+            nextStaleRetry = NSDate.timeIntervalSinceReferenceDate + kWait[staleRetries];
+            ++staleRetries;
+            NSLog(@"%@: apps are playing but the tap hears nothing; rebuilding it (%u of 3)", kAppName, staleRetries);
+            [self restartAfter:0.1];
+            return;
+        }
+    }
     // 5 s of silence and no app with its output running: nothing can start without us hearing about it
     if (engine.silentFrames.load() > (uint64_t)(5.0 * engine.auRate) && !otherProcessPlaying())
         engine.pause();
@@ -1197,6 +1245,33 @@ static NSURL* profilesDir()
     return dir;
 }
 
+// The level hold never goes below this. A profile asking for more cut than this (a measurement with huge boosts, or a
+// preamp line that can't be read) is kept out of the hold: one bad profile in the library would otherwise hold
+// everything the Mac plays tens of dB down, for good, which sounds like audio being blocked.
+static const double kHoldFloorDb = -24.0;
+
+// a profile's "preamp" value: 0 dB at most, -60 at least; NAN when it can't be read
+static double parsePreamp(NSString* value)
+{
+    const double v = value.doubleValue;
+    if (!std::isfinite(v))
+        return NAN;
+    return std::min(0.0, std::max(-60.0, v));
+}
+
+// can this preamp take part in the level hold?
+static bool holdable(double preampDb)
+{
+    return std::isfinite(preampDb) && preampDb >= kHoldFloorDb;
+}
+
+// the stored level hold, repaired if it was saved below the floor (or isn't a number) by an older version
+static double storedHold()
+{
+    const double v = [prefs() doubleForKey:@"heldLevelDb"];
+    return std::isfinite(v) ? std::min(0.0, std::max(kHoldFloorDb, v)) : 0.0;
+}
+
 // a profile file's name and kind from its first lines (nil: not a profile)
 static NSDictionary* profileInfo(NSURL* url)
 {
@@ -1230,7 +1305,7 @@ static NSDictionary* profileInfo(NSURL* url)
         else if ([line hasPrefix:@"kind "])
             headphones = [[line substringFromIndex:5] hasPrefix:@"headphones"];
         else if ([line hasPrefix:@"preamp "])
-            preamp = std::min(0.0, std::max(-60.0, [[line substringFromIndex:7] doubleValue]));
+            preamp = parsePreamp([line substringFromIndex:7]);
         else if ([line hasPrefix:@"channel "])
             break;   // the header lines come before the curves
     }
@@ -1309,7 +1384,7 @@ static double preampOf(NSString* text)
     {
         NSString* line = [raw stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceCharacterSet];
         if ([line hasPrefix:@"preamp "])
-            return std::min(0.0, std::max(-60.0, [[line substringFromIndex:7] doubleValue]));
+            return parsePreamp([line substringFromIndex:7]);
         if ([line hasPrefix:@"channel "])
             break;
     }
@@ -1322,15 +1397,21 @@ static double preampOf(NSString* text)
 // level itself. Quitting the app removes the tap, and with it the hold.
 - (void)updateLevelHold
 {
-    double held = std::min(0.0, [prefs() doubleForKey:@"heldLevelDb"]);
+    double held = storedHold();
     for (NSDictionary* p in [self libraryProfiles])
-        held = std::min(held, [p[@"preamp"] doubleValue]);
+        if (holdable([p[@"preamp"] doubleValue]))
+            held = std::min(held, [p[@"preamp"] doubleValue]);
     NSString* text = [self roomState:@"profile"] ?: @"";
     const BOOL active = text.length > 0 && engine.room != nullptr;
-    const double own = active ? preampOf(text) : 0.0;
-    held = std::min(held, own);
+    double own = active ? preampOf(text) : 0.0;
+    if (!std::isfinite(own))
+        own = 0.0;   // pump ROOM reads the same line; treat an unreadable one as no preamp
+    if (holdable(own))
+        held = std::min(held, own);
     [prefs() setDouble:held forKey:@"heldLevelDb"];
-    const double trimDb = (active && engine.roomOn.load()) ? held - own : held;
+    // with correction on, the trim makes up the difference to the held level; it never adds gain (a profile below the
+    // floor plays at its own, lower level)
+    const double trimDb = (active && engine.roomOn.load()) ? std::min(0.0, held - own) : held;
     engine.trimTarget = (float)std::pow(10.0, trimDb / 20.0);
 }
 
@@ -1361,7 +1442,11 @@ static double preampOf(NSString* text)
     {
         if ([p[@"headphones"] boolValue] != headphones)
             continue;
-        NSMenuItem* it = [m addItemWithTitle:p[@"name"] action:@selector(chooseProfile:) keyEquivalent:@""];
+        const double pre = [p[@"preamp"] doubleValue];
+        NSString* title = holdable(pre) ? p[@"name"]
+            : [NSString stringWithFormat:@"%@ (%@ — re-measure)", p[@"name"],
+               std::isfinite(pre) ? [NSString stringWithFormat:@"%.0f dB", pre] : @"unreadable level"];
+        NSMenuItem* it = [m addItemWithTitle:title action:@selector(chooseProfile:) keyEquivalent:@""];
         it.target = self;
         it.representedObject = [p[@"url"] path];
         it.state = [current isEqualToString:[p[@"url"] path]] && text.length > 0 ? NSControlStateValueOn
@@ -1380,7 +1465,7 @@ static double preampOf(NSString* text)
     NSMenuItem* show = [m addItemWithTitle:@"Show Profiles in Finder" action:@selector(showProfiles:) keyEquivalent:@""];
     show.target = self;
     [m addItem:NSMenuItem.separatorItem];
-    const double held = std::min(0.0, [prefs() doubleForKey:@"heldLevelDb"]);
+    const double held = storedHold();
     [m addItemWithTitle:[NSString stringWithFormat:@"Level held at %.1f dB (quit for full level)", held] action:nil
           keyEquivalent:@""].enabled = NO;
     NSMenuItem* reset = [m addItemWithTitle:@"Reset Level Hold…" action:@selector(resetLevelHold:) keyEquivalent:@""];
