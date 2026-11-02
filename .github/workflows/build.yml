@@ -23,7 +23,7 @@ concurrency:
 jobs:
   tests:
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 120   # the sanitizer passes alone run ~45 min and keep growing with the suite
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09   # v5
       - name: Submodules (Eigen from its GitHub mirror, so a GitLab outage can't stop the build)
