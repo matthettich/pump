@@ -2,7 +2,7 @@
 
 The pick-up doc: where things stand, what is verified and what is not, and what is open. Conventions and the layout
 are in [DEVELOPING.md](DEVELOPING.md) and the plan is in [ROADMAP.md](ROADMAP.md); this file does not repeat them.
-Last updated 2026-10-30 (pump MASTER; pump ROOM PHONE MIC; before it: ACID, X0X, GLOSS; pump ROOM, GUI pass, COIL modulation, LIFE sound, AU crash fix).
+Last updated 2026-11-02 (pump STRIP; pump MASTER; pump ROOM PHONE MIC; before it: ACID, X0X, GLOSS; pump ROOM, GUI pass, COIL modulation, LIFE sound, AU crash fix).
 
 ## State
 
@@ -24,6 +24,33 @@ Last updated 2026-10-30 (pump MASTER; pump ROOM PHONE MIC; before it: ACID, X0X,
   It ignores comments that merely mention MACHINE. Negative-tested against six injected violations.
 - DPF prints `Unknown license string 'All rights reserved (c) wake'` while generating the AU plist. Harmless: DPF only
   knows SPDX names, "Proprietary" hit the same warning, and the string is not written into the plist.
+
+## pump STRIP, channel strip (2026-11-02)
+
+`plugins/strip`: one channel strip, eight consoles (MODEL): Clean, Class A '73, Console '79, Console '87, Discrete '70,
+Valve '60, Studio '68, Broadcast '55 (generic names: no products are named anywhere). A model is a `Profile` in
+`StripEngine.hpp`: preamp shaper (tanh / algebraic / op-amp rail / triode) with drive and bias, a transformer (low-end
+flux saturation), HPF/LPF slopes, an EQ family (constant Q, proportional Q with shelf overshoot, inductor, passive
+with the automatic boost-and-cut dip above a low boost, wide 6 dB/oct shelves), a compressor topology (clean FF, VCA,
+hard VCA, feedback with thrust, diode bridge, opto with memory, variable-mu, limiter with linear-domain release) and a
+fixed voicing (three small analog bands). COLOUR scales the preamp, transformer, voicing and the compressors'
+distortion, never the user's own curves. The whole strip runs oversampled (1x/2x/4x, default 2x); model, order,
+oversampling and the BELL switches fade out, switch and fade in (5 ms); EQ/gate/comp on-off cross-fade; filter values
+glide (25 ms, `redesignFast` while moving, full matched design when settled). `buildBands`, `compStatic` and
+`gateStatic` are shared with the window (curve, transfer graph).
+
+Window (1140 x 600): model row + order + oversampling; EQ screen with the channel curve, the voicing alone (faint, in
+the second colour), the output spectrum and draggable handles (bands: freq/gain, wheel = Q; HP/LP squares, off past
+the edge); dynamics screen (transfer curve with the live detector level, IN / GATE / COMP / OUT meters); panels
+input, filters, EQ, gate, compressor, output. Screenshotted light and dark here (Xvfb, GL headers made from the
+Khronos registry as described below).
+
+Verified: `tests/test_strip.cpp` (Clean flat nulls at 1x and on a passband tone at 2x/4x; every model's bands match
+their analog curves within 0.11 dB; valve low boost dips above; proportional Q narrows with gain; Class A 2nd over
+3rd, Console clean until pushed, COLOUR 0 clean; every compressor within 3 dB of its curve on a steady tone; gate and
+expander range; auto gain holds; model/order switches don't click; random settings and hot input stay finite;
+44.1/48/96 kHz; about 13-22 ms CPU per second of audio at 2x with everything on). Not yet: heard in a host, the wasm
+build for Thunder Plus (the owner wants it in pump first).
 
 ## pump VOX: ENGINE Voice FX (2026-10-30)
 

@@ -116,6 +116,8 @@ namespace accents {
     inline Accent room()   { return { "room",   hexColor(0xFFC86B), hexColor(0x6E4300), hexColor(0x2F7BFF) }; }   // amber
     // auto mastering
     inline Accent master() { return { "master", hexColor(0xDCDCE3), hexColor(0x3B3B44), hexColor(0x9A63FF) }; }   // grey, the controls in rainbow
+    // channel strip
+    inline Accent strip()  { return { "strip",  hexColor(0xA8E07A), hexColor(0x3B6618), hexColor(0xF0359B) }; }   // cactus green, flower magenta
 }
 
 struct Theme {

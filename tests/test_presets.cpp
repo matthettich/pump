@@ -55,6 +55,7 @@
 #include "../plugins/acid/AcidParams.hpp"
 #include "../plugins/x0x/X0xParams.hpp"
 #include "../plugins/gloss/GlossParams.hpp"
+#include "../plugins/strip/StripParams.hpp"
 #include "../plugins/break/BreakParams.hpp"
 #include "../plugins/master/MasterParams.hpp"
 #include <cmath>
@@ -241,6 +242,7 @@ int main()
         { "GLOSS", gloss::params(), gloss::presets(), gloss::kNumParams },
         { "BREAK", brk::params(), brk::presets(), brk::kNumParams },
         { "MASTER", master::params(), master::presets(), master::kNumParams },
+        { "STRIP", strip::params(), strip::presets(), strip::kNumParams },
     };
     std::map<std::string, int> sections;
     std::vector<std::vector<std::string>> chains;

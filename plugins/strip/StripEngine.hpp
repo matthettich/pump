@@ -101,7 +101,7 @@ inline const Profile& profile(int model)
         { kCurveAlg, 0.55, 0.08, 0.35, 60.0, 12, 12, kEqProportional, 0.9, 1.0, kCtFeedback, 0.0,
           { { Shape::Bell, 90, 0.6, 0.6, 12 }, { Shape::Bell, 5000, 0.3, 0.5, 12 }, { Shape::Bell, 1000, 0, 1, 12 } } },
         // Valve '60: triode preamp, passive EQ, optical leveler
-        { kCurveTriode, 0.5, 0.0, 0.35, 45.0, 12, 12, kEqPassive, 0.55, 0.55, kCtOpto, 0.0,
+        { kCurveTriode, 0.9, 0.05, 0.35, 45.0, 12, 12, kEqPassive, 0.55, 0.55, kCtOpto, 0.0,
           { { Shape::LowShelf, 70, 0.6, 0.7071, 12 }, { Shape::HighShelf, 15000, -1.2, 0.7071, 12 }, { Shape::Bell, 1000, 0, 1, 12 } } },
         // Studio '68: hot transistor stages, wide shelves and presence, limiter with crunch
         { kCurveSoft, 0.75, 0.06, 0.2, 70.0, 12, 12, kEqWide, 0.7071, 0.7, kCtLimiter, 0.6,
@@ -258,6 +258,7 @@ public:
     void prepare(double sampleRate, int maxBlock)
     {
         sr = sampleRate;
+        fadeStep = (float)(1.0 / (0.005 * sr));   // 5 ms each way
         maxBlk = std::max(64, maxBlock);
         applyPending(true);
         fade = 1.0f; fading = 0;
@@ -471,15 +472,14 @@ private:
         // fades for switches that change the topology
         for (int i = 0; i < n; ++i)
         {
-            if (fading < 0) { fade -= kFadeStep; if (fade <= 0.0f) { fade = 0.0f; applyPending(false); fading = 1; } }
-            else if (fading > 0) { fade += kFadeStep; if (fade >= 1.0f) { fade = 1.0f; fading = 0; } }
+            if (fading < 0) { fade -= fadeStep; if (fade <= 0.0f) { fade = 0.0f; applyPending(false); fading = 1; } }
+            else if (fading > 0) { fade += fadeStep; if (fade >= 1.0f) { fade = 1.0f; fading = 0; } }
             L[i] *= fade; R[i] *= fade;
         }
         compGr.store((float)blockGr, std::memory_order_relaxed);
         gateGr.store((float)blockGate, std::memory_order_relaxed);
         compLevel.store((float)blockLvl, std::memory_order_relaxed);
     }
-    static constexpr float kFadeStep = 1.0f / 240.0f;
 
     void stagePreamp(double* a, double* b, int N)
     {
@@ -722,7 +722,7 @@ private:
     DigitalBand scD; BiquadState scS[2]; bool scOn = false;
     LinearSmoother cGain, oGain;
     double pol = 1.0, colorK = 1.0, eqMix = 1.0, gateMix = 0.0, compWet = 0.0;
-    float fade = 1.0f; int fading = 0;
+    float fade = 1.0f, fadeStep = 1.0f / 240.0f; int fading = 0;
     // preamp
     double lpX[2] = {}, dcX[2] = {}, dcY[2] = {}, xA = 0.0, dcA = 0.0;
     // dynamics
