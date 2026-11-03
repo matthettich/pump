@@ -58,6 +58,7 @@
 #include "../plugins/chop/ChopParams.hpp"
 #include "../plugins/twang/TwangParams.hpp"
 #include "../plugins/master/MasterParams.hpp"
+#include "../plugins/strip/StripParams.hpp"
 #include "fx/Runner.hpp"
 #include "dsp/Bypass.hpp"
 #include "dsp/Audition.hpp"
@@ -85,6 +86,7 @@ PumpRunner* pumpfx_new_stutter(double sr);
 PumpRunner* pumpfx_new_chop(double sr);
 PumpRunner* pumpfx_new_twang(double sr);
 PumpRunner* pumpfx_new_master(double sr);
+PumpRunner* pumpfx_new_strip(double sr);
 int pumpfx_tel_tube();
 int pumpfx_tel_snap();
 int pumpfx_tel_gate();
@@ -100,6 +102,7 @@ int pumpfx_tel_stutter();
 int pumpfx_tel_chop();
 int pumpfx_tel_twang();
 int pumpfx_tel_master();
+int pumpfx_tel_strip();
 
 namespace pumpwasm {
 
@@ -111,7 +114,7 @@ inline int toInt(float a) { return a == a ? (int)std::max(-1.0e6f, std::min(a, 1
 
 enum Type : int { kEQ = 0, kComp, kLimit, kCalm, kTone, kBand, kWide, kHeat, kMeter,
     // the creative effects (30 Oct 2026): each its plugin's own Plugin<Name>.hpp on the DPF stand-in (wasm/fx, wasm/shim)
-    kTube, kSnap, kGate, kEcho, kSpring, kVerb, kGrain, kVox, kTune, kCrush, kSwirl, kStutter, kChop, kTwang, kMaster, kNumTypes };
+    kTube, kSnap, kGate, kEcho, kSpring, kVerb, kGrain, kVox, kTune, kCrush, kSwirl, kStutter, kChop, kTwang, kMaster, kStrip, kNumTypes };
 constexpr int kFirstShim = kTube;
 
 inline const std::vector<ParamSpec>& specsOf(int type)
@@ -141,6 +144,7 @@ inline const std::vector<ParamSpec>& specsOf(int type)
     case kChop: return pump::chop::params();
     case kTwang: return pump::twang::params();
     case kMaster: return pump::master::params();
+    case kStrip: return pump::strip::params();
     default: return pump::meter::params();
     }
 }
@@ -490,6 +494,7 @@ inline HostBase* make(int type, double sr)
     case kChop: return new HostShim(type, sr, pumpfx_new_chop(sr));
     case kTwang: return new HostShim(type, sr, pumpfx_new_twang(sr));
     case kMaster: return new HostShim(type, sr, pumpfx_new_master(sr));
+    case kStrip: return new HostShim(type, sr, pumpfx_new_strip(sr));
     default: return nullptr;
     }
 }
@@ -531,6 +536,7 @@ int shimTel(int type)
     case kChop: return pumpfx_tel_chop();
     case kTwang: return pumpfx_tel_twang();
     case kMaster: return pumpfx_tel_master();
+    case kStrip: return pumpfx_tel_strip();
     default: return 0;
     }
 }
