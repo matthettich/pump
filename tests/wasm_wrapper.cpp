@@ -48,7 +48,7 @@ static float db(float g) { return 20.0f * std::log10(std::max(g, 1e-9f)); }
 int main()
 {
     printf("== wasm wrapper (native build of wasm/pump_wasm.cpp)\n");
-    CHECK(pump_types() == 24, "24 effect types (the nine mastering engines, the creative effects, MASTER): %d", pump_types());
+    CHECK(pump_types() == 25, "25 effect types (the nine mastering engines, the creative effects, MASTER, STRIP): %d", pump_types());
     for (int t = 0; t < 9; ++t)
     {
         const int h = make(t, {});
