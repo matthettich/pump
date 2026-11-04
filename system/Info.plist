@@ -12,6 +12,8 @@
 	<string>6.0</string>
 	<key>CFBundleName</key>
 	<string>System EQ</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
 	<key>CFBundleDisplayName</key>
 	<string>System EQ</string>
 	<key>CFBundlePackageType</key>

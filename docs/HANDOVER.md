@@ -156,8 +156,8 @@ log pushed the CONVERT bar over the outputs): `body` is the window's height, the
 (`minmax(0, 1fr)`; outputs `fit-content(44%)`), every table scrolls inside its panel, the playlist has fixed columns
 (long titles and file names end in …) and tighter rows past 8 files, and the LOG opens over the panels (with CLOSE),
 paths shown from the output folder. Checked headless at 1360 × 900 and 980 × 640 with 30 files × 6 versions.
-New icon: one waveform cut by a diagonal slash, pink left of it, green right (`tools/make_convert_icon.js` draws
-`convert/icon.png`).
+New icon: one waveform cut by a diagonal slash, pink left of it, green right (since replaced: see "App icons in the
+IDM skin" below).
 
 ## Installer quits a running System EQ (2026-10-31)
 
@@ -494,3 +494,16 @@ ASan+UBSan: the crash only appears with damaged input.
 (or unreadable: `parsePreamp` gives NAN) are left out of the hold and shown "re-measure" in the Mac menu; a stored
 `heldLevelDb` below it is raised to it (`storedHold`). With correction on, the trim is `min(0, held − own)`, so a
 too-low active profile plays at its own level and never gets added gain.
+
+## App icons in the IDM skin (2026-11-04)
+
+The owner wanted pump CONVERT's and System EQ's icons more professional, in Thunder Plus's IDM skin (paper #f2f1ec /
+#e9e8e3, ink #141414, orange #ff4d00, blue #2a6cff, JetBrains Mono caps). `tools/make_app_icons.js` (Playwright)
+draws both on the macOS grid (824 px rounded tile with shadow, transparent corners), each with its name after an
+orange block and a ruler along the bottom:
+- `convert/icon.png`: a smooth cycle (blue), a steep ink slash, the same cycle sampled and quantised (orange steps).
+- `system/icon.png`: a 14-band segmented spectrum, ink bars with an orange peak-hold block one above each.
+System EQ had no app icon before: `system/build.sh` now makes `AppIcon.icns` from the PNG (sips + iconutil) and
+Info.plist names it. Its menu-bar glyph is now the same spectrum drawn in code (six bars with peak caps, template
+image) instead of the `slider.vertical.3` symbol. The Windows Room Profiles tray icon is unchanged.
+

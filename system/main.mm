@@ -830,7 +830,19 @@ static NSString* currentOutputKey()
     }
 
     statusItem = [NSStatusBar.systemStatusBar statusItemWithLength:NSVariableStatusItemLength];
-    NSImage* img = [NSImage imageWithSystemSymbolName:@"slider.vertical.3" accessibilityDescription:kAppName];
+    // the app icon's spectrum in the menu bar: six bars with peak-hold caps (a template image, so macOS tints it)
+    NSImage* img = [NSImage imageWithSize:NSMakeSize(18, 16) flipped:NO drawingHandler:^BOOL(NSRect) {
+        const CGFloat bars[6] = { 8, 11, 7, 8, 5, 3 };
+        [NSColor.blackColor setFill];
+        for (int i = 0; i < 6; ++i)
+        {
+            const CGFloat x = 0.5 + i * 3.0;
+            NSRectFill(NSMakeRect(x, 1, 2, bars[i]));
+            NSRectFill(NSMakeRect(x, 1 + bars[i] + 1.5, 2, 1.5));
+        }
+        return YES;
+    }];
+    img.accessibilityDescription = kAppName;
     [img setTemplate:YES];   // (".template" is a C++ keyword in Objective-C++)
     statusItem.button.image = img;
     statusItem.button.toolTip = kAppName;

@@ -23,6 +23,16 @@ cp -R bin/pump-eq.component "$APP/Contents/PlugIns/"
 [ -d bin/pump-room.component ] && cp -R bin/pump-room.component "$APP/Contents/PlugIns/"
 cp THIRD_PARTY_NOTICES.md "$APP/Contents/Resources/"
 
+# the app icon (system/icon.png, drawn by tools/make_app_icons.js) as AppIcon.icns
+ICONSET="$(mktemp -d)/AppIcon.iconset"
+mkdir -p "$ICONSET"
+for s in 16 32 128 256 512; do
+    sips -z $s $s system/icon.png --out "$ICONSET/icon_${s}x${s}.png" >/dev/null
+    sips -z $((s * 2)) $((s * 2)) system/icon.png --out "$ICONSET/icon_${s}x${s}@2x.png" >/dev/null
+done
+iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/AppIcon.icns"
+rm -rf "$(dirname "$ICONSET")"
+
 # ad-hoc signature, inside out (the bundled EQ first)
 codesign --force -s - "$APP/Contents/PlugIns/pump-eq.component"
 [ -d "$APP/Contents/PlugIns/pump-room.component" ] && codesign --force -s - "$APP/Contents/PlugIns/pump-room.component"
