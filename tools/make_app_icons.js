@@ -47,7 +47,7 @@ function tile(name, body) {
 function convert() {
   const cy = 570, A = 150, x0 = 196, x1 = 828, sx = 512, W = x1 - x0;
   const wave = (x) => cy - A * Math.cos(((x - sx) / W) * 1.5 * 2 * Math.PI);   // 1.5 cycles: zero, trough, crest at the slash, trough, zero
-  const top = cy - A, ang = 74 * Math.PI / 180, bar = 32, up = 205, down = 34;   // the slash comes down onto the crest
+  const top = cy - A, ang = 74 * Math.PI / 180, bar = 32, up = 420, down = 600;   // the slash: edge to edge of the tile (the tile clips it), through the crest
   const run = (dy) => dy / Math.tan(ang);
   let d = '';
   for (let x = x0; x <= sx; x += 2) d += (d ? 'L' : 'M') + f(x) + ',' + f(wave(x));
