@@ -502,7 +502,8 @@ The owner wanted pump CONVERT's and System EQ's icons more professional, in Thun
 draws both on the macOS grid (824 px rounded tile with shadow, transparent corners), each with its name after an
 orange block and a ruler along the bottom:
 - `convert/icon.png`: one wave cut by the slash as if converted live: smooth (blue) going in, sampled and quantised
-  (orange steps) coming out. It falls through the slash (so the cut is square), split on the slash's centre line.
+  (orange steps) coming out. The slash strikes the top of the crest (owner's ask), where the wave is flat, so the
+  two halves split straight down the middle under it.
 - `system/icon.png`: a 14-band segmented spectrum, ink bars with an orange peak-hold block one above each.
 System EQ had no app icon before: `system/build.sh` now makes `AppIcon.icns` from the PNG (sips + iconutil) and
 Info.plist names it. Its menu-bar glyph is now the same spectrum drawn in code (six bars with peak caps, template

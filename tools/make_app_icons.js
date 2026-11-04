@@ -42,36 +42,29 @@ function tile(name, body) {
 
 // --- pump CONVERT
 // one wave running through the slash, as if converted live: smooth going in, sampled and quantised coming out. The
-// wave falls through the slash as the slash rises (so the cut is nearly square), it is split exactly on the slash's
-// centre line, and the slash covers the seam, so both sides meet on the same line.
+// slash hits the wave at the top of a crest, where it is flat, so the two halves split straight down the middle under
+// the slash and meet at the same height.
 function convert() {
-  const cy = 528, A = 160, x0 = 196, x1 = 828, sx = 512, W = x1 - x0;
-  const wave = (x) => cy + A * Math.sin(((x - sx) / W) * 2 * 2 * Math.PI);   // two cycles, falling through the centre
-  const ang = 64 * Math.PI / 180, bar = 40, scy = cy, h = 228;
-  const ux = Math.cos(ang), uy = -Math.sin(ang), nx = Math.sin(ang), ny = Math.cos(ang);   // along (up), across (right)
+  const cy = 570, A = 150, x0 = 196, x1 = 828, sx = 512, W = x1 - x0;
+  const wave = (x) => cy - A * Math.cos(((x - sx) / W) * 1.5 * 2 * Math.PI);   // 1.5 cycles: zero, trough, crest at the slash, trough, zero
+  const top = cy - A, ang = 74 * Math.PI / 180, bar = 32, up = 205, down = 34;   // the slash comes down onto the crest
+  const run = (dy) => dy / Math.tan(ang);
   let d = '';
-  for (let x = x0; x <= x1; x += 2) d += (d ? 'L' : 'M') + f(x) + ',' + f(wave(x));
-  // sample and hold, 9 levels, whole steps placed so one boundary sits at the slash; each holds its centre's value
-  const q = (2 * A) / 8, n = 26, sw = W / n, quant = (x) => cy + Math.round((wave(x) - cy) / q) * q;
+  for (let x = x0; x <= sx; x += 2) d += (d ? 'L' : 'M') + f(x) + ',' + f(wave(x));
+  // sample and hold, 9 levels, 13 whole steps from the slash to the edge; each holds its centre's value
+  const q = (2 * A) / 8, n = 13, sw = (x1 - sx) / n, quant = (x) => cy + Math.round((wave(x) - cy) / q) * q;
   let st = '';
   for (let i = 0; i < n; i++) {
-    const x = x0 + i * sw, y = quant(x + sw / 2);
+    const x = sx + i * sw, y = quant(x + sw / 2);
     st += (i ? `V${f(y)}` : `M${f(x)},${f(y)}`) + `H${f(x + sw)}`;
   }
-  // the two sides of the slash's centre line, kept near the slash (within 90 px) so nothing far away swaps sides
-  const far = 2000, P = (px, py) => `${f(px)},${f(py)}`;
-  const side = (k) => [P(sx - ux * far, scy - uy * far), P(sx + ux * far, scy + uy * far),
-    P(sx + ux * far + nx * k * far, scy + uy * far + ny * k * far), P(sx - ux * far + nx * k * far, scy - uy * far + ny * k * far)].join(' ');
+  const sl = `x1="${f(sx - run(down))}" y1="${f(top + down)}" x2="${f(sx + run(up))}" y2="${f(top - up)}"`;
   const body = `
-  <defs>
-    <clipPath id="L"><polygon points="${side(-1)}"/></clipPath><clipPath id="R"><polygon points="${side(1)}"/></clipPath>
-    <clipPath id="Lx"><rect x="0" y="0" width="${sx + 90}" height="${S}"/></clipPath><clipPath id="Rx"><rect x="${sx - 90}" y="0" width="${S}" height="${S}"/></clipPath>
-  </defs>
   <line x1="196" y1="${cy}" x2="828" y2="${cy}" stroke="${C.dim}" stroke-width="4"/>
-  <g clip-path="url(#Lx)"><g clip-path="url(#L)"><path d="${d}" fill="none" stroke="${C.blue}" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/></g></g>
-  <g clip-path="url(#Rx)"><g clip-path="url(#R)"><path d="${st}" fill="none" stroke="${C.orange}" stroke-width="22" stroke-linecap="butt" stroke-linejoin="miter"/></g></g>
-  <line x1="${f(sx - ux * h / Math.sin(ang))}" y1="${f(scy + h)}" x2="${f(sx + ux * h / Math.sin(ang))}" y2="${f(scy - h)}" stroke="url(#paper)" stroke-width="${bar + 20}"/>
-  <line x1="${f(sx - ux * h / Math.sin(ang))}" y1="${f(scy + h)}" x2="${f(sx + ux * h / Math.sin(ang))}" y2="${f(scy - h)}" stroke="${C.ink}" stroke-width="${bar}"/>`;
+  <path d="${d}" fill="none" stroke="${C.blue}" stroke-width="26" stroke-linecap="butt" stroke-linejoin="round"/>
+  <path d="${st}" fill="none" stroke="${C.orange}" stroke-width="22" stroke-linecap="butt" stroke-linejoin="miter"/>
+  <line ${sl} stroke="url(#paper)" stroke-width="${bar + 16}"/>
+  <line ${sl} stroke="${C.ink}" stroke-width="${bar}"/>`;
   return tile('CONVERT', body);
 }
 
