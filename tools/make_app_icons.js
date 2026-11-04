@@ -24,7 +24,7 @@ function tile(name, body) {
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${S}" height="${S}" viewBox="0 0 ${S} ${S}">
 <defs>
   <style>@font-face{font-family:JBM;font-weight:700;src:url(data:font/ttf;base64,${font})}</style>
-  <linearGradient id="paper" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${C.paper}"/><stop offset="1" stop-color="${C.paper2}"/></linearGradient>
+  <linearGradient id="paper" gradientUnits="userSpaceOnUse" x1="0" y1="100" x2="0" y2="924"><stop offset="0" stop-color="${C.paper}"/><stop offset="1" stop-color="${C.paper2}"/></linearGradient>
   <filter id="sh" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="12" stdDeviation="14" flood-color="#000" flood-opacity=".30"/></filter>
   <clipPath id="tile"><rect x="100" y="100" width="824" height="824" rx="186"/></clipPath>
 </defs>
@@ -41,27 +41,37 @@ function tile(name, body) {
 }
 
 // --- pump CONVERT
-// one cycle of a smooth wave on the left, the slash, then one cycle of the same wave sampled and quantised on the right
+// one wave running through the slash, as if converted live: smooth going in, sampled and quantised coming out. The
+// wave falls through the slash as the slash rises (so the cut is nearly square), it is split exactly on the slash's
+// centre line, and the slash covers the seam, so both sides meet on the same line.
 function convert() {
-  const cy = 528, A = 160, lx0 = 196, lx1 = 418, rx0 = 618, rx1 = 828;
-  const sine = (t) => -Math.sin(t * 2 * Math.PI);   // t 0..1, up first (screen y grows downward)
+  const cy = 528, A = 160, x0 = 196, x1 = 828, sx = 512, W = x1 - x0;
+  const wave = (x) => cy + A * Math.sin(((x - sx) / W) * 2 * 2 * Math.PI);   // two cycles, falling through the centre
+  const ang = 64 * Math.PI / 180, bar = 40, scy = cy, h = 228;
+  const ux = Math.cos(ang), uy = -Math.sin(ang), nx = Math.sin(ang), ny = Math.cos(ang);   // along (up), across (right)
   let d = '';
-  for (let x = lx0; x <= lx1; x += 2) d += (d ? 'L' : 'M') + f(x) + ',' + f(cy + A * sine((x - lx0) / (lx1 - lx0)));
-  // sample and hold: 12 steps, 9 levels, every corner square
-  const n = 12, step = (rx1 - rx0) / n, q = (2 * A) / 8;
+  for (let x = x0; x <= x1; x += 2) d += (d ? 'L' : 'M') + f(x) + ',' + f(wave(x));
+  // sample and hold, 9 levels, whole steps placed so one boundary sits at the slash; each holds its centre's value
+  const q = (2 * A) / 8, n = 26, sw = W / n, quant = (x) => cy + Math.round((wave(x) - cy) / q) * q;
   let st = '';
   for (let i = 0; i < n; i++) {
-    const x = rx0 + i * step, y = cy + Math.round(A * sine((i + 0.5) / n) / q) * q;
-    st += (i ? `V${f(y)}` : `M${f(x)},${f(y)}`) + `H${f(x + step)}`;
+    const x = x0 + i * sw, y = quant(x + sw / 2);
+    st += (i ? `V${f(y)}` : `M${f(x)},${f(y)}`) + `H${f(x + sw)}`;
   }
-  // the slash, steep, between the two
-  const ang = 70 * Math.PI / 180, h = 205, sx = 512;
-  const dx = h / Math.tan(ang);
+  // the two sides of the slash's centre line, kept near the slash (within 90 px) so nothing far away swaps sides
+  const far = 2000, P = (px, py) => `${f(px)},${f(py)}`;
+  const side = (k) => [P(sx - ux * far, scy - uy * far), P(sx + ux * far, scy + uy * far),
+    P(sx + ux * far + nx * k * far, scy + uy * far + ny * k * far), P(sx - ux * far + nx * k * far, scy - uy * far + ny * k * far)].join(' ');
   const body = `
+  <defs>
+    <clipPath id="L"><polygon points="${side(-1)}"/></clipPath><clipPath id="R"><polygon points="${side(1)}"/></clipPath>
+    <clipPath id="Lx"><rect x="0" y="0" width="${sx + 90}" height="${S}"/></clipPath><clipPath id="Rx"><rect x="${sx - 90}" y="0" width="${S}" height="${S}"/></clipPath>
+  </defs>
   <line x1="196" y1="${cy}" x2="828" y2="${cy}" stroke="${C.dim}" stroke-width="4"/>
-  <path d="${d}" fill="none" stroke="${C.blue}" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="${st}" fill="none" stroke="${C.orange}" stroke-width="22" stroke-linecap="butt" stroke-linejoin="miter"/>
-  <line x1="${f(sx - dx)}" y1="${f(cy + h)}" x2="${f(sx + dx)}" y2="${f(cy - h)}" stroke="${C.ink}" stroke-width="38"/>`;
+  <g clip-path="url(#Lx)"><g clip-path="url(#L)"><path d="${d}" fill="none" stroke="${C.blue}" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/></g></g>
+  <g clip-path="url(#Rx)"><g clip-path="url(#R)"><path d="${st}" fill="none" stroke="${C.orange}" stroke-width="22" stroke-linecap="butt" stroke-linejoin="miter"/></g></g>
+  <line x1="${f(sx - ux * h / Math.sin(ang))}" y1="${f(scy + h)}" x2="${f(sx + ux * h / Math.sin(ang))}" y2="${f(scy - h)}" stroke="url(#paper)" stroke-width="${bar + 20}"/>
+  <line x1="${f(sx - ux * h / Math.sin(ang))}" y1="${f(scy + h)}" x2="${f(sx + ux * h / Math.sin(ang))}" y2="${f(scy - h)}" stroke="${C.ink}" stroke-width="${bar}"/>`;
   return tile('CONVERT', body);
 }
 
