@@ -1,6 +1,6 @@
 // Draws the pump desktop apps' icons in Thunder Plus's IDM skin (warm grey paper, near-black ink, hazard orange and
 // cobalt accents, JetBrains Mono caps): node tools/make_app_icons.js
-//   convert/icon.png  pump CONVERT: a dog turning into a cat through a slash (smooth dog in, pixel cat out)
+//   convert/icon.png  pump CONVERT: one head, a dog turning into a cat through the slash (smooth dog half, pixel cat half)
 //   system/icon.png   System EQ: a segmented spectrum with peak-hold caps
 // 1024 px with transparency, on the macOS icon grid (an 824 px rounded tile with its shadow); electron-builder makes
 // CONVERT's .icns / .ico from its PNG, system/build.sh makes System EQ's .icns.
@@ -41,50 +41,76 @@ function tile(name, body) {
 }
 
 // --- pump CONVERT
-// a dog turning into a cat through the slash, like a file going through the app: the dog going in is drawn smooth in
-// cobalt (floppy ears, round eyes, muzzle and nose), the cat coming out is sampled and quantised into orange pixels
-// (pointed ears, eyes, nose, mouth and whiskers), each at the same height and size on its side of the slash.
-const CAT = [   // 20 x 16 cells: # orange, o ink
-  '...#............#...',
-  '...##..........##...',
-  '...#.#........#.#...',
-  '...#..########..#...',
-  '...#............#...',
-  '..#..............#..',
-  '..#..............#..',
-  '..#...oo....oo...#..',
-  '..#...oo....oo...#..',
-  '..#..............#..',
-  '###......##......###',
-  '..#......##......#..',
-  '###.....#..#.....###',
-  '...#............#...',
-  '....#..........#....',
-  '.....##########.....',
-];
-function convert() {
-  const sx = 512, top = 420, ang = 74 * Math.PI / 180, bar = 32, up = 420, down = 600;   // the slash, as before
+// a dog turning into a cat through the slash: one head, the dog half drawn smooth in cobalt (floppy ear, round eye,
+// muzzle), the cat half sampled and quantised into orange pixels (pointed ear, slit eye, nose, whiskers), the way the
+// app turns one file into another. The cat is drawn as smooth lines first, then rasterised onto a grid in the browser
+// (see catPixels), and only the cells right of the slash are kept.
+const SLASH = { sx: 512, top: 420, ang: 74 * Math.PI / 180, bar: 32, up: 420, down: 600 };
+const slashX = (y) => SLASH.sx + (SLASH.top - y) / Math.tan(SLASH.ang);   // x of the slash's centre line at height y
+const HEAD = { cx: 500, cy: 560, rx: 205, ry: 192 };
+const GRID = 20;   // cat pixel size
+
+// the dog: drawn whole, then clipped to the left of the slash
+const dogSvg = () => `
+  <ellipse cx="${HEAD.cx}" cy="${HEAD.cy}" rx="${HEAD.rx}" ry="${HEAD.ry}" fill="none" stroke="${C.blue}" stroke-width="26"/>
+  <path d="M372,404 C300,380 236,430 236,520 C236,610 262,700 316,712 C362,722 372,640 360,570 C350,510 352,450 372,404 Z" fill="${C.blue}"/>
+  <circle cx="420" cy="528" r="26" fill="${C.ink}"/>
+  <circle cx="429" cy="519" r="7" fill="${C.paper}"/>
+  <path d="M500,612 C420,612 382,648 382,686 C382,724 430,746 500,746" fill="none" stroke="${C.blue}" stroke-width="22" stroke-linecap="round"/>`;
+
+// the cat as smooth source shapes, rasterised later; strokes and fills are all one colour (coverage is what counts)
+const catSrc = () => `
+  <ellipse cx="${HEAD.cx}" cy="${HEAD.cy}" rx="${HEAD.rx}" ry="${HEAD.ry}" fill="none" stroke="#000" stroke-width="26"/>
+  <path d="M578,392 L664,262 L690,446" fill="none" stroke="#000" stroke-width="26" stroke-linejoin="miter"/>
+  <path d="M620,330 L654,300 L664,380 Z" fill="#000"/>
+  <path d="M556,524 Q600,478 650,520 Q600,562 556,524 Z" fill="#000"/>
+  <path d="M492,600 L552,600 L522,634 Z" fill="#000"/>
+  <path d="M522,630 L522,662 M522,662 Q500,688 476,668 M522,662 Q544,688 568,668" fill="none" stroke="#000" stroke-width="16"/>
+  <path d="M600,612 L770,584 M606,640 L780,640 M600,668 L770,698" fill="none" stroke="#000" stroke-width="14"/>`;
+
+function convert(catCells) {
+  const { sx, top, ang, bar, up, down } = SLASH;
   const run = (dy) => dy / Math.tan(ang);
-  // the dog, centred on (316, 584)
-  const ear = (m) => { const X = (x) => f(m ? 632 - x : x); return `M${X(264)},496 C${X(212)},494 ${X(194)},560 ${X(204)},632 C${X(212)},684 ${X(252)},680 ${X(264)},642 C${X(272)},602 ${X(272)},540 ${X(264)},496 Z`; };
-  const dog = `
-  <ellipse cx="316" cy="584" rx="86" ry="96" fill="none" stroke="${C.blue}" stroke-width="22"/>
-  <path d="${ear(0)}" fill="${C.blue}"/><path d="${ear(1)}" fill="${C.blue}"/>
-  <circle cx="288" cy="566" r="14" fill="${C.ink}"/><circle cx="292" cy="562" r="4" fill="${C.paper}"/>
-  <circle cx="344" cy="566" r="14" fill="${C.ink}"/><circle cx="348" cy="562" r="4" fill="${C.paper}"/>
-  <path d="M296,606 Q316,598 336,606 Q338,626 316,634 Q294,626 296,606 Z" fill="${C.ink}"/>
-  <path d="M316,634 V650 M316,650 Q302,664 288,654 M316,650 Q330,664 344,654" fill="none" stroke="${C.blue}" stroke-width="10" stroke-linecap="round"/>`;
-  // the cat: 16 px pixels from x 520, y 456
-  const g = 16, cx0 = 520, cy0 = 456;
-  let cat = '';
-  CAT.forEach((row, r) => [...row].forEach((ch, c) => {
-    if (ch !== '.') cat += `<rect x="${cx0 + c * g}" y="${cy0 + r * g}" width="${g}" height="${g}" fill="${ch === 'o' ? C.ink : C.orange}"/>`;
-  }));
+  // clip region left of the slash (extended well past the tile)
+  const L = `M0,0 L${f(slashX(0))},0 L${f(slashX(1024))},1024 L0,1024 Z`;
+  // cat pixels: orange cells, with the pupil left as a dark slit inside the eye
+  let px = '';
+  for (const [x, y, k] of catCells) px += `<rect x="${x}" y="${y}" width="${GRID}" height="${GRID}" fill="${k ? C.ink : C.orange}"/>`;
   const sl = `x1="${f(sx - run(down))}" y1="${f(top + down)}" x2="${f(sx + run(up))}" y2="${f(top - up)}"`;
-  const body = `${dog}${cat}
+  const body = `
+  <clipPath id="dogside"><path d="${L}"/></clipPath>
+  <g clip-path="url(#dogside)">${dogSvg()}</g>
+  ${px}
   <line ${sl} stroke="url(#paper)" stroke-width="${bar + 16}"/>
   <line ${sl} stroke="${C.ink}" stroke-width="${bar}"/>`;
   return tile('CONVERT', body);
+}
+
+// rasterise the cat in the page: draw its source shapes to a canvas, then keep each grid cell that is mostly covered
+// and lies wholly right of the slash. The eye's slit pupil is a second pass, marked dark.
+async function catPixels(p) {
+  const svg = (inner) => `<svg xmlns="http://www.w3.org/2000/svg" width="${S}" height="${S}">${inner}</svg>`;
+  const pupil = `<rect x="596" y="490" width="12" height="68" fill="#000"/>`;
+  return p.evaluate(async ({ shapes, pupil, S, G, sl }) => {
+    const raster = async (src) => {
+      const img = new Image();
+      img.src = 'data:image/svg+xml;base64,' + btoa(src);
+      await img.decode();
+      const c = document.createElement('canvas'); c.width = c.height = S;
+      const g = c.getContext('2d'); g.drawImage(img, 0, 0);
+      return g.getImageData(0, 0, S, S).data;
+    };
+    const a = await raster(shapes), b = await raster(pupil);
+    const cover = (d, x0, y0) => { let n = 0; for (let y = y0; y < y0 + G; y++) for (let x = x0; x < x0 + G; x++) if (d[(y * S + x) * 4 + 3] > 127) n++; return n / (G * G); };
+    const sx = (y) => sl.sx + (sl.top - y) / Math.tan(sl.ang);
+    const out = [];
+    for (let y = 0; y + G <= S; y += G) for (let x = 0; x + G <= S; x += G) {
+      if (x < sx(y) + sl.bar / 2 + 8) continue;   // keep only cells clear of the slash
+      const dark = cover(b, x, y) > 0.3, on = cover(a, x, y) > 0.4;
+      if (dark && on) out.push([x, y, 1]); else if (on) out.push([x, y, 0]);
+    }
+    return out;
+  }, { shapes: svg(catSrc()), pupil: svg(pupil), S, G: GRID, sl: SLASH });
 }
 
 // --- System EQ
@@ -113,7 +139,7 @@ function systemEq() {
   const where = (sub) => dir ? path.join(dir, sub + '-icon.png') : path.join(root, sub, 'icon.png');
   const b = await chromium.launch();
   const p = await b.newPage({ viewport: { width: S, height: S } });
-  const out = [[where('convert'), convert()], [where('system'), systemEq()]];
+  const out = [[where('convert'), convert(await catPixels(p))], [where('system'), systemEq()]];
   for (const [file, svg] of out) {
     await p.setContent(`<html><body style="margin:0;background:transparent">${svg}</body></html>`);
     await p.evaluate(() => document.fonts.ready);
