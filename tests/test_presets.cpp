@@ -27,6 +27,7 @@
 #include "../plugins/vox/VoxParams.hpp"
 #include "../plugins/tune/TuneParams.hpp"
 #include "../plugins/crush/CrushParams.hpp"
+#include "../plugins/grumble/GrumbleParams.hpp"
 #include "../plugins/swirl/SwirlParams.hpp"
 #include "../plugins/stutter/StutterParams.hpp"
 #include "../plugins/chop/ChopParams.hpp"
@@ -212,6 +213,7 @@ int main()
         { "VOX", vox::params(), vox::presets(), vox::kNumParams },
         { "TUNE", tune::params(), tune::presets(), tune::kNumParams },
         { "CRUSH", crush::params(), crush::presets(), crush::kNumParams },
+        { "GRUMBLE", grumble::params(), grumble::presets(), grumble::kNumParams },
         { "SWIRL", swirl::params(), swirl::presets(), swirl::kNumParams },
         { "STUTTER", stutter::params(), stutter::presets(), stutter::kNumParams },
         { "CHOP", chop::params(), chop::presets(), chop::kNumParams },

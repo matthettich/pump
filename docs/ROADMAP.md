@@ -23,6 +23,7 @@ Effects, in this order:
 - **SWIRL** chorus / flanger / phaser — done (2026-10-24).
 - **STUTTER** beat repeat — done (2026-10-24).
 - **AMP** neural amp models and cabinet IRs — done (2026-10-24).
+- **GRUMBLE** creature voice (plugins/grumble, tests/test_grumble.cpp) — four layers (BEAST, SPLIT, GROWL, SWARM) on a morph pad, gate, drive, tone, cave — done (2026-11-06).
 
 Instruments (MIDI in, stereo out):
 - **TABLE** wavetable synth — done (2026-10-24).
