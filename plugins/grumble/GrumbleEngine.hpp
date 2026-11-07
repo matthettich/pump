@@ -79,6 +79,7 @@ public:
         psola.prepare(sr, sr / kMinHz);
         lat = psola.latencySamples();
         dry.setMax(lat + 8);
+        dryL.setMax(lat + 8); dryR.setMax(lat + 8);
         swarmLine.setMax((int)(1.2 * sr) + 8);
         for (int k = 0; k < 4; ++k) caveLine[k].setMax((int)(0.08 * sr) + 8);
         wobLfo.setRate(5.3, sr);
@@ -96,7 +97,7 @@ public:
     void reset()
     {
         tracker.reset(); psola.reset();
-        dry.clear(); swarmLine.clear();
+        dry.clear(); dryL.clear(); dryR.clear(); swarmLine.clear();
         for (auto& c : caveLine) c.clear();
         for (auto& c : ctl) c = Ctl();
         ctlW = 0; period = 0.0;
@@ -179,6 +180,12 @@ public:
             psola.push(x, period);
             dry.push(x);
             const double xd = dry.at(lat);   // the voice, aligned with what comes out now
+            // the dry side of MIX keeps both channels: the mono sum above is only what the creature hears
+            float inL = L[i], inR = R[i];
+            if (!(std::fabs(inL) < 1e6f)) inL = 0.0f;
+            if (!(std::fabs(inR) < 1e6f)) inR = 0.0f;
+            dryL.push(inL); dryR.push(inR);
+            const double dl = dryL.at(lat), dr = dryR.at(lat);
             peakIn = std::max(peakIn, std::fabs(xd));
             const Ctl& c = ctlAt((double)(psola.inputCount() - lat));
             const double inM = c.midi;
@@ -313,7 +320,7 @@ public:
             }
 
             const double mix = sm[4];
-            const double oL = (xd + (w2[0] - xd) * mix) * og, oR = (xd + (w2[1] - xd) * mix) * og;
+            const double oL = (dl + (w2[0] - dl) * mix) * og, oR = (dr + (w2[1] - dr) * mix) * og;
             L[i] = (float)oL; R[i] = (float)oR;
             peakOut = std::max(peakOut, std::max(std::fabs(oL), std::fabs(oR)));
         }
@@ -383,7 +390,7 @@ private:
     double period = 0.0;
     Ctl ctl[kCtl];
     int ctlW = 0;
-    FracDelay dry, swarmLine, caveLine[4];
+    FracDelay dry, dryL, dryR, swarmLine, caveLine[4];
     Lfo wobLfo;
     Wander wobW;
     Rng rng, grainRng;

@@ -71,19 +71,24 @@ static void testRate(double sr)
 {
     printf("== %.0f Hz\n", sr);
     const int n = (int)(2.0 * sr);
-    // mix 0: the input, delayed by the latency, exactly
+    // mix 0: the input, delayed by the latency, exactly — each channel its own (a stereo source, even one in
+    // opposite phase, must not be summed to mono or cancel)
     {
         Engine e; e.prepare(sr);
         Settings s; s.mix = 0;
         e.set(s);
         std::vector<float> L((size_t)n, 0.0f), R;
         voice(L, L, sr, 150.0, 0.1, 1.5);
-        std::vector<float> inL = L; R = L;
+        R = L;
+        for (int i = 0; i < n; ++i) R[(size_t)i] = -0.7f * L[(size_t)i];   // different level, opposite phase
+        const std::vector<float> inL = L, inR = R;
         run(e, L, R, 100);
         const int lat = e.latency();
         double err = 0.0;
-        for (int i = lat; i < n; ++i) err = std::max(err, (double)std::fabs(L[(size_t)i] - inL[(size_t)(i - lat)]));
-        CHECK(err < 1e-6, "mix 0 = input delayed by %d samples (max error %.2g)", lat, err);
+        for (int i = lat; i < n; ++i)
+            err = std::max({ err, (double)std::fabs(L[(size_t)i] - inL[(size_t)(i - lat)]),
+                                  (double)std::fabs(R[(size_t)i] - inR[(size_t)(i - lat)]) });
+        CHECK(err < 1e-6, "mix 0 = stereo input delayed by %d samples (max error %.2g)", lat, err);
     }
     // BEAST an octave down
     {
