@@ -6,15 +6,12 @@
 @font-face { font-family: "JBM"; src: url(fonts/JetBrainsMono-Regular.ttf); }
 @font-face { font-family: "JBM"; font-weight: bold; src: url(fonts/JetBrainsMono-Bold.ttf); }
 :root {
+  color-scheme: only light;   /* always the light skin, whatever the system appearance is */
   --ink: #3b3b44; --ink2: #6d6d78; --dim: #dcdce3; --bg: #f5f5f8; --panel: #ffffff; --panel2: #ededf2; --screen: #fbfbfd;
   --on: #ffffff; --red: #d62a3a; --line: 1.5px; --h: 280;
 }
 /* the colours follow each element's own --h (set on :root they would be fixed at the root's hue) */
 * { --c: oklch(.55 .17 var(--h)); --cdim: oklch(.86 .07 var(--h)); --csoft: oklch(.72 .14 var(--h)); --cbg: oklch(.96 .025 var(--h)); }
-@media (prefers-color-scheme: dark) {
-  :root { --ink: #e4e4ea; --ink2: #9a9aa6; --dim: #3a3a44; --bg: #121216; --panel: #1a1a20; --panel2: #24242c; --screen: #15151a; --on: #121216; --red: #ff5a4e; }
-  * { --c: oklch(.80 .14 var(--h)); --cdim: oklch(.40 .08 var(--h)); --csoft: oklch(.72 .15 var(--h)); --cbg: oklch(.22 .03 var(--h)); }
-}
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
 html, body { margin: 0; height: 100%; }

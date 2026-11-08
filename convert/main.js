@@ -4,7 +4,7 @@
 // ffmpeg: the packaged app carries its own (resources/ffmpeg/<platform>-<arch>/ffmpeg[.exe], put there by
 // build.sh); in development the one on PATH is used.
 'use strict';
-const { app, BrowserWindow, Menu, dialog, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, Menu, dialog, ipcMain, shell, nativeTheme } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -12,6 +12,7 @@ const E = require('./engine.js');
 
 const isMac = process.platform === 'darwin';
 app.setName('pump CONVERT');
+nativeTheme.themeSource = 'light';   // the title bar, file dialogs and menus stay light too, even in system dark mode
 if (!app.requestSingleInstanceLock()) app.quit();
 
 let win = null;
