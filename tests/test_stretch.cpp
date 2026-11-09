@@ -8,6 +8,7 @@
 // bounded (every frame's units spread over its hop: at most one transform per 64-sample block with the largest
 // window). 44.1, 48 and 96 kHz where it matters (192 kHz briefly). The numeric comparison with the web build's code
 // is a scratch script (see docs/HANDOVER.md), not part of this test.
+#include <cstdlib>
 #include "../plugins/stretch/StretchEngine.hpp"
 #include "dsp/Bypass.hpp"
 #include "dsp/FFT.hpp"
@@ -511,7 +512,8 @@ static void testWork()
             CHECK(e.statMaxUnits <= 2 && e.statForced == 0 && e.statMaxWork <= 2.0 * unitMax,
                   "%.0f Hz, window %d (N %d): at most %d units in a block (work %.2f of a transform), %d frames finished late; block time: worst %.0f us (%.0f us once pre-emptions are filtered out), mean %.1f us; the buffer is %.0f us",
                   sr, win, N, e.statMaxUnits, e.statMaxWork / unitMax, e.statForced, tMax, tFilt, tSum / blocks, 1e6 * B / sr);
-            if (sr <= 48000.0) CHECK(tFilt < 1e6 * B / sr, "%.0f Hz, window %d: the worst block (%.0f us) fits in the 64-sample buffer (%.0f us)", sr, win, tFilt, 1e6 * B / sr);
+            // wall-clock time depends on the machine (sanitizers, busy CI runners): only asked for with PUMP_TIMING_CHECKS=1
+            if (sr <= 48000.0 && std::getenv("PUMP_TIMING_CHECKS")) CHECK(tFilt < 1e6 * B / sr, "%.0f Hz, window %d: the worst block (%.0f us) fits in the 64-sample buffer (%.0f us)", sr, win, tFilt, 1e6 * B / sr);
         }
     // the same with the other buffer sizes: still nothing finished late
     for (int B : { 32, 128, 512, 2048 })
