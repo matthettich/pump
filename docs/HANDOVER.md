@@ -2,11 +2,11 @@
 
 The pick-up doc: where things stand, what is verified and what is not, and what is open. Conventions and the layout
 are in [DEVELOPING.md](DEVELOPING.md) and the plan is in [ROADMAP.md](ROADMAP.md); this file does not repeat them.
-Last updated 2026-11-02 (pump STRIP; pump MASTER; pump ROOM PHONE MIC; before it: ACID, X0X, GLOSS; pump ROOM, GUI pass, COIL modulation, LIFE sound, AU crash fix).
+Last updated 2026-11-08 (pump STRETCH; before it 2026-11-02: pump STRIP; pump MASTER; pump ROOM PHONE MIC; before it: ACID, X0X, GLOSS; pump ROOM, GUI pass, COIL modulation, LIFE sound, AU crash fix).
 
 ## State
 
-- 34 plugins (effects, mastering, instruments, and ROOM room correction), VST3 + CLAP everywhere, AU on macOS. All build on macOS with
+- 53 plugins (effects, mastering, instruments, and ROOM room correction), VST3 + CLAP everywhere, AU on macOS. All build on macOS with
   `make -C plugins/<name> MACOS=true` (serial per plugin, see "Build gotchas").
 - CI (`.github/workflows/build.yml`) builds Windows x64 (MinGW cross-compile), macOS universal, Linux, runs the DSP
   tests and the licence-boundary check, and refreshes the `latest` pre-release on every push to `main`.
@@ -24,6 +24,61 @@ Last updated 2026-11-02 (pump STRIP; pump MASTER; pump ROOM PHONE MIC; before it
   It ignores comments that merely mention MACHINE. Negative-tested against six injected violations.
 - DPF prints `Unknown license string 'All rights reserved (c) wake'` while generating the AU plist. Harmless: DPF only
   knows SPDX names, "Proprietary" hit the same warning, and the string is not written into the plist.
+
+## pump STRETCH, extreme time stretch (2026-11-08)
+
+`plugins/stretch`: the last 12 s recorded and read back 1.5 .. 50 times slower, phase-randomised (every bin keeps its
+loudness and gets a random phase, Hann in and out, hop N/4, overlap-add), a port of Thunder Plus's Extreme stretch
+(`chains/chains-worklet.js`, `XStretch`) with the same decisions: window 2048 .. 32768 samples, Tone tilt table, Freeze
+(held copy, read point wandering +-N/16, 0.4 s crossfades), 1 s jump crossfade, waiting at the newest sound while it
+reads silence (the same -90 dB test) and catching up at normal speed when sound comes, a jump when about 10 s behind,
+the fixed xorshift seed, input sanitising (NaN / inf / |x| >= 8 are 0), wet-path guard, gliding Mix. Latency 0. Not in the
+wasm build (Thunder Plus has its own). `StretchEngine.hpp` (DSP), `StretchParams.hpp` (7 parameters, 10 presets),
+`PluginStretch.*`, `UIStretch.cpp` (900 x 470).
+
+Differences from the web build, all on purpose: (1) pffft instead of the radix-2 `FFTR`. pffft cannot be split by pass,
+so each work unit is one whole transform, a grab, a phase randomisation, an overlap-add or an 8192-bin slice of the
+Tone table, and the units of a frame are spread over its hop (the web build's per-pass units are what `want =
+ceil(left / blocks)` already did); no frame finishes late at any buffer size tested (32 to 2048). (2) From 88.2 kHz the
+window sizes are doubled and from 176.4 kHz quadrupled, so times and the 12 s stay the same (44.1 / 48 kHz unchanged);
+Mix's glide coefficient scales the same way. (3) Output gain; Tone is shown -100 .. 100 % and Mix 0 .. 100 % like the
+other plugins (the engine takes -1 .. 1 and 0 .. 1); Stretch is the 0 .. 1 parameter, shown as x1.5 .. x50 in the window
+(typing a number there means x; hosts show 0.00 .. 1.00). (4) A song start (stopped to playing, or the position jumping
+back more than 0.05 quarter notes) and the JUMP key / J request a jump to the newest sound; with no host transport nothing
+is requested. (5) A frame whose output would play a non-finite or |x| >= 64 value is dropped (that channel starts afresh).
+(6) The window's recording picture is one peak per 20 ms column kept by the engine (atomics); no audio crosses to the UI
+but that and the output ring for the Tone screen.
+
+**Against the web build's code** (a scratch script extracts `XStretch`, `FFTR`, `hannWin`, `fxSafe` and `sinT` from the
+worklet and renders the same 29 s input, music, a 5 s silence, a burst; the native engine renders the same file with the
+same settings schedule; the comparison is of float output): five settings schedules (x10 window 2; x3 window 0; x50
+window 4 with Tone; Freeze on and off with a restart; settings changed every 8 s) at 48 kHz, blocks of 128: the difference
+is -127 .. -133 dB re the signal (rms; sample peak 1e-7), the 100 ms RMS envelope and the long-term spectrum (8192-point,
+50 Hz .. 16 kHz) agree to 0.0000 dB (to 0.0008 / 0.002 dB before the parameters were rounded to float32 the way a plugin
+parameter is: that rounding moves a read-head position across a half sample now and then). The same at 44.1 kHz with
+64-sample blocks, 48 kHz with 1024-sample blocks, and 96 kHz against the web code with its sizes doubled: -133 dB. So the
+level of the wash is the web build's (also checked directly: noise and tone washes within 0.5 dB of the input, every
+window, 44.1 / 48 / 96 / 192 kHz).
+
+Verified: `tests/test_stretch.cpp` (Mix 0 and bypass exact at 44.1 / 48 / 96 kHz; wash level on noise within 0.1 dB and on
+a tone within 0.5 dB of the input in every window; a tone's pitch in every window at 44.1 / 48 / 96 kHz; a 0.4 s burst at
+x4.3 and x12.3 lasts 1.8 and 5.0 s (x4.3 and x12.3 times 0.4 s = 1.7 and 4.9 s); Freeze holds a 500 Hz moment for 10 s
+while the input is 2 kHz, un-freezing returns to the live tone; blocks of 64, 999 and 4096 render the same samples;
+x50 jumps about every 10 s with no click at 44.1 / 48 / 96 kHz; after 20 s of silence the wash starts within 0.9 s even
+in the longest window; the song-start / loop / JUMP requests; Tone +-100 % is +-18.4 dB between 4 kHz and 250 Hz (formula
+18.1); 80 s of random settings, odd blocks, hot and NaN input finite at 44.1 / 48 / 96 kHz and the wash still right
+afterwards; at most one unit of work in a block with a 64-sample buffer and window 32768 (largest single unit: one
+transform, 184 us at 48 kHz, 344 us at 96 kHz with 65536; the buffer is 1333 / 667 us); ASan + UBSan clean (`stretch` is in
+`SAN_TESTS`); the CLAP smoke test (`tools/clap_check.cpp`) passes at 44.1 / 48 / 96 kHz. About 4.6 ms of CPU per second of
+audio at 48 kHz in the costliest window (2048), 20 ms with ASan.) The window was screenshotted in both themes (and frozen,
+and with the short window) with `tools/shot.sh` and `tools/xdo.cpp` (keys F, J, 1, a drag on the recording).
+
+**Not yet:** heard in a host (nobody has listened to it here; the owner should try "Slow wash", "Glass pad" and "Drone freeze"
+on a pad, a vocal and a full mix, and say what to change); the VST3 / CLAP / AU builds were made on Linux only (CLAP
+loaded by the smoke test; no VST3 validator here; macOS and Windows builds come from CI); `make tests` could not be run
+as a whole here: the NAM core's Eigen submodule cannot be cloned (gitlab is blocked), so `test_amp` does not build; every
+other test, the licence check and the parity tests were run one by one. 192 kHz is tested only briefly. At 96 kHz with a
+64-sample buffer and the longest window one transform (65536 points) takes about half a buffer: pffft cannot split it.
 
 ## pump STRIP, channel strip (2026-11-02)
 

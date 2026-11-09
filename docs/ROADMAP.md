@@ -23,6 +23,7 @@ Effects, in this order:
 - **SWIRL** chorus / flanger / phaser — done (2026-10-24).
 - **STUTTER** beat repeat — done (2026-10-24).
 - **AMP** neural amp models and cabinet IRs — done (2026-10-24).
+- **STRETCH** extreme time stretch (plugins/stretch, tests/test_stretch.cpp) — done (2026-11-08): the last 12 s read back 1.5-50x slower, phase-randomised, five windows, freeze, tone, jump to the newest sound; a port of Thunder Plus's Extreme stretch (not in the wasm build).
 - **GRUMBLE** creature voice (plugins/grumble, tests/test_grumble.cpp) — four layers (BEAST, SPLIT, GROWL, SWARM) on a morph pad, gate, drive, tone, cave — done (2026-11-06).
 
 Instruments (MIDI in, stereo out):

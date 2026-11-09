@@ -118,6 +118,8 @@ namespace accents {
     inline Accent master() { return { "master", hexColor(0xDCDCE3), hexColor(0x3B3B44), hexColor(0x9A63FF) }; }   // grey, the controls in rainbow
     // channel strip
     inline Accent strip()  { return { "strip",  hexColor(0xA8E07A), hexColor(0x3B6618), hexColor(0xF0359B) }; }   // cactus green, flower magenta
+    // extreme stretch
+    inline Accent stretch(){ return { "stretch",hexColor(0x1AE092), hexColor(0x005A3A), hexColor(0xFF5A8C) }; }   // emerald, hot rose
     inline Accent grumble(){ return { "grumble",hexColor(0xD9A3C9), hexColor(0x6B2A5A), hexColor(0x7BE03A) }; }   // dusky mauve, toxic green
 }
 

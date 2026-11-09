@@ -2802,3 +2802,10 @@ GRUMBLE 31 cave
 GRUMBLE 32 mix
 GRUMBLE 33 out_gain
 GRUMBLE 34 bypass
+STRETCH 0 stretch
+STRETCH 1 window
+STRETCH 2 freeze
+STRETCH 3 tone
+STRETCH 4 mix
+STRETCH 5 out_gain
+STRETCH 6 bypass

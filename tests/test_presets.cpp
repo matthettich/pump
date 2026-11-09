@@ -30,6 +30,7 @@
 #include "../plugins/grumble/GrumbleParams.hpp"
 #include "../plugins/swirl/SwirlParams.hpp"
 #include "../plugins/stutter/StutterParams.hpp"
+#include "../plugins/stretch/StretchParams.hpp"
 #include "../plugins/chop/ChopParams.hpp"
 #include "../plugins/amp/AmpParams.hpp"
 #include "../plugins/table/TableParams.hpp"
@@ -216,6 +217,7 @@ int main()
         { "GRUMBLE", grumble::params(), grumble::presets(), grumble::kNumParams },
         { "SWIRL", swirl::params(), swirl::presets(), swirl::kNumParams },
         { "STUTTER", stutter::params(), stutter::presets(), stutter::kNumParams },
+        { "STRETCH", stretch::params(), stretch::presets(), stretch::kNumParams },
         { "CHOP", chop::params(), chop::presets(), chop::kNumParams },
         { "AMP", amp::params(), amp::presets(), amp::kNumParams },
         { "TWANG", twang::params(), twang::presets(), twang::kNumParams },
