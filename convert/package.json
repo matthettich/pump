@@ -17,6 +17,7 @@
       "main.js",
       "preload.js",
       "engine.js",
+      "player-engine.js",
       "app/**"
     ],
     "extraResources": [
