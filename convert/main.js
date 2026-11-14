@@ -128,6 +128,90 @@ ipcMain.handle('cancel', () => {
   for (const p of running.procs) { try { p.kill(); } catch (e) {} }
 });
 
+// ------------------------------------------------------------------------------------------------- PLAY page (player-engine.js)
+// Everything below is the player's; the converter above does not use any of it.
+const PE = require('./player-engine.js');
+const { session } = require('electron');
+let playerFfmpegSet = false;
+const playerReady = () => { if (!playerFfmpegSet) { E.setFfmpeg(findFfmpeg()); playerFfmpegSet = true; } };
+const M3U_FILTER = [{ name: 'Playlist', extensions: ['m3u8', 'm3u'] }];
+
+// Output device names (enumerateDevices) need the media permission check to pass; speaker-selection is the output choice.
+// Only those two, and only for audio and for this app's own pages: every other permission is refused.
+const ownPage = (url) => typeof url === 'string' && url.startsWith('file://');
+const audioOnly = (details) => !details || !details.mediaType || details.mediaType === 'audio' || (Array.isArray(details.mediaTypes) && details.mediaTypes.every((t) => t === 'audio'));
+app.whenReady().then(() => {
+  const ses = session.defaultSession;
+  ses.setPermissionCheckHandler((wc, permission, origin, details) => {
+    const url = (details && (details.requestingUrl || details.embeddingOrigin)) || origin || (wc && wc.getURL());
+    return ownPage(url) && (permission === 'speaker-selection' || (permission === 'media' && audioOnly(details)));
+  });
+  ses.setPermissionRequestHandler((wc, permission, cb, details) => {
+    cb(ownPage(details && details.requestingUrl) && (permission === 'speaker-selection' || (permission === 'media' && audioOnly(details))));
+  });
+});
+// the decoder processes die with the page that asked for them
+app.on('browser-window-created', (e, w) => {
+  w.webContents.on('did-start-navigation', (ev, url, inPlace, isMain) => { if (isMain && !inPlace) PE.closeAll(); });
+  w.on('closed', () => PE.closeAll());
+});
+app.on('before-quit', () => PE.closeAll());
+
+ipcMain.handle('player-pick-files', async (e, playlist) => {
+  const r = await dialog.showOpenDialog(win, { title: playlist ? 'Load a playlist' : 'Add audio files', properties: ['openFile', 'multiSelections'], filters: playlist ? M3U_FILTER : AUDIO_FILTER });
+  return r.canceled ? [] : r.filePaths;
+});
+ipcMain.handle('player-pick-folder', async () => {
+  const r = await dialog.showOpenDialog(win, { title: 'Add a folder', properties: ['openDirectory'] });
+  return r.canceled ? '' : r.filePaths[0];
+});
+ipcMain.handle('player-pick-image', async () => {
+  const r = await dialog.showOpenDialog(win, { title: 'Artwork', properties: ['openFile'], filters: [{ name: 'Images', extensions: ['jpg', 'jpeg', 'png'] }] });
+  return r.canceled ? '' : r.filePaths[0];
+});
+// files, folders and playlists -> tracks (tags, length, format), in order
+ipcMain.handle('player-probe', async (e, paths) => {
+  playerReady();
+  const files = [];
+  for (const p of paths || [])
+  {
+    if (/\.m3u8?$/i.test(p)) { try { for (const t of PE.readM3u(p)) files.push(...E.expandPaths([t.path])); } catch (err) {} }
+    else files.push(...E.expandPaths([p]));
+  }
+  const out = new Array(files.length);
+  let next = 0;
+  const worker = async () => { while (next < files.length) { const i = next++; out[i] = await PE.probeTrack(files[i]); } };
+  await Promise.all(Array.from({ length: Math.min(4, files.length) }, worker));
+  return out.map((t) => { if (t && t.raw) delete t.raw; return t; });
+});
+ipcMain.handle('player-tags', async (e, file) => { playerReady(); const t = await PE.readTags(file); if (t.raw) delete t.raw; return t; });
+ipcMain.handle('player-write-tags', async (e, file, changes, cover) => {
+  playerReady();
+  const r = await PE.writeTags(file, changes, cover);
+  if (r.track && r.track.raw) delete r.track.raw;
+  return r;
+});
+ipcMain.handle('player-open', async (e, file, startSec, channels) => {
+  playerReady();
+  try { return { ok: true, ...(await PE.openStream(file, Math.max(0, +startSec || 0), channels)) }; }
+  catch (err) { return { ok: false, error: String(err.message || err) }; }
+});
+ipcMain.handle('player-read', (e, id, bytes, channels) => PE.readStream(id, bytes, channels));
+ipcMain.handle('player-close', (e, id) => PE.closeStream(id));
+ipcMain.handle('player-m3u-save', async (e, tracks) => {
+  const r = await dialog.showSaveDialog(win, { title: 'Save playlist', defaultPath: 'playlist.m3u8', filters: M3U_FILTER });
+  if (r.canceled || !r.filePath) return { ok: false, canceled: true };
+  try { PE.writeM3u(/\.m3u8?$/i.test(r.filePath) ? r.filePath : r.filePath + '.m3u8', tracks); return { ok: true, file: r.filePath }; }
+  catch (err) { return { ok: false, error: String(err.message || err) }; }
+});
+ipcMain.handle('player-reveal', (e, p) => { if (p && fs.existsSync(p)) shell.showItemInFolder(p); });
+ipcMain.handle('player-exists', (e, paths) => (paths || []).map((p) => !!p && fs.existsSync(p)));
+ipcMain.handle('player-load', () => { try { return JSON.parse(fs.readFileSync(dataFile('player.json'), 'utf8')); } catch (err) { return null; } });
+ipcMain.handle('player-save', (e, data) => {
+  try { fs.mkdirSync(app.getPath('userData'), { recursive: true }); fs.writeFileSync(dataFile('player.json') + '.tmp', JSON.stringify(data)); fs.renameSync(dataFile('player.json') + '.tmp', dataFile('player.json')); return true; }
+  catch (err) { return false; }
+});
+
 app.whenReady().then(() => {
   menu();
   createWindow();

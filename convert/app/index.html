@@ -6,16 +6,19 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' file: data:; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self'">
 <title>pump CONVERT</title>
 <link rel="stylesheet" href="app.css">
+<link rel="stylesheet" href="player.css">
 </head>
 <body>
 <header class="top">
   <div class="brand"><span class="dots">…</span>pump <b>CONVERT</b></div>
   <div class="what">MASTERING CONVERTER</div>
+  <div class="pages"><button class="key cur" id="pgConvert">CONVERT</button><button class="key" id="pgPlay">PLAY</button></div>
   <div class="spacer"></div>
   <div class="engine num" id="engine">…</div>
   <button class="key" id="helpKey" title="How it works">?</button>
 </header>
 
+<div class="page" id="pageConvert">
 <main>
   <section class="panel sources" id="sourcesPanel">
     <div class="phead">
@@ -108,6 +111,8 @@
     <button class="key" id="helpClose">CLOSE</button>
   </div>
 </div>
+</div>
 <script src="app.js"></script>
+<script src="player.js"></script>
 </body>
 </html>
