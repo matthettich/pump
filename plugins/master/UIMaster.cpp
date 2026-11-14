@@ -45,6 +45,11 @@ public:
         }
         stageBtn[3] = addToggle(kLoudOn, "LOUDNESS");
         stageBtn[3]->tip = "Loudness: makeup gain and a true-peak limiter that only touches the peaks";
+        // RESONANCE (first in the chain, so drawn first; numbered 5 so the keys 1-4 stay as they were)
+        stageBtn[4] = addToggle(kResOn, "RESONANCE");
+        stageBtn[4]->tip = "Resonance: gently calms narrow, ringing peaks before everything else (off by default; adds a little latency, always reported)";
+        resAmt = addDial(kResAmt, "AMOUNT", Dial::Small);
+        resAmt->tip = "RESONANCE amount (on top of INTENSITY; 100 % = a few dB at most on a ringing peak, transparent)";
         // DESTINATION: where the master is going; picks TARGET (and TARGET mode; vinyl also folds the bass to mono).
         // Moving the TARGET dial anywhere else reads CUSTOM.
         destM = addMenu(-1);
@@ -111,8 +116,9 @@ public:
         // the rainbow: hue = (column + row) x 30 + 10 degrees
         auto hue = [](int col, int row) { return (float)(((col + row) % 12) * 30 + 10); };
         learnBtn->tint = hue(0, 0); intDial->tint = hue(1, 0); cmpBtn->tint = hue(0, 1); styleSeg->tint = hue(0, 2);
-        for (int i = 0; i < 4; ++i) stageBtn[i]->tint = stageHue[i] = hue(2 + i, 0);
-        for (int i = 0; i < 3; ++i) stageAmt[i]->tint = hue(2 + i, 1);
+        for (int i = 0; i < 5; ++i) stageBtn[i]->tint = stageHue[i] = hue(2 + slotOf(i), 0);
+        for (int i = 0; i < 3; ++i) stageAmt[i]->tint = hue(3 + i, 1);
+        resAmt->tint = hue(2, 1);
         destM->tint = hue(6, 1); modeSeg->tint = hue(5, 1); targetDial->tint = hue(5, 2); ceilDial->tint = hue(6, 2);
         advBtn->tint = hue(0, 2); styleSeg->tint = hue(0, 3);
         resetTrimBtn->tint = hue(2, 2); clearBandsBtn->tint = hue(3, 2);
@@ -199,8 +205,8 @@ protected:
         display = Rect(14, 58, info.x - 12 - 14, dh);
         const float y0 = display.b() + 12, ph = H - 24 - 12 - y0;
         mainP = Rect(14, y0, 262, ph);
-        const float sx = mainP.r() + 10, sw = (W - 14 - sx - 3 * 10) / 4.0f;
-        for (int i = 0; i < 4; ++i) stageP[i] = Rect(sx + i * (sw + 10), y0, sw, ph);
+        const float sx = mainP.r() + 10, gap = 6.0f, sw = (W - 14 - sx - 4 * gap) / 5.0f;
+        for (int i = 0; i < 5; ++i) stageP[i] = Rect(sx + slotOf(i) * (sw + gap), y0, sw, ph);
 
         learnBtn->r = Rect(mainP.x + 14, y0 + 30, 110, 40);
         cmpBtn->r = Rect(mainP.x + 14, y0 + 78, 110, 24);
@@ -210,12 +216,13 @@ protected:
         styleSeg->r = Rect(mainP.x + 14, mainP.b() - 38, mainP.w - 28, 26);
 
         const float sh = Dial::heightFor(Dial::Small);
-        for (int i = 0; i < 4; ++i)
+        for (int i = 0; i < 5; ++i)
         {
             const Rect& p = stageP[i];
-            stageBtn[i]->r = Rect(p.x + 10, p.y + 10, p.w - 20, 26);
+            stageBtn[i]->r = Rect(p.x + 8, p.y + 10, p.w - 16, 26);
             if (i < 3) stageAmt[i]->r = Rect(p.cx() - 36, p.y + 46, 72, sh);
         }
+        resAmt->r = Rect(stageP[4].cx() - 36, stageP[4].y + 46, 72, sh);
         const Rect& lp = stageP[3];
         destM->r = Rect(lp.x + 10, lp.y + 40, lp.w - 20, 22);
         modeSeg->r = Rect(lp.x + 10, lp.y + 66, lp.w - 20, 20);
@@ -303,8 +310,9 @@ protected:
         inST = e.uiInST.load(); outST = e.uiOutST.load();
         aRatio = e.uiAutoRatio.load(); aThr = e.uiAutoThr.load(); aLift = e.uiAutoLift.load(); aMakeup = e.uiAutoMakeup.load();
         aSideLoDb = e.uiAutoSideLo.load(); aSideHiDb = e.uiAutoSideHi.load();
-        const float cg = e.compGR.exchange(0.0f), lg = e.limGR.exchange(0.0f);
+        const float cg = e.compGR.exchange(0.0f), lg = e.limGR.exchange(0.0f), rg = e.resGR.exchange(0.0f);
         compGr = std::max(cg, compGr - 12.0f * dt);
+        resGr = std::max(rg, resGr - 12.0f * dt);
         limGr = std::max(lg, limGr - 12.0f * dt);
         learnWaiting = e.uiLearnWaiting.load(std::memory_order_relaxed);
         learnBtn->label = learning ? (learnWaiting ? "WAITING" : "STOP " + clock(learnSec)) : (ana.valid ? "RE-LEARN" : "LEARN");
@@ -443,9 +451,9 @@ protected:
         strokeRect(mainP, theme.dim, 1.0f);
         caption(mainP.x + 14, mainP.y + 15, "MASTER");
         caption(styleSeg->r.x, styleSeg->r.y - 10, "STYLE");
-        for (int i = 0; i < 4; ++i)
+        for (int i = 0; i < 5; ++i)
         {
-            const bool on = value(i == 0 ? kToneOn : i == 1 ? kDynOn : i == 2 ? kStereoOn : kLoudOn) >= 0.5f;
+            const bool on = value(stageOnParam(i)) >= 0.5f;
             const Color c = stageDim(i);
             strokeRect(stageP[i], on ? c : withAlpha2(c, 0.45f), on ? 1.5f : 1.0f);
         }
@@ -648,16 +656,22 @@ protected:
     {
         auto lines = [&](int i, const std::string& a, const std::string& b, const Color* bc = nullptr) {
             const Rect& p = stageP[i];
-            const bool on = value(i == 0 ? kToneOn : i == 1 ? kDynOn : i == 2 ? kStereoOn : kLoudOn) >= 0.5f;
+            const bool on = value(stageOnParam(i)) >= 0.5f;
             const Color c = on ? stageInk(i) : theme.ink2;
             const float lo = i == 3 ? 12.0f : 0.0f;   // LOUDNESS: under its dials (DESTINATION moved them down)
-            textAt(p.cx(), p.b() - 34 + lo, a, kMono, 10.5f, c, ALIGN_CENTER | ALIGN_MIDDLE);
-            textAt(p.cx(), p.b() - 18 + lo * 0.75f, b, kMono, 10.5f, bc ? *bc : c, ALIGN_CENTER | ALIGN_MIDDLE);
+            textAt(p.cx(), p.b() - 34 + lo, a, kMono, 9.5f, c, ALIGN_CENTER | ALIGN_MIDDLE);
+            textAt(p.cx(), p.b() - 18 + lo * 0.75f, b, kMono, 9.5f, bc ? *bc : c, ALIGN_CENTER | ALIGN_MIDDLE);
         };
         if (!(ana.valid && planValid))
         {
-            for (int i = 0; i < 4; ++i) lines(i, "WAITING FOR", "LEARN");
+            for (int i = 0; i < 5; ++i) lines(i, "WAITING FOR", "LEARN");
             return;
+        }
+        // RESONANCE: the largest reduction now (when the stage is on)
+        {
+            char b[48];
+            if (value(kResOn) >= 0.5f) std::snprintf(b, sizeof b, "REDUCTION %.1f dB", resGr); else std::snprintf(b, sizeof b, "OFF");
+            lines(4, "CALMS RINGING", b);
         }
         // TONE: the largest move and where
         {
@@ -690,7 +704,7 @@ protected:
             std::snprintf(a, sizeof a, "GAIN %+.1f dB", makeup);
             const bool heavy = -limLoss > 1.0f || peakOver > 6.0f;
             if (peakOver < 0.05f) std::snprintf(b, sizeof b, "NO LIMITING");
-            else std::snprintf(b, sizeof b, heavy ? "PEAKS -%.1f dB · HEAVY" : "PEAKS -%.1f dB", peakOver);
+            else std::snprintf(b, sizeof b, heavy ? "PEAKS -%.1f · HEAVY" : "PEAKS -%.1f dB", peakOver);
             if (!advanced) lines(3, a, b, heavy ? &theme.red : nullptr);
         }
     }
@@ -828,10 +842,9 @@ protected:
         if (k == 'l') { toggleLearn(); return true; }
         if (k == 'c') { setParamGesture(kCompare, value(kCompare) >= 0.5f ? 0.0f : 1.0f); return true; }
         if (k == 'a') { advanced = !advanced; layout(); saveUi(); repaint(); return true; }
-        if (k >= '1' && k <= '4')
+        if (k >= '1' && k <= '5')
         {
-            static const int on[4] = { kToneOn, kDynOn, kStereoOn, kLoudOn };
-            const int p = on[k - '1'];
+            const int p = stageOnParam((int)(k - '1'));
             setParamGesture(p, value(p) >= 0.5f ? 0.0f : 1.0f);
             return true;
         }
@@ -842,7 +855,7 @@ protected:
         return {
             { "L", "learn: start, play the whole song from the top, then stop (stopping the song also finishes it)" },
             { "C", "compare with the original at the same loudness (COMPARE key: hold = only while held)" },
-            { "1  2  3  4", "tone · dynamics · stereo · loudness on/off" },
+            { "1  2  3  4  5", "tone · dynamics · stereo · loudness · resonance on/off" },
             { "INTENSITY", "everything at once: 25 % light, 50 % medium, 100 % strong" },
             { "AMOUNT", "one stage on top of INTENSITY" },
             { "A", "advanced view: everything auto set, as offsets you can tweak, and eight free EQ bands" },
@@ -865,12 +878,15 @@ private:
     PluginMaster* plug = nullptr;
     SpectrumView post;
     OutMeter outMeter, inMeter;
-    Rect display, info, mainP, stageP[4];
-    Button *learnBtn, *cmpBtn, *stageBtn[4];
+    Rect display, info, mainP, stageP[5];
+    Button *learnBtn, *cmpBtn, *stageBtn[5];
     Segmented *styleSeg, *modeSeg;
-    Dial *intDial, *stageAmt[3], *targetDial, *ceilDial;
+    Dial *intDial, *stageAmt[3], *resAmt, *targetDial, *ceilDial;
 
-    float stageHue[4] = {};
+    // stages 0-3 are TONE, DYNAMICS, STEREO, LOUDNESS; 4 is RESONANCE, which comes first in the chain and the row
+    static int slotOf(int stage) { return stage == 4 ? 0 : stage + 1; }
+    static int stageOnParam(int stage) { static const int on[5] = { kToneOn, kDynOn, kStereoOn, kLoudOn, kResOn }; return on[stage]; }
+    float stageHue[5] = {};
     float aRatio = 1.0f, aThr = 0.0f, aLift = 0.0f, aMakeup = 0.0f, aSideLoDb = 0.0f, aSideHiDb = 0.0f;   // what auto chose
     bool advanced = false;
     Button *advBtn, *resetTrimBtn, *clearBandsBtn;
@@ -931,7 +947,7 @@ private:
     bool learnWaiting = false;
     float curve[kCurvePts] = {}, target[kBands] = {}, measured[kBands] = {}, eqGain[kEq] = {};
     float ratio = 1.0f, thr = 0.0f, liftMax = 0.0f, lift = 0.0f, sideLo = 0.0f, sideHi = 0.0f, makeup = 0.0f, outPred = -70.0f,
-          cmpDb = 0.0f, peakOver = 0.0f, limLoss = 0.0f, eqDelta = 0.0f, inST = -INFINITY, outST = -INFINITY, compGr = 0.0f, limGr = 0.0f;
+          cmpDb = 0.0f, peakOver = 0.0f, limLoss = 0.0f, eqDelta = 0.0f, inST = -INFINITY, outST = -INFINITY, compGr = 0.0f, limGr = 0.0f, resGr = 0.0f;
     float specTop = 0.0f, specBottom = -36.0f, dbRange = 6.0f, hoverX = -1, hoverY = -1;
     double anaRate = 48000.0;
 

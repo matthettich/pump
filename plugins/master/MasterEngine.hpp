@@ -9,6 +9,11 @@
 //   - the crest factor of 400 ms windows (how dense the mix already is).
 // The result is an Analysis (a few hundred bytes, saved with the session as text).
 //
+// RESONANCE (optional, off by default; the first stage, ahead of TONE) is pump CALM's engine at a transparent
+// setting: a dynamic resonance suppressor, a few dB at most. It costs CALM's STFT latency, which is reported
+// whether the stage is on or off (like LOUDNESS: when off, the delayed input goes through), so switching never
+// shifts the timing.
+//
 // The PLAN is a pure function of the Analysis, the style and the amounts (computePlan), so the same song and
 // settings always give the same master:
 //   TONE      the smoothed (one octave) spectrum compared with the style's target curve; a share of the difference,
@@ -33,6 +38,7 @@
 #include "dsp/Dynamics.hpp"
 #include "dsp/Crossover.hpp"
 #include "../limit/LimitEngine.hpp"
+#include "../calm/CalmEngine.hpp"
 #include "MasterParams.hpp"
 #include <atomic>
 #include <cstdio>
@@ -196,6 +202,8 @@ struct Settings {
     float intensity = 50.0f;                              // percent
     bool toneOn = true, dynOn = true, stereoOn = true, loudOn = true;
     float toneAmt = 100.0f, dynAmt = 100.0f, stereoAmt = 100.0f;   // percent
+    bool resOn = false;                                   // RESONANCE: off by default (the other stages are on)
+    float resAmt = 100.0f;                                // percent
     float target = -13.5f, ceiling = -1.0f;              // LUFS, dBTP (the reference lands at about -13.5)
     int loudMode = kToTarget;                              // Gentle: only as loud as the peaks allow; Target: to TARGET
     bool compare = false;
@@ -305,7 +313,8 @@ struct Plan {
     double lift = 0.0, liftRef = -14.0;           // leveler: dB for quiet sections, the song's loudness after TONE
     double sideLo = 1.0, sideHi = 1.0;            // stereo stage gains (linear)
     double makeupDb = 0.0, limitLossDb = 0.0, eqDeltaDb = 0.0, compDeltaDb = 0.0, outLufs = -70.0, compareDb = 0.0, peakOverDb = 0.0;
-    double toneK = 0.0, dynK = 0.0, stereoK = 0.0;
+    double toneK = 0.0, dynK = 0.0, stereoK = 0.0, resK = 0.0;
+    double resDepth = 0.0;                        // CALM's depth (percent) for RESONANCE
     // what auto chose, before the ADVANCED offsets (for the window)
     double autoEq[kEq] = {}, autoLift = 0.0, autoRatio = 1.0, autoThr = 0.0, autoSideLo = 1.0, autoSideHi = 1.0, autoMakeup = 0.0;
 };
@@ -361,6 +370,7 @@ class Engine {
 public:
     static constexpr int kMaxChunk = 4096;
     static constexpr double kStereoXover = 120.0;
+    static constexpr double kResDepth = 18.0;   // CALM depth (percent) at medium INTENSITY and AMOUNT 100 %
 
     // ---- UI feeds (any thread reads) ----
     AnalysisSlot published;                       // the analysis in use (written by the audio thread only)
@@ -375,7 +385,7 @@ public:
     std::atomic<bool> uiLearnWaiting { false };   // LEARN is on but no music has come in yet (the clock hasn't started)
     std::atomic<float> uiLearnSeconds { 0.0f };
     std::atomic<float> uiInST { -INFINITY }, uiOutST { -INFINITY }, uiOutI { -INFINITY };
-    MeterValue compGR, limGR;                     // dB of reduction (max since the UI last exchanged them)
+    MeterValue compGR, limGR, resGR;                     // dB of reduction (max since the UI last exchanged them)
 
     // ---- other threads -> audio thread ----
     AnalysisSlot incoming;                        // an analysis loaded from a session (setState writes it)
@@ -455,11 +465,15 @@ public:
         lim.setTruePeak(true); lim.setOversampling(1); lim.setDC(false); lim.setDither(0, 0); lim.setUnity(false);
         lim.setGain(0.0f); lim.setCeiling(cur.ceiling);
         lim.prepare(sr, kMaxChunk);
-        lat = lim.latency();
+        limLat = lim.latency();
+        // RESONANCE: CALM's engine, always running (so it is warm when switched on) and always in the latency
+        calmEng.set(calmSettings(0.0, false));
+        calmEng.prepare(sr);
+        lat = calmEng.latency() + limLat;
         for (int c = 0; c < 2; ++c)
         {
-            limDly[c].setMaxDelay(lat + 8); dryDly[c].setMaxDelay(lat + 8);
-            limDly[c].setDelay(lat); dryDly[c].setDelay(lat);
+            limDly[c].setMaxDelay(limLat + 8); dryDly[c].setMaxDelay(lat + 8);
+            limDly[c].setDelay(limLat); dryDly[c].setDelay(lat);
             limDly[c].clear(); dryDly[c].clear();
         }
         const int ramp = (int)(0.03 * sr);
@@ -482,7 +496,7 @@ public:
     {
         bool planChange = s.style != cur.style || s.intensity != cur.intensity || s.toneOn != cur.toneOn || s.dynOn != cur.dynOn
             || s.stereoOn != cur.stereoOn || s.loudOn != cur.loudOn || s.toneAmt != cur.toneAmt || s.dynAmt != cur.dynAmt
-            || s.stereoAmt != cur.stereoAmt || s.target != cur.target || s.ceiling != cur.ceiling || s.loudMode != cur.loudMode;
+            || s.stereoAmt != cur.stereoAmt || s.resOn != cur.resOn || s.resAmt != cur.resAmt || s.target != cur.target || s.ceiling != cur.ceiling || s.loudMode != cur.loudMode;
         bool adv = s.liftTrim != cur.liftTrim || s.liftAt != cur.liftAt || s.ratioTrim != cur.ratioTrim || s.glueThrTrim != cur.glueThrTrim
             || s.lowMonoTrim != cur.lowMonoTrim || s.widthTrim != cur.widthTrim || s.gainTrim != cur.gainTrim;
         for (int i = 0; i < kEq; ++i) adv = adv || s.toneTrim[i] != cur.toneTrim[i];
@@ -568,6 +582,18 @@ public:
     }
 
 private:
+    // pump CALM at the transparent mastering setting (depth aside): soft, sharpness 68, selectivity 62, attack 22 ms,
+    // release 230 ms, focus 120 Hz .. 20 kHz, linked, FFT 4096 (quality 2), flat sensitivity. `on` = mix.
+    static calm::Settings calmSettings(double depth, bool on)
+    {
+        calm::Settings c;
+        c.depth = (float)depth; c.sharpness = 68.0f; c.selectivity = 62.0f;
+        c.attackMs = 22.0f; c.releaseMs = 230.0f; c.mode = calm::kSoft;
+        c.focusLo = 120.0f; c.focusHi = 20000.0f; c.stereo = calm::kLinked; c.balance = 0.0f;
+        c.quality = 2; c.delta = false; c.mix = on ? 100.0f : 0.0f; c.trimDb = 0.0f;
+        return c;
+    }
+
     // The BS.1770 K-weighting at this rate (the loudness meter's own filters)
     void kWeightCoeffs(BiquadCoeffs& shelf, BiquadCoeffs& hp) const
     {
@@ -819,6 +845,9 @@ private:
         p.toneK = cur.toneOn ? inten * clampv(cur.toneAmt, 0.0f, 200.0f) * 0.01 : 0.0;
         p.dynK = cur.dynOn ? inten * clampv(cur.dynAmt, 0.0f, 200.0f) * 0.01 : 0.0;
         p.stereoK = cur.stereoOn ? inten * clampv(cur.stereoAmt, 0.0f, 200.0f) * 0.01 : 0.0;
+        // RESONANCE: CALM's depth is 18 % at medium (the other CALM settings are fixed, see calmSettings)
+        p.resK = cur.resOn ? inten * clampv(cur.resAmt, 0.0f, 200.0f) * 0.01 : 0.0;
+        p.resDepth = clampv(kResDepth * p.resK, 0.0, 100.0);
         if (!ana.valid) return;
         p.valid = true;
 
@@ -876,6 +905,7 @@ private:
             p.eqGain[i] = cur.toneOn ? clampv(p.autoEq[i] + cur.toneTrim[i], -12.0, 12.0) : 0.0;
         }
 
+        // (the tone stage's prediction does not model RESONANCE's small cuts)
         // predicted loudness change of the tone stage (K-weighted, on the song's own spectrum)
         {
             double a0 = 0.0, a1 = 0.0;
@@ -996,6 +1026,8 @@ private:
         const bool dynActive = pl.valid && (pl.ratio > 1.0001 || pl.lift > 1e-4);
         const bool stActive = pl.valid && (std::fabs(pl.sideLo - 1.0) > 1e-4 || std::fabs(pl.sideHi - 1.0) > 1e-4);
         const bool limActive = pl.valid && cur.loudOn;
+        resWanted = pl.valid && pl.resDepth > 1e-3;
+        calmEng.set(calmSettings(pl.resDepth, resWanted));   // its mix glides (20 ms) between the processed and the delayed input
         auto setS = [&](LinearSmoother& s, double v) { if (immediate) s.reset(v); else s.setTarget(v); };
         setS(dynMix, dynActive ? 1.0 : 0.0);
         if (stActive) { setS(sideLoS, pl.sideLo); setS(sideHiS, pl.sideHi); }
@@ -1062,6 +1094,13 @@ private:
     {
         // the dry path for COMPARE: the input, delayed by the chain's latency
         for (int i = 0; i < n; ++i) { dryBuf[0][i] = L[i]; dryBuf[1][i] = R[i]; }
+
+        // RESONANCE: first in the chain (before TONE); delayed input when off
+        calmEng.process(L, R, n);
+        {
+            const float g = calmEng.grMax.exchange(0.0f);
+            if (resWanted) resGR.setMax(g);
+        }
 
         float grMax = 0.0f;
         for (int off = 0; off < n; off += kSub)
@@ -1224,7 +1263,9 @@ private:
 
     // loudness
     limit::Engine lim;
-    int lat = 0;
+    int lat = 0, limLat = 0;   // lat: the whole chain (RESONANCE's STFT + the limiter's lookahead)
+    calm::Engine calmEng;
+    bool resWanted = false;
     DelayLine limDly[2], dryDly[2];
     float limBuf[2][kMaxChunk] = {}, dryBuf[2][kMaxChunk] = {};
 

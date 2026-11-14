@@ -101,7 +101,8 @@ int main()
     {
         Engine e; e.prepare(sr);
         const Stereo o = run(e, mix);
-        CHECK(e.latency() > 0 && e.latency() < 2000, "latency %d samples (the limiter's)", e.latency());
+        const int calmLat = calm::fftSizeFor(2, sr);
+        CHECK(e.latency() > calmLat && e.latency() < calmLat + 2000, "latency %d samples (RESONANCE's %d, the limiter's the rest)", e.latency(), calmLat);
         CHECK(nullDiff(mix, o, e.latency()) == 0.0, "no analysis: output is the input delayed (max diff %.3g)", nullDiff(mix, o, e.latency()));
     }
 
@@ -176,6 +177,53 @@ int main()
         Engine off; off.prepare(sr); Settings os; os.toneOn = os.dynOn = os.stereoOn = os.loudOn = false; off.set(os); off.setAnalysis(a);
         const Stereo o2 = run(off, mix);
         CHECK(nullDiff(mix, o2, off.latency()) < 1e-6, "every stage off: transparent (max diff %.3g)", nullDiff(mix, o2, off.latency()));
+    }
+
+    // ---- RESONANCE: off by default and at the end of the parameter list; on, it calms steady ringing a little; the latency
+    // is the same on and off, so switching never shifts the timing
+    {
+        CHECK(params().size() == (size_t)kNumParams && kResOn == bandParam(kNumUserBands - 1, kBQ) + 1 && params()[kResOn].def == 0.0f
+              && !Settings().resOn, "RESONANCE: two parameters after the free bands, off by default");
+        const size_t N = (size_t)(sr * 12);
+        Stereo x = pinkStereo(N, 11, 0.05f);
+        for (size_t i = 0; i < N; ++i)   // two steady narrow peaks: 1.3 kHz and 4.1 kHz
+        {
+            const float v = 0.08f * (float)std::sin(kTwoPi * 1300.0 * i / sr) + 0.06f * (float)std::sin(kTwoPi * 4100.0 * i / sr);
+            x.L[i] += v; x.R[i] += v;
+        }
+        Engine r; r.prepare(sr);
+        Settings s; s.toneOn = s.dynOn = s.stereoOn = s.loudOn = false; s.resOn = true; r.set(s); r.setAnalysis(a);
+        const int latOn = r.latency();
+        Stereo o = x;
+        const size_t split = (size_t)(sr * 9), blk = 512;
+        for (size_t off = 0; off < split; off += blk) r.process(o.L.data() + off, o.R.data() + off, (int)std::min(blk, split - off));
+        const float gr = r.resGR.exchange(0.0f);
+        auto goertzel = [&](const std::vector<float>& v, size_t from, size_t to, double f) {
+            double re = 0.0, im = 0.0;
+            for (size_t i = from; i < to; ++i) { re += v[i] * std::cos(kTwoPi * f * i / sr); im += v[i] * std::sin(kTwoPi * f * i / sr); }
+            return 20.0 * std::log10(std::sqrt(re * re + im * im) + 1e-12);
+        };
+        const size_t lat = (size_t)latOn, from = (size_t)(sr * 6), to = split;
+        double dd = 0.0, ee = 0.0;
+        for (size_t i = from; i < to; ++i) { const double d = o.L[i] - x.L[i - lat]; dd += d * d; ee += (double)x.L[i - lat] * x.L[i - lat]; }
+        const double cut1 = goertzel(x.L, from - lat, to - lat, 1300.0) - goertzel(o.L, from, to, 1300.0);
+        CHECK(cut1 > 0.3 && cut1 < 6.0 && gr > 0.05f && gr < 6.0f, "RESONANCE at medium: a steady 1.3 kHz peak comes down %.2f dB (reduction meter %.2f dB)", cut1, gr);
+        CHECK(10.0 * std::log10(dd / ee) < -14.0 && dd > 0.0, "RESONANCE at medium: the whole signal moves only %.1f dB rms under itself", 10.0 * std::log10(dd / ee));
+        // switch it off: the same latency, and the delayed input again once the glide is over
+        s.resOn = false; r.set(s);
+        for (size_t off = split; off < N; off += blk) r.process(o.L.data() + off, o.R.data() + off, (int)std::min(blk, N - off));
+        CHECK(r.latency() == latOn, "latency %d samples on and off", r.latency());
+        double mx = 0.0;
+        for (size_t i = (size_t)(sr * 11); i < N; ++i) mx = std::max(mx, (double)std::max(std::fabs(o.L[i] - x.L[i - lat]), std::fabs(o.R[i] - x.R[i - lat])));
+        CHECK(mx < 1e-6, "RESONANCE switched off: the delayed input again (max diff %.3g)", mx);
+        // depth scales with INTENSITY x AMOUNT
+        Settings s2; s2.resOn = true; s2.intensity = 100.0f; s2.resAmt = 100.0f; r.set(s2); r.replan();
+        const double d100 = r.plan().resDepth;
+        s2.intensity = 50.0f; s2.resAmt = 50.0f; r.set(s2); r.replan();
+        const double d25 = r.plan().resDepth;
+        s2.resAmt = 100.0f; r.set(s2); r.replan();
+        CHECK(std::fabs(r.plan().resDepth - 18.0) < 1e-9 && std::fabs(d100 - 36.0) < 1e-9 && std::fabs(d25 - 9.0) < 1e-9,
+              "RESONANCE depth: %.1f %% at medium, %.1f at 25 %% of full, %.1f at 100 %%", r.plan().resDepth, d25, d100);
     }
 
     // ---- the tone stage moves the balance toward the target; it cuts a bump in pink noise
@@ -305,7 +353,9 @@ int main()
     // ---- stage switches and jumps: no clicks, always finite
     {
         Engine j; j.prepare(sr); j.setAnalysis(a);
-        Stereo o = mix;
+        Stereo padded = mix;   // plus the chain's latency of silence, so every sample of the song comes out
+        padded.L.resize(padded.L.size() + (size_t)j.latency() + 480, 0.0f); padded.R.resize(padded.L.size(), 0.0f);
+        Stereo o = padded;
         std::mt19937 rng(3); std::uniform_real_distribution<float> u(0, 1);
         const int blk = 480;
         double maxStep = 0.0, refStep = 0.0;
@@ -326,16 +376,25 @@ int main()
             {
                 const float l = o.L[off + i], r = o.R[off + i];
                 finite = finite && std::isfinite(l) && std::isfinite(r);
-                maxStep = std::max(maxStep, (double)std::max(std::fabs(l - pl), std::fabs(r - pr)));
+                const double st = std::max(std::fabs(l - pl), std::fabs(r - pr));
+                maxStep = std::max(maxStep, st);
                 pl = l; pr = r;
             }
         }
         // the reference: the loudest these settings can make it, held steady (target -6, everything at 100 %, each style)
         for (int style = 0; style < kNumStyles; ++style)
         {
-            Engine ref; ref.prepare(sr); ref.setAnalysis(a);
-            Settings s; s.target = -6.0f; s.intensity = 100.0f; s.toneAmt = 200.0f; s.loudMode = kToTarget; s.style = style; ref.set(s);
-            const Stereo o2 = run(ref, mix);
+            Engine ref; ref.prepare(sr);
+            Settings s; s.target = -6.0f; s.intensity = 100.0f; s.toneAmt = 200.0f; s.loudMode = kToTarget; s.style = style;
+            // the analysis and the loudest settings arrive as the song reaches the chain (after the latency, which
+            // is silence at the output): the gains start from their rest values and glide up under the music
+            const size_t lat0 = (size_t)ref.latency();
+            Stereo head, tail;
+            head.L.assign(padded.L.begin(), padded.L.begin() + (long)lat0); head.R.assign(padded.R.begin(), padded.R.begin() + (long)lat0);
+            tail.L.assign(padded.L.begin() + (long)lat0, padded.L.end()); tail.R.assign(padded.R.begin() + (long)lat0, padded.R.end());
+            run(ref, head);
+            ref.setAnalysis(a); ref.set(s);
+            const Stereo o2 = run(ref, tail);
             float ql = 0, qr = 0;
             for (size_t i = 0; i < o2.L.size(); ++i) { refStep = std::max(refStep, (double)std::max(std::fabs(o2.L[i] - ql), std::fabs(o2.R[i] - qr))); ql = o2.L[i]; qr = o2.R[i]; }
         }

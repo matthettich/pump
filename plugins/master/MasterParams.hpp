@@ -17,7 +17,10 @@ enum Param : int {
     kMonoFreq, kLowMonoTrim, kWidthTrim,
     kGainTrim, kLimRelease, kLimStyle,
     // ADVANCED: eight free EQ bands after the tone stage (5 parameters each, band b at kBand0 + 5 b)
-    kBand0, kNumParams = kBand0 + 8 * 5
+    kBand0,
+    // RESONANCE (pump CALM's engine, first in the chain): appended after everything else so no earlier index moves
+    kResOn = kBand0 + 8 * 5, kResAmt,
+    kNumParams
 };
 
 constexpr int kNumUserBands = 8;
@@ -90,6 +93,8 @@ inline const std::vector<ParamSpec>& params()
         v.push_back({ text[b][3][0], text[b][3][1], text[b][3][2], -18, 18, 0, PUnit::dB, PScale::Linear, A, nullptr, 1 });
         v.push_back({ text[b][4][0], text[b][4][1], text[b][4][2], 0.2f, 10, 1, PUnit::None, PScale::Log, A, nullptr, 1 });
     }
+    v.push_back({ "resonance_on", "Resonance On", "Resonance", 0, 1, 0, PUnit::None, PScale::Linear, A | kPBoolean, nullptr, 1 });
+    v.push_back({ "resonance_amount", "Resonance Amount", "Res Amt", 0, 200, 100, PUnit::Percent, PScale::Linear, A, nullptr, 1 });
     return v;
     }();
     return v;
