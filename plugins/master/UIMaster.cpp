@@ -455,14 +455,29 @@ protected:
     // ADVANCED: auto's nine tone points (squares, dragged up and down) and the free bands (numbered circles)
     void drawHandles()
     {
+        // Alt-solo: shade what the soloed band doesn't pass, dim every other handle
+        const int so = soloBand;
+        if (so >= 0)
+        {
+            const double f = value(bandParam(so, kBFreq)), q = pump::clampv((double)value(bandParam(so, kBQ)), 0.3, 12.0);
+            const int sh = (int)value(bandParam(so, kBShape));
+            const double half = std::asinh(1.0 / (2.0 * q)) / std::log(2.0);   // half bandwidth in octaves
+            float x0 = xOfF(f * std::pow(2.0, -half)), x1 = xOfF(f * std::pow(2.0, half));
+            if (sh == kULowShelf || sh == kULowCut) { x0 = display.x; x1 = xOfF(f); }
+            else if (sh == kUHighShelf || sh == kUHighCut) { x0 = xOfF(f); x1 = display.r(); }
+            fillRect(Rect(display.x, display.y, std::max(0.0f, x0 - display.x), display.h), withAlpha2(theme.bg, 0.55f));
+            fillRect(Rect(x1, display.y, std::max(0.0f, display.r() - x1), display.h), withAlpha2(theme.bg, 0.55f));
+            line(x0, display.y, x0, display.b(), theme.second, 1.5f);
+            line(x1, display.y, x1, display.b(), theme.second, 1.5f);
+        }
         for (int i = 0; i < kEq; ++i)
         {
             const double f = autoPointFreq(i);
             const float x = xOfF(f), y = std::max(display.y + 6, std::min(display.b() - 6, yOfDb(curveAt(f))));
             const bool hot = drag == dTrim && dragIdx == i;
             const float r = hot ? 6.5f : 5.0f;
-            fillRect(Rect(x - r, y - r, 2 * r, 2 * r), pointColour(f, theme.dark));
-            strokeRect(Rect(x - r, y - r, 2 * r, 2 * r), theme.ink, 1.2f);
+            fillRect(Rect(x - r, y - r, 2 * r, 2 * r), so >= 0 ? withAlpha2(pointColour(f, theme.dark), 0.3f) : pointColour(f, theme.dark));
+            strokeRect(Rect(x - r, y - r, 2 * r, 2 * r), so >= 0 ? withAlpha2(theme.ink, 0.3f) : theme.ink, 1.2f);
             if (std::fabs(value(kToneTrim0 + i)) > 0.05f) { beginPath(); circle(x, y, 1.6f); fillColor(theme.bg); fill(); }
         }
         for (int b = 0; b < kNumUserBands; ++b)
@@ -471,10 +486,11 @@ protected:
             const double f = value(bandParam(b, kBFreq));
             const float x = xOfF(f), y = std::max(display.y + 8, std::min(display.b() - 8, bandY(b)));
             const bool hot = drag == dBand && dragIdx == b;
-            beginPath(); circle(x, y, hot ? 10.0f : 8.5f); fillColor(pointColour(f, theme.dark)); fill();
-            strokeColor(theme.ink); strokeWidth(1.4f); stroke();
+            const bool dim = so >= 0 && so != b;
+            beginPath(); circle(x, y, hot || so == b ? 10.0f : 8.5f); fillColor(dim ? withAlpha2(pointColour(f, theme.dark), 0.3f) : pointColour(f, theme.dark)); fill();
+            strokeColor(dim ? withAlpha2(theme.ink, 0.3f) : theme.ink); strokeWidth(so == b ? 2.4f : 1.4f); stroke();
             char n[4]; std::snprintf(n, sizeof n, "%d", b + 1);
-            textAt(x, y + 0.5f, n, kBold, 10.0f, theme.dark ? theme.bg : pump::hexColor(0xFFFFFF), ALIGN_CENTER | ALIGN_MIDDLE);
+            textAt(x, y + 0.5f, n, kBold, 10.0f, dim ? withAlpha2(theme.dark ? theme.bg : pump::hexColor(0xFFFFFF), 0.5f) : (theme.dark ? theme.bg : pump::hexColor(0xFFFFFF)), ALIGN_CENTER | ALIGN_MIDDLE);
         }
     }
     int hitTrim(float x, float y) const
@@ -714,6 +730,12 @@ protected:
                 {
                     drag = dBand; dragIdx = b;
                     beginEdit(bandParam(b, kBFreq)); beginEdit(bandParam(b, kBGain));
+                    if ((mod & kModifierAlt) && plug)   // Alt (Option on macOS): solo this band while the button is held
+                    {
+                        soloBand = b;
+                        plug->soloHold.store(b);
+                        setStatus("Solo band " + std::to_string(b + 1) + "  (release to hear everything again)");
+                    }
                     return true;
                 }
                 if (t >= 0)
@@ -776,6 +798,7 @@ protected:
         if (drag == dTrim) endEdit(kToneTrim0 + dragIdx);
         else if (drag == dBand) { endEdit(bandParam(dragIdx, kBGain)); endEdit(bandParam(dragIdx, kBFreq)); }
         drag = dNone; dragIdx = -1;
+        if (soloBand >= 0) { if (plug) plug->soloHold.store(-1); soloBand = -1; }
     }
     bool bodyScroll(float x, float y, float dy, uint mod) override
     {
@@ -824,6 +847,7 @@ protected:
             { "AMOUNT", "one stage on top of INTENSITY" },
             { "A", "advanced view: everything auto set, as offsets you can tweak, and eight free EQ bands" },
             { "Advanced: drag a square", "trim auto's tone at that point (double-click: back to auto; Shift: fine)" },
+            { "Advanced: Alt + hold a band", "solo it while held (Option on a Mac); drag still moves it" },
             { "Advanced: click the curve", "a new band there (drag: frequency and gain, wheel: Q, right-click: shape, double-click: remove)" },
             { "Right-click the display", "curve scale" },
         };
@@ -896,6 +920,7 @@ private:
     }
     std::vector<Control*> advDials;
     float bandsCurve[kCurvePts] = {}, autoEq[kEq] = {};
+    int soloBand = -1;   // Alt-hold solo of a free band (editor-only, never a parameter)
     enum DragMode { dNone = 0, dTrim, dBand };
     DragMode drag = dNone;
     int dragIdx = -1;
@@ -911,6 +936,12 @@ private:
     double anaRate = 48000.0;
 
     DISTRHO_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(UIMaster)
+public:
+    ~UIMaster() override
+    {
+        // closing the editor mid-hold must not leave the plugin soloed
+        if (plug) plug->soloHold.store(-1);
+    }
 };
 
 UI* createUI() { return new UIMaster(); }

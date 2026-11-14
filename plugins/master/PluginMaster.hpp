@@ -6,6 +6,8 @@
 #include "MasterParams.hpp"
 #include "MasterEngine.hpp"
 #include "dsp/Bypass.hpp"
+#include "dsp/Audition.hpp"
+#include <atomic>
 #include <mutex>
 
 START_NAMESPACE_DISTRHO
@@ -31,6 +33,10 @@ public:
     void learnStart() { engine.learnCmd.store(1); }
     void learnFinish() { engine.learnCmd.store(2); }
     void learnCancel() { engine.learnCmd.store(3); }
+
+    // Alt-solo of a free EQ band, driven by the editor's mouse hold (never a host parameter: not saved with the
+    // session, not automated, not undone). -1 = off, else the band index.
+    std::atomic<int> soloHold { -1 };
 
 protected:
     const char* getLabel() const override { return "pump_master"; }
@@ -83,6 +89,7 @@ protected:
         lastLatency = engine.latency();
         setLatency((uint32_t)lastLatency);
         bypass.setLatency(lastLatency);
+        soloAud.prepare(sr);
     }
     void activate() override { prepareAll(); }
 
@@ -143,6 +150,8 @@ protected:
             engine.process(l, r, n);
             const int lat = engine.latency();
             if (lat != lastLatency) { setLatency((uint32_t)lat); bypass.setLatency(lat); lastLatency = lat; }
+            syncSolo();
+            soloAud.process(l, r, n);
             bypass.apply(l, r, n, pv(kBypass) >= 0.5f);
             float pl = 0.0f, pr = 0.0f;
             for (int i = 0; i < n; ++i) { postRing.push(0.5f * (l[i] + r[i])); pl = std::max(pl, std::fabs(l[i])); pr = std::max(pr, std::fabs(r[i])); }
@@ -152,7 +161,23 @@ protected:
     }
 
 private:
+    // The soloed band's region of the output (band-pass at its own width; below / above its frequency for the
+    // shelves and cuts), crossfaded and glided by pump::Audition.
+    void syncSolo()
+    {
+        const int b = soloHold.load(std::memory_order_relaxed);
+        if (b < 0 || b >= kNumUserBands || pv(bandParam(b, kBOn)) < 0.5f) { soloAud.set(false, soloF, soloQ, soloR); return; }  // fade out on the last band's filter
+        const int sh = (int)pv(bandParam(b, kBShape));
+        const pump::Audition::Region rg = (sh == kULowShelf || sh == kULowCut) ? pump::Audition::kBelow
+                                        : (sh == kUHighShelf || sh == kUHighCut) ? pump::Audition::kAbove : pump::Audition::kBand;
+        soloF = pv(bandParam(b, kBFreq)); soloQ = pv(bandParam(b, kBQ)); soloR = rg;
+        soloAud.set(true, soloF, soloQ, soloR);
+    }
+
     pump::BypassMixer bypass;
+    pump::Audition soloAud;
+    double soloF = 1000.0, soloQ = 2.0;
+    pump::Audition::Region soloR = pump::Audition::kBand;
     int lastLatency = -1;
     bool sawPlaying = false;
     int64_t testLearnLeft = 0;
