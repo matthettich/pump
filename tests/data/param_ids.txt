@@ -2809,3 +2809,5 @@ STRETCH 3 tone
 STRETCH 4 mix
 STRETCH 5 out_gain
 STRETCH 6 bypass
+MASTER 75 resonance_on
+MASTER 76 resonance_amount

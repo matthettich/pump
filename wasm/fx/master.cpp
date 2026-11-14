@@ -21,9 +21,9 @@ namespace pumpshim_master {
 // 104..199 the free bands' curve, 200..230 target, 231..261 measured (31 third octaves), 262..270 tone EQ gains,
 // 271..279 auto EQ gains (9 filters), then 280.. ratio, thr, liftMax, lift, sideLo, sideHi, makeup, outLufs (planned),
 // compare, peakOver, limitLoss, eqDelta, inST, outST, autoRatio, autoThr, autoLift, autoMakeup, autoSideLo, autoSideHi,
-// compGR, limGR (max since the last read), outI. Rings: 0 input, 1 output (mono sums: the spectra).
+// compGR, limGR (max since the last read), outI, then (303) resGR (RESONANCE's reduction, max since the last read). Rings: 0 input, 1 output (mono sums: the spectra).
 template <> struct RunnerExtra<PluginMaster> {
-    static constexpr int kTel = 303;
+    static constexpr int kTel = 304;
     static void command(PluginMaster& p, int c, float, float) { if (c == 1) p.learnStart(); else if (c == 2) p.learnFinish(); else if (c == 3) p.learnCancel(); }
     static int status(PluginMaster& p, float* t)
     {
@@ -43,6 +43,7 @@ template <> struct RunnerExtra<PluginMaster> {
             L(e.uiCompare), L(e.uiPeakOver), L(e.uiLimitLoss), L(e.uiEqDelta), L(e.uiInST), L(e.uiOutST), L(e.uiAutoRatio), L(e.uiAutoThr),
             L(e.uiAutoLift), L(e.uiAutoMakeup), L(e.uiAutoSideLo), L(e.uiAutoSideHi), e.compGR.exchange(0.0f), e.limGR.exchange(0.0f), L(e.uiOutI) };
         for (int i = 0; i < 23; ++i) t[280 + i] = v[i];
+        t[303] = e.resGR.exchange(0.0f);
         return kTel;
     }
     static int rings(const PluginMaster&) { return 2; }

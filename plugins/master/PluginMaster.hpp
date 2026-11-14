@@ -101,6 +101,7 @@ protected:
         s.dynOn = pv(kDynOn) >= 0.5f; s.dynAmt = pv(kDynAmt);
         s.stereoOn = pv(kStereoOn) >= 0.5f; s.stereoAmt = pv(kStereoAmt);
         s.loudOn = pv(kLoudOn) >= 0.5f; s.target = pv(kTarget); s.ceiling = pv(kCeiling); s.loudMode = (int)pv(kLoudMode);
+        s.resOn = pv(kResOn) >= 0.5f; s.resAmt = pv(kResAmt);
         s.compare = pv(kCompare) >= 0.5f;
         for (int i = 0; i < kEq; ++i) s.toneTrim[i] = pv(kToneTrim0 + i);
         s.liftTrim = pv(kLiftTrim); s.liftAt = pv(kLiftAt); s.ratioTrim = pv(kRatioTrim); s.glueThrTrim = pv(kGlueThrTrim);
