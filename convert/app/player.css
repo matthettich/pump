@@ -1,0 +1,46 @@
+/* pump CONVERT, PLAY page: the same panels, keys and tables as the converter (app.css); only what is new is here. */
+.page { display: contents; }   /* the converter's page: the wrapper adds no box, so its layout is exactly what it was */
+.pages { display: flex; margin-left: 10px; }
+.pages .key { margin-right: -1.5px; box-shadow: none; }
+.pages .key.cur { background: var(--c); color: var(--on); }
+
+.pmain { flex: 1; min-height: 0; overflow: hidden; display: grid; grid-template-columns: minmax(0, 1fr) 330px; grid-template-rows: minmax(120px, 1fr) auto; gap: 14px; padding: 14px; }
+.plist { grid-column: 1; grid-row: 1; }
+.pmeta { grid-column: 2; grid-row: 1; overflow: auto; }
+.pdeck { grid-column: 1 / span 2; grid-row: 2; gap: 8px; }
+body.dragging .plist .table-wrap { outline: 3px dashed var(--c); outline-offset: -6px; }
+
+#pTable { table-layout: fixed; min-width: 760px; }
+#pTable td { overflow: hidden; text-overflow: ellipsis; }
+#pTable th:nth-child(2) { width: 32%; } #pTable th:nth-child(3) { width: 20%; } #pTable th:nth-child(4) { width: 20%; }
+#pTable tr.row { cursor: default; }
+#pTable tr.now td { font-weight: bold; }
+#pTable tr.now td.n { color: var(--c); }
+#pTable tr.missing td { color: var(--red); text-decoration: line-through; }
+#pTable td.dim { color: var(--ink2); }
+.c-t { width: 56px; text-align: right; } .c-f { width: 128px; }
+#pTable td.t { text-align: right; font-family: "JBM", monospace; font-size: 12px; color: var(--ink2); }
+
+.deckrow, .deckrow2 { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.transport { display: flex; gap: 8px; align-items: center; }
+.nowplaying { flex: 1; min-width: 0; font-size: 12px; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.seekrow { display: flex; align-items: center; gap: 10px; }
+.seekrow .num { font-size: 12px; width: 52px; color: var(--ink2); }
+.seekrow .num:last-child { text-align: right; }
+input[type=range] { accent-color: var(--c); height: 20px; cursor: pointer; }
+#pSeek { flex: 1; min-width: 0; }
+#pVol { width: 120px; }
+.deckrow2 select { max-width: 340px; }
+.deckrow2 .num { font-size: 11px; color: var(--ink2); }
+.meter { display: flex; flex-direction: column; gap: 2px; width: 150px; margin-left: auto; }
+.meter div { height: 7px; border: 1px solid var(--ink); background: var(--screen); position: relative; overflow: hidden; }
+.meter i { position: absolute; inset: 0 auto 0 0; width: 0; background: linear-gradient(90deg, oklch(.75 .14 150), oklch(.78 .14 100), oklch(.72 .17 30)); }
+.meter div.clip { border-color: var(--red); }
+.pdeck .preview { margin-top: 0; min-height: 15px; }
+.pdeck .preview.bad, .pmeta .preview.bad { color: var(--red); }
+.pmeta .metagrid textarea { font-family: "JBM", ui-monospace, monospace; background: var(--screen); border: var(--line) solid var(--c); border-radius: 0; padding: 4px 6px; min-width: 0; resize: vertical; height: 54px; font-size: 13px; color: var(--ink); }
+.pmeta .metagrid textarea:focus { outline: 2px solid var(--csoft); }
+.pmeta .metagrid input.changed, .pmeta .metagrid textarea.changed { background: var(--cbg); }
+.pmeta .tools { margin-top: 10px; }
+.pmeta .preview { white-space: normal; margin-top: 8px; }
+.pfile { color: var(--ink2); font-size: 10px; letter-spacing: .04em; word-break: break-all; margin-bottom: 8px; font-family: "JBM", monospace; }
