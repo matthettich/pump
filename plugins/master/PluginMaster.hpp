@@ -167,15 +167,18 @@ private:
     void syncSolo()
     {
         const int b = soloHold.load(std::memory_order_relaxed);
-        if (b < 0 || b >= kNumUserBands || pv(bandParam(b, kBOn)) < 0.5f) { soloAud.set(false, 1000.0, 2.0); return; }
+        if (b < 0 || b >= kNumUserBands || pv(bandParam(b, kBOn)) < 0.5f) { soloAud.set(false, soloF, soloQ, soloR); return; }  // fade out on the last band's filter
         const int sh = (int)pv(bandParam(b, kBShape));
         const pump::Audition::Region rg = (sh == kULowShelf || sh == kULowCut) ? pump::Audition::kBelow
                                         : (sh == kUHighShelf || sh == kUHighCut) ? pump::Audition::kAbove : pump::Audition::kBand;
-        soloAud.set(true, pv(bandParam(b, kBFreq)), pv(bandParam(b, kBQ)), rg);
+        soloF = pv(bandParam(b, kBFreq)); soloQ = pv(bandParam(b, kBQ)); soloR = rg;
+        soloAud.set(true, soloF, soloQ, soloR);
     }
 
     pump::BypassMixer bypass;
     pump::Audition soloAud;
+    double soloF = 1000.0, soloQ = 2.0;
+    pump::Audition::Region soloR = pump::Audition::kBand;
     int lastLatency = -1;
     bool sawPlaying = false;
     int64_t testLearnLeft = 0;
