@@ -89,7 +89,9 @@ protected:
         case pump::PUnit::Seconds: p.unit = "s"; break;
         default: break;
         }
-        if (s.choices)
+        // (DPF's list of named values counts in a uint8_t: a choice list longer than 255 stays a plain integer to the host,
+        // and only the window shows the names)
+        if (s.choices && s.numChoices() <= 255)
         {
             const int n = s.numChoices();
             ParameterEnumerationValue* const ev = new ParameterEnumerationValue[n];
