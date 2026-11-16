@@ -43,7 +43,9 @@ public:
     void prepare(double sampleRate, int /*maxBlock*/)
     {
         sr = sampleRate;
-        N = (int)std::ceil(sr * 13.0);
+        // the history: the deepest read is about 8 beats back (the 2-bar reverses and the far juggles), and the slowest tempo
+        // taken is 20 BPM (3 s a beat): 24 s, and a second of margin
+        N = (int)std::ceil(sr * (8.0 * 60.0 / 20.0 + 1.0));
         bL.assign((size_t)N, 0.0f); bR.assign((size_t)N, 0.0f);
         tab = &table();    // built here (never on the audio thread)
         w = 0; D = 0.0; xo = 0.0; xc = 0; xn = 1; g = 1.0; pg = 1.0;
@@ -94,7 +96,7 @@ public:
             const double q0 = lockQ;
             if (q0 < 0) ph = -1;
             else if (ph < 0) ph = q0;
-            else { double e = q0 - ph; e -= 16 * jsRound(e / 16); if (std::fabs(e) > 0.004) ph = q0; else ph += e * 0.1; }
+            else { double e = q0 - ph; e -= 16 * jsRound(e / 16); if (std::fabs(e) > 0.004) ph = q0; else { ph += e * 0.1; if (ph < 0) ph += 16; else if (ph >= 16) ph -= 16; } }   // (a correction across the wrap stays in [0, 16): a negative ph means no clock)
             spb = spbHost;
             if (std::fabs(spb / sp - 1) > 0.02) sp = spb;      // a real tempo change: follow at once (that jump crossfades)
         }
@@ -251,7 +253,7 @@ private:
         } break;
         case Fam::Tup: {
             const double C = o.C, c = cs(p, C), u = (p - c) / C;
-            const int j = std::min((int)o.q - 1, (int)std::floor(u * o.q + 1e-9));
+            const int j = std::max(0, std::min((int)o.q - 1, (int)std::floor(u * o.q + 1e-9)));   // (u is a hair below 0 just before a cycle's end)
             const double sj = (int)o.q == 5 ? kTup[j] : (double)j;
             r = c + C * (sj / 4 + (u - j / o.q));
         } break;

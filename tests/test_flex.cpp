@@ -85,11 +85,22 @@ static void parity()
     }
     std::vector<float> L0((size_t)NS), R0((size_t)NS);
     for (int i = 0; i < NS; ++i) { L0[(size_t)i] = in[(size_t)(2 * i)]; R0[(size_t)i] = in[(size_t)(2 * i + 1)]; }
+    // Samples where the REFERENCE is not finite are counted, not compared: the original's read can land exactly on the end of
+    // its history buffer (x = w - D + N rounds up to N when w - D is a hair below 0) and read past it: one NaN sample. The port
+    // reads the start of the buffer there instead. A non-finite sample from the port is always a failure.
+    int refNaN = 0, refNaNPatterns = 0;
     auto compare = [&](const std::vector<float>& L, const std::vector<float>& R, const std::string& file, double& err) {
         const std::vector<float> ref = readF32(dir + "/" + file);
         if ((int)ref.size() != NS * 2) return false;
-        err = 0;
-        for (int i = 0; i < NS; ++i) err = std::max(err, std::max(std::fabs((double)L[(size_t)i] - ref[(size_t)(2 * i)]), std::fabs((double)R[(size_t)i] - ref[(size_t)(2 * i + 1)])));
+        err = 0; int skipped = 0;
+        for (int i = 0; i < NS; ++i)
+        {
+            const float a = L[(size_t)i], b = R[(size_t)i], c = ref[(size_t)(2 * i)], d = ref[(size_t)(2 * i + 1)];
+            if (!std::isfinite(a) || !std::isfinite(b)) { err = INFINITY; return true; }   // never let a NaN pass as a small error
+            if (!std::isfinite(c) || !std::isfinite(d)) { ++skipped; continue; }
+            err = std::max(err, std::max(std::fabs((double)a - c), std::fabs((double)b - d)));
+        }
+        if (skipped) { refNaN += skipped; ++refNaNPatterns; }
         return true;
     };
     // names
@@ -132,6 +143,7 @@ static void parity()
     }
     printf("  max abs error per family (float32 output; tolerance %.0e):\n", tol);
     for (auto& kv : famMax) printf("    %-28s %3d patterns  %.3g\n", kv.first.c_str(), famN[kv.first], kv.second);
+    if (refNaN) printf("  note: the original read past its buffer end on %d samples in %d patterns (NaN in the reference; the port is finite there)\n", refNaN, refNaNPatterns);
     CHECK(missing == 0, "all 510 reference files present (%d missing)", missing);
     CHECK(over == 0, "all patterns within %.0e: worst error %.3g (flx %d)", tol, worst, worstK);
     // the pattern changing while it plays
@@ -155,6 +167,23 @@ int main()
 {
     printf("== parity with the Thunder Plus effect\n");
     parity();
+
+    printf("== clock edge cases\n");
+    {
+        // a phase correction across the 16-beat wrap must not take the clock negative (that would mean "no clock")
+        Engine e; Settings s; s.flx = 0x2B; e.setSettings(s); e.prepare(SR, 512);
+        std::vector<float> L(64, 0.1f), R(64, 0.1f);
+        e.setTransport(tp(true, 20, 0.0)); e.process(L.data(), R.data(), 1);
+        e.setTransport(tp(true, 20, 15.9995)); e.process(L.data(), R.data(), 64);
+        const float ph = e.phaseNow();
+        CHECK(ph >= 0.0f && ph < 16.0f, "a correction across the 16-beat wrap keeps the clock in [0, 16) (phase %.5f)", ph);
+        // 5-tuplet feel one hair before a beat: the slice index must not go below 0
+        Engine e2; s.flx = 0xE8; e2.setSettings(s); e2.prepare(SR, 512);
+        std::vector<float> L2(512, 0.3f), R2(512, 0.3f);
+        e2.setTransport(tp(true, 120, 0.9999999995)); e2.process(L2.data(), R2.data(), 512);
+        bool fin = true; for (int i = 0; i < 512; ++i) fin = fin && std::isfinite(L2[(size_t)i]) && std::isfinite(R2[(size_t)i]);
+        CHECK(fin && patternName(0xE8) == "5-TUPLET FEEL", "5-TUPLET FEEL at p = 0.9999999995 is finite");
+    }
 
     printf("== names and slots\n");
     CHECK(patternName(1) == "REPEAT 1/4" && patternName(16) == "RANDOM SLICES", "the hand-named first sixteen");
