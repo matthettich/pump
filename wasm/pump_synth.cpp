@@ -136,7 +136,15 @@ public:
     {
         const pump::DenormalGuard dg;
         if (anyChanged) { anyChanged = false; sync(); }
-        std::stable_sort(q, q + nq, [](const pump::synth::Midi& a, const pump::synth::Midi& b) { return a.offset < b.offset; });
+        // stable insertion sort by offset, in place (std::stable_sort allocates a buffer on every block with an event);
+        // the queue is short (kMaxEvents) and nearly always in order already
+        for (int i = 1; i < nq; ++i)
+        {
+            const pump::synth::Midi m = q[i];
+            int j = i;
+            while (j > 0 && m.offset < q[j - 1].offset) { q[j] = q[j - 1]; --j; }
+            q[j] = m;
+        }
         int done = 0, ev = 0;
         while (done < frames)
         {
