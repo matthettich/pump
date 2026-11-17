@@ -446,11 +446,11 @@ private:
 
 // ---------------------------------------------------------------- FREEZE (PluginFreeze.hpp's sync() and run() body: keep in
 // step). Its built-in sounds are PRISM's (PrismAudio.hpp) cut into spectra as FreezeSources.hpp does, but here, with no
-// threads, made the first time one is asked for (about a second's work) and kept. The File source (0) is the host's
+// threads, made when the instrument is created (about a second's work, the first time) and kept. The File source (0) is the host's
 // sound, handed over by psyn_file.
 class SynthFreeze : public SynthBase {
 public:
-    explicit SynthFreeze(double rate) : SynthBase(kTFreeze, rate) {}
+    explicit SynthFreeze(double rate) : SynthBase(kTFreeze, rate) { for (int id = 1; id < pump::freeze::kNumSources; ++id) source(id); }   // the built-in spectra are made here (psyn_new, off the audio path), not on the first note
     static constexpr float kTrimDb = -8.0f;   // PluginFreeze::kTrimDb
     void activate() override { sync(); engine.prepare(sr, kMaxBlock); outLimit.prepare(sr); sync(); anyChanged = false; }
     void sync() override
@@ -482,7 +482,8 @@ public:
     }
 
 private:
-    // FreezeSources.hpp's Builtins, made on this thread: the notes they were played at, as there
+    // FreezeSources.hpp's Builtins, made on this thread (the constructor asks for every one, so render() only looks them
+    // up; about a second's work, once per process): the notes they were played at, as there
     static const pump::freeze::Spectra* source(int id)
     {
         static std::shared_ptr<pump::freeze::Spectra> set[pump::freeze::kNumSources];
