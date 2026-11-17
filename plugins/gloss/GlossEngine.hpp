@@ -62,8 +62,10 @@ public:
     inline double read(int w, int m, double p) const
     {
         const float* t = tab[(size_t)(w * kMips + m)].data();
-        const double x = p * kN;
-        const int i = (int)x;
+        p -= std::floor(p);                  // any phase: callers wrap once, which is not enough when inc >= 1
+        double x = p * kN;
+        int i = (int)x;
+        if (i >= kN) { x -= kN; i = 0; }     // p just under 1 can round up to kN: the table is periodic, so wrap
         const double f = x - i;
         return t[i] + (t[i + 1] - t[i]) * f;
     }
