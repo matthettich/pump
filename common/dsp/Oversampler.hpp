@@ -50,9 +50,8 @@ public:
         // y[2m+1] = 2 * h[centre] x[m - (centre-1)/2]   (pure delay, h[centre] = 0.5)
         upHist[(size_t)upPos] = upHist[(size_t)(upPos + histLen)] = x;
         const float* h = upHist.data() + upPos;   // h[0] = newest ... we stored newest at upPos; walk backwards via layout below
-        float acc = 0.0f;
         // history layout: index upPos is newest, upPos+1 is one older, ... (we decrement upPos each sample)
-        for (int j = 0; j < nEven; ++j) acc += evenTaps[(size_t)j] * h[j];
+        const float acc = dot4(evenTaps.data(), h, nEven);
         y0 = 2.0f * acc;
         // the delay phase: x delayed by (centre-1)/2 input samples
         const int d = (centre - 1) / 2;
@@ -71,8 +70,7 @@ public:
         // of pair j - (centre+1)/2.
         dnHist[(size_t)dnPos] = dnHist[(size_t)(dnPos + histLen)] = x0;
         const float* h = dnHist.data() + dnPos;
-        float acc = 0.0f;
-        for (int j = 0; j < nEven; ++j) acc += evenTaps[(size_t)j] * h[j];
+        const float acc = dot4(evenTaps.data(), h, nEven);
         const int dl = (int)dnDelay.size();
         const int d = (centre + 1) / 2;   // pairs back; the current x1 is stored after reading (it is "pair j")
         const float c = dnDelay[(size_t)((dnDelayPos - d + dl) % dl)];
@@ -83,6 +81,18 @@ public:
     }
 
 private:
+    // The FIR sum with four named accumulators (lane j % 4), combined in a fixed order: the same rounding in every build,
+    // whatever the compiler would do with one accumulator under fast-math (it makes four lanes of its own, in its own order).
+    static inline float dot4(const float* a, const float* b, int n)
+    {
+        float a0 = 0.0f, a1 = 0.0f, a2 = 0.0f, a3 = 0.0f;
+        int j = 0;
+        for (; j + 4 <= n; j += 4) { a0 += a[j] * b[j]; a1 += a[j + 1] * b[j + 1]; a2 += a[j + 2] * b[j + 2]; a3 += a[j + 3] * b[j + 3]; }
+        if (j < n) a0 += a[j] * b[j];
+        if (j + 1 < n) a1 += a[j + 1] * b[j + 1];
+        if (j + 2 < n) a2 += a[j + 2] * b[j + 2];
+        return (a0 + a1) + (a2 + a3);
+    }
     std::vector<float> evenTaps, upHist, dnHist, dnDelay, upDelay;
     int nTaps = 0, centre = 0, nEven = 0, histLen = 1, upPos = 0, dnPos = 0, dnDelayPos = 0, upDelayPos = 0;
 };

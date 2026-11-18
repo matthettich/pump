@@ -368,7 +368,7 @@ private:
             const double s = tab(subPh) * subA;
             l += s; r += s;
             subPh += inc / (set.subOct ? 4.0 : 2.0);
-            if (subPh >= 1.0) subPh -= 1.0;
+            if (subPh >= 1.0) subPh -= std::floor(subPh);   // inc / 2 can exceed 1 at extreme pitch: wrap fully
         }
     }
 

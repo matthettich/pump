@@ -307,8 +307,10 @@ private:
     static inline double read(const std::vector<float>& d, double p)
     {
         const int n = (int)d.size() - 3;
-        const double x = p * n;
-        const int i = (int)x;
+        p -= std::floor(p);                  // any phase: callers wrap once, which is not enough when inc >= 1
+        double x = p * n;
+        int i = (int)x;
+        if (i >= n) { x -= n; i = 0; }       // p just under 1 can round up to n: the table is periodic, so wrap
         const float fr = (float)(x - i);
         const float* y = d.data() + i;   // y[0..3] = x(i-1) .. x(i+2)
         const float c1 = 0.5f * (y[2] - y[0]), c2 = y[0] - 2.5f * y[1] + 2.0f * y[2] - 0.5f * y[3], c3 = 0.5f * (y[3] - y[0]) + 1.5f * (y[1] - y[2]);
