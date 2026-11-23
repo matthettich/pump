@@ -60,6 +60,7 @@
 #include "../plugins/strip/StripParams.hpp"
 #include "../plugins/break/BreakParams.hpp"
 #include "../plugins/master/MasterParams.hpp"
+#include "../plugins/bounce/BounceParams.hpp"
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -247,6 +248,7 @@ int main()
         { "BREAK", brk::params(), brk::presets(), brk::kNumParams },
         { "MASTER", master::params(), master::presets(), master::kNumParams },
         { "STRIP", strip::params(), strip::presets(), strip::kNumParams },
+        { "BOUNCE", bounce::params(), bounce::presets(), bounce::kNumParams },
     };
     std::map<std::string, int> sections;
     std::vector<std::vector<std::string>> chains;
