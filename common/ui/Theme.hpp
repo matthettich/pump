@@ -122,6 +122,8 @@ namespace accents {
     // extreme stretch
     inline Accent stretch(){ return { "stretch",hexColor(0x1AE092), hexColor(0x005A3A), hexColor(0xFF5A8C) }; }   // emerald, hot rose
     inline Accent grumble(){ return { "grumble",hexColor(0xD9A3C9), hexColor(0x6B2A5A), hexColor(0x7BE03A) }; }   // dusky mauve, toxic green
+    // bouncing-ball delay
+    inline Accent bounce() { return { "bounce", hexColor(0x45AFFF), hexColor(0x0A4A99), hexColor(0xFF9F3D) }; }   // azure, the ball in orange
 }
 
 struct Theme {
