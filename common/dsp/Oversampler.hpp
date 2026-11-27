@@ -85,6 +85,9 @@ private:
     // whatever the compiler would do with one accumulator under fast-math (it makes four lanes of its own, in its own order).
     static inline float dot4(const float* a, const float* b, int n)
     {
+#if defined(__clang__)
+#pragma clang fp reassociate(off)   // fast-math (the wasm build) would otherwise regroup the four sums: native strict builds then differ
+#endif
         float a0 = 0.0f, a1 = 0.0f, a2 = 0.0f, a3 = 0.0f;
         int j = 0;
         for (; j + 4 <= n; j += 4) { a0 += a[j] * b[j]; a1 += a[j + 1] * b[j + 1]; a2 += a[j + 2] * b[j + 2]; a3 += a[j + 3] * b[j + 3]; }

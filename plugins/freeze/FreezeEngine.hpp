@@ -37,56 +37,111 @@ struct Spectra {
     const float* freqs(int f) const { return freq.data() + (size_t)clampv(f, 0, std::max(0, frames - 1)) * kBins; }
 };
 
+// Cuts a sound into Spectra a frame at a time (step) or all at once (makeSpectra: the same steps run to the end, so both
+// give the same numbers). Thunder Plus's wasm has no threads: it makes FREEZE's built-in spectra a few frames per audio
+// callback. The sound is borrowed (makeSpectra) or owned (the other constructor).
+class SpectraBuilder {
+public:
+    SpectraBuilder(const std::vector<float>& sound, double sr, const std::string& name, int root) : x(&sound), fft(kN) { begin(sr, name, root); }
+    SpectraBuilder(std::vector<float>&& sound, double sr, const std::string& name, int root) : own(std::move(sound)), x(&own), fft(kN) { begin(sr, name, root); }
+    SpectraBuilder(const SpectraBuilder&) = delete;
+    SpectraBuilder& operator=(const SpectraBuilder&) = delete;
+    // up to `units` frames (one 4096-point FFT each; the last unit evens the levels and draws the overview); true when done
+    bool step(int units)
+    {
+        const std::vector<float>& xs = *x;
+        for (; units > 0 && f < frames; --units, ++f)
+        {
+            const long c = (long)f * kHop - kN / 2;   // the frame is centred on hop f
+            for (int i = 0; i < kN; ++i) { const long j = c + i; in[(size_t)i] = (j >= 0 && j < (long)xs.size()) ? xs[(size_t)j] * win[(size_t)i] : 0.0f; }
+            fft.forward(in.data(), out.data());
+            float* m = s->mag.data() + (size_t)f * kBins;
+            m[0] = std::fabs(out[0]); m[kBins - 1] = std::fabs(out[1]);
+            float* fq = s->freq.data() + (size_t)f * kBins;
+            for (int k = 1; k < kBins - 1; ++k)
+            {
+                const double re = out[(size_t)(2 * k)], im = out[(size_t)(2 * k + 1)];
+                m[k] = (float)std::sqrt(re * re + im * im);
+                // the phase vocoder's frequency: the bin's centre plus how far its phase strayed from it over the hop
+                const double ph = std::atan2(im, re), expect = kTwoPi * k * kHop / kN;
+                double d = ph - lastPh[(size_t)k] - expect;
+                d -= kTwoPi * std::round(d / kTwoPi);
+                lastPh[(size_t)k] = ph;
+                fq[k] = (float)((expect + d) / kHop * s->sr / kTwoPi);
+                if (f == 0) fq[k] = (float)(k * s->sr / kN);
+            }
+        }
+        // then the finishing passes, kChunk frames a unit: each frame's energy, then the make-up gains, then the overview
+        for (; units > 0 && !finished; --units) finishStep();
+        return finished;
+    }
+    int unitsLeft() const
+    {
+        if (finished) return 0;
+        const auto chunks = [](int n) { return (n + kChunk - 1) / kChunk; };
+        const int p0 = phase == 0 ? chunks(frames - g) : 0, p1 = phase == 0 ? chunks(frames) : phase == 1 ? chunks(frames - g) : 0;
+        return (frames - f) + p0 + p1 + 1;
+    }
+    std::shared_ptr<Spectra> take() { return finished ? std::move(s) : nullptr; }
+private:
+    void begin(double sr, const std::string& name, int root)
+    {
+        s = std::make_shared<Spectra>();
+        s->name = name; s->sr = sr; s->root = root; s->seconds = x->size() / sr;
+        frames = std::max(1, (int)((x->size() + kHop - 1) / kHop));
+        s->frames = frames;
+        s->mag.assign((size_t)frames * kBins, 0.0f);
+        s->freq.assign((size_t)frames * kBins, 0.0f);
+        lastPh.assign(kBins, 0.0);
+        in.assign(kN, 0.0f); out.assign(kN, 0.0f); win.assign(kN, 0.0f);
+        for (int i = 0; i < kN; ++i) win[(size_t)i] = (float)(0.5 - 0.5 * std::cos(kTwoPi * i / kN));
+    }
+    static constexpr int kChunk = 32;
+    void finishStep()
+    {
+        if (phase == 0)   // each frame's energy
+        {
+            if (g == 0) { e.assign((size_t)frames, 0.0); emax = 1e-20; }
+            const int end = std::min(frames, g + kChunk);
+            for (; g < end; ++g) { const float* m = s->mag.data() + (size_t)g * kBins; for (int k = 0; k < kBins; ++k) e[(size_t)g] += (double)m[k] * m[k]; emax = std::max(emax, e[(size_t)g]); }
+            if (g >= frames) { phase = 1; g = 0; s->maxMag = 1e-9f; }
+            return;
+        }
+        if (phase == 1)   // every moment as loud as the loudest (up to 30 dB of make-up): a frozen moment late in a bell's
+        {                 // ring is as full as its strike (the overview below keeps the real shape)
+            const int end = std::min(frames, g + kChunk);
+            for (; g < end; ++g)
+            {
+                const double gain = std::min(31.6, std::sqrt(emax / std::max(1e-30, e[(size_t)g])));
+                float* m = s->mag.data() + (size_t)g * kBins;
+                for (int k = 0; k < kBins; ++k) { m[k] = (float)(m[k] * gain); s->maxMag = std::max(s->maxMag, m[k]); }
+            }
+            if (g >= frames) phase = 2;
+            return;
+        }
+        const std::vector<float>& xs = *x;
+        s->overview.assign(1024, 0.0f);
+        for (size_t i = 0; i < xs.size(); ++i) { const size_t b = i * 1024 / std::max<size_t>(1, xs.size()); s->overview[b] = std::max(s->overview[b], std::fabs(xs[i])); }
+        finished = true;
+        std::vector<float>().swap(own); std::vector<double>().swap(lastPh); std::vector<double>().swap(e);
+    }
+    std::vector<float> own;
+    const std::vector<float>* x;
+    std::shared_ptr<Spectra> s;
+    RealFFT fft;
+    std::vector<float> in, out, win;
+    std::vector<double> lastPh;
+    std::vector<double> e;
+    double emax = 1e-20;
+    int frames = 1, f = 0, g = 0, phase = 0;
+    bool finished = false;
+};
+
 inline std::shared_ptr<Spectra> makeSpectra(const std::vector<float>& x, double sr, const std::string& name, int root)
 {
-    auto s = std::make_shared<Spectra>();
-    s->name = name; s->sr = sr; s->root = root; s->seconds = x.size() / sr;
-    const int frames = std::max(1, (int)((x.size() + kHop - 1) / kHop));
-    s->frames = frames;
-    s->mag.assign((size_t)frames * kBins, 0.0f);
-    s->freq.assign((size_t)frames * kBins, 0.0f);
-    std::vector<double> lastPh(kBins, 0.0);
-    RealFFT fft(kN);
-    std::vector<float> in(kN), out(kN), win(kN);
-    for (int i = 0; i < kN; ++i) win[(size_t)i] = (float)(0.5 - 0.5 * std::cos(kTwoPi * i / kN));
-    for (int f = 0; f < frames; ++f)
-    {
-        const long c = (long)f * kHop - kN / 2;   // the frame is centred on hop f
-        for (int i = 0; i < kN; ++i) { const long j = c + i; in[(size_t)i] = (j >= 0 && j < (long)x.size()) ? x[(size_t)j] * win[(size_t)i] : 0.0f; }
-        fft.forward(in.data(), out.data());
-        float* m = s->mag.data() + (size_t)f * kBins;
-        m[0] = std::fabs(out[0]); m[kBins - 1] = std::fabs(out[1]);
-        float* fq = s->freq.data() + (size_t)f * kBins;
-        for (int k = 1; k < kBins - 1; ++k)
-        {
-            const double re = out[(size_t)(2 * k)], im = out[(size_t)(2 * k + 1)];
-            m[k] = (float)std::sqrt(re * re + im * im);
-            // the phase vocoder's frequency: the bin's centre plus how far its phase strayed from it over the hop
-            const double ph = std::atan2(im, re), expect = kTwoPi * k * kHop / kN;
-            double d = ph - lastPh[(size_t)k] - expect;
-            d -= kTwoPi * std::round(d / kTwoPi);
-            lastPh[(size_t)k] = ph;
-            fq[k] = (float)((expect + d) / kHop * sr / kTwoPi);
-            if (f == 0) fq[k] = (float)(k * sr / kN);
-        }
-    }
-    // every moment as loud as the loudest (up to 30 dB of make-up): a frozen moment late in a bell's ring is as full
-    // as its strike (the overview below keeps the real shape)
-    {
-        std::vector<double> e((size_t)frames, 0.0);
-        double emax = 1e-20;
-        for (int f = 0; f < frames; ++f) { const float* m = s->mag.data() + (size_t)f * kBins; for (int k = 0; k < kBins; ++k) e[(size_t)f] += (double)m[k] * m[k]; emax = std::max(emax, e[(size_t)f]); }
-        s->maxMag = 1e-9f;
-        for (int f = 0; f < frames; ++f)
-        {
-            const double g = std::min(31.6, std::sqrt(emax / std::max(1e-30, e[(size_t)f])));
-            float* m = s->mag.data() + (size_t)f * kBins;
-            for (int k = 0; k < kBins; ++k) { m[k] = (float)(m[k] * g); s->maxMag = std::max(s->maxMag, m[k]); }
-        }
-    }
-    s->overview.assign(1024, 0.0f);
-    for (size_t i = 0; i < x.size(); ++i) { const size_t b = i * 1024 / std::max<size_t>(1, x.size()); s->overview[b] = std::max(s->overview[b], std::fabs(x[i])); }
-    return s;
+    SpectraBuilder b(x, sr, name, root);
+    while (!b.step(1 << 20)) {}
+    return b.take();
 }
 
 struct Settings {
