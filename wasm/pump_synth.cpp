@@ -26,6 +26,8 @@
 //   psyn_process(h, n)                   n <= 4096 samples into psyn_out(0/1), playing the queued messages
 //   psyn_latency(h)                      the latency the plugin reports (samples): MONO's half-band decimator
 //   psyn_tempo(h, bpm)                   the host's tempo (WOB's synced wobble; 120 until set)
+//   psyn_warm(units)                     makes up to `units` of FREEZE's built-in spectra (see freezewarm); returns how many
+//                                        of the seven are not ready (0: all are)
 //   psyn_buf(n)                          float[n] to write a sound into (mono), then psyn_file(h, n, sr): FREEZE's File source
 #include <limits>
 #include <mutex>
@@ -452,13 +454,78 @@ private:
     pump::Transport tr;
 };
 
+// ---------------------------------------------------------------- FREEZE's built-in spectra. They are PRISM's sounds
+// (PrismAudio.hpp) cut into spectra as FreezeSources.hpp does, but with no threads here: about a second's work in all
+// (33 to 406 ms a source), shared by every FREEZE in the instance and kept. psyn_new builds none of it. psyn_warm(units)
+// does a bounded slice (a unit: one 256-sample engine block, or one 4096-point FFT frame; about 0.1 ms in Chrome), the
+// source the newest FREEZE asked for first: a host calls it a few units per audio callback while a FREEZE exists (the
+// web worklet), or to the end off its audio thread (a native host). A note on a source that is not ready yet finishes
+// that one source there and then, as the first note did before (deb07d3): an offline render that never warms still
+// plays. Built with PUMP_FREEZE_EAGER=1, psyn_new builds all seven at once instead (e43ee10's behaviour).
+// Single-threaded: call psyn_warm and psyn_process from the same thread.
+#ifndef PUMP_FREEZE_EAGER
+#define PUMP_FREEZE_EAGER 0
+#endif
+namespace freezewarm {
+constexpr int kIds = pump::freeze::kNumSources;   // 1..7 are built in (0 is File)
+inline const int* roots() { static const int r[8] = { 60, 57, 48, 60, 45, 45, 69, 43 }; return r; }   // the notes they were played at
+struct Slot {
+    std::unique_ptr<pump::prism::detail::BuiltinJob> audio;
+    std::unique_ptr<pump::freeze::SpectraBuilder> spec;
+    std::shared_ptr<pump::freeze::Spectra> done;
+};
+inline Slot* slots() { static Slot s[kIds]; return s; }
+inline int& wanted() { static int w = 1; return w; }
+inline bool valid(int id) { return id >= 1 && id < kIds && id <= 7; }
+// up to `units` of source `id`'s work; returns the units used
+inline int stepOne(int id, int units)
+{
+    Slot& z = slots()[id];
+    int used = 0;
+    if (z.done || units <= 0) return 0;
+    if (!z.spec)
+    {
+        if (!z.audio) z.audio = pump::prism::detail::builtinJob(id, 48000.0);
+        const int before = z.audio->unitsLeft();
+        const bool fin = z.audio->step(units);
+        used += std::max(1, before - z.audio->unitsLeft());
+        if (!fin) return used;
+        z.spec = std::make_unique<pump::freeze::SpectraBuilder>(z.audio->take(), 48000.0, pump::freeze::kSourceNames[id], roots()[id]);
+        z.audio.reset();
+        return std::max(used, units);   // the builder's set-up (its tables) counts as the rest of this call
+    }
+    const int before = z.spec->unitsLeft();
+    if (z.spec->step(units - used)) { z.done = z.spec->take(); z.spec.reset(); }
+    used += std::max(1, before - (z.spec ? z.spec->unitsLeft() : 0));
+    return used;
+}
+inline const pump::freeze::Spectra* get(int id)   // finishes `id` now if it is not ready
+{
+    if (!valid(id)) return nullptr;
+    Slot& z = slots()[id];
+    while (!z.done) stepOne(id, 1 << 20);
+    return z.done.get();
+}
+inline int left()   // sources not ready
+{
+    int n = 0;
+    for (int id = 1; id < kIds; ++id) if (valid(id) && !slots()[id].done) ++n;
+    return n;
+}
+inline int warm(int units)
+{
+    const int w = wanted();
+    if (valid(w)) units -= stepOne(w, units);
+    for (int id = 1; id < kIds && units > 0; ++id) if (valid(id)) units -= stepOne(id, units);
+    return left();
+}
+} // namespace freezewarm
+
 // ---------------------------------------------------------------- FREEZE (PluginFreeze.hpp's sync() and run() body: keep in
-// step). Its built-in sounds are PRISM's (PrismAudio.hpp) cut into spectra as FreezeSources.hpp does, but here, with no
-// threads, made when the instrument is created (about a second's work, the first time) and kept. The File source (0) is the host's
-// sound, handed over by psyn_file.
+// step). The built-in sources are freezewarm's, above. The File source (0) is the host's sound, handed over by psyn_file.
 class SynthFreeze : public SynthBase {
 public:
-    explicit SynthFreeze(double rate) : SynthBase(kTFreeze, rate) { for (int id = 1; id < pump::freeze::kNumSources; ++id) source(id); }   // the built-in spectra are made here (psyn_new, off the audio path), not on the first note
+    explicit SynthFreeze(double rate) : SynthBase(kTFreeze, rate) { if (PUMP_FREEZE_EAGER) freezewarm::warm(1 << 30); }
     static constexpr float kTrimDb = -8.0f;   // PluginFreeze::kTrimDb
     void activate() override { sync(); engine.prepare(sr, kMaxBlock); outLimit.prepare(sr); sync(); anyChanged = false; }
     void sync() override
@@ -472,6 +539,7 @@ public:
         s.velocity = pv(kVelocity) * 0.01; s.voices = (int)pv(kVoices); s.voiceMode = (int)pv(kVoiceMode); s.glide = pv(kGlide); s.octave = (int)pv(kOctave);
         s.volumeDb = pv(kVolume) + kTrimDb;
         engine.setSettings(s);
+        if (freezewarm::valid((int)pv(kSource))) freezewarm::wanted() = (int)pv(kSource);   // warmed first
     }
     // FILE (owner, 1 Nov): a sound of the host's, cut into spectra as PluginFreeze::setState does (mono, its first 20 s,
     // ROOT the note it is at); SOURCE 0 (File) plays it
@@ -490,16 +558,7 @@ public:
     }
 
 private:
-    // FreezeSources.hpp's Builtins, made on this thread (the constructor asks for every one, so render() only looks them
-    // up; about a second's work, once per process): the notes they were played at, as there
-    static const pump::freeze::Spectra* source(int id)
-    {
-        static std::shared_ptr<pump::freeze::Spectra> set[pump::freeze::kNumSources];
-        static const int roots[8] = { 60, 57, 48, 60, 45, 45, 69, 43 };
-        if (id < 1 || id >= pump::freeze::kNumSources || id > 7) return nullptr;
-        if (!set[id]) set[id] = pump::freeze::makeSpectra(pump::prism::detail::builtinAudio(id, 48000.0), 48000.0, pump::freeze::kSourceNames[id], roots[id]);
-        return set[id].get();
-    }
+    static const pump::freeze::Spectra* source(int id) { return freezewarm::get(id); }
     std::shared_ptr<pump::freeze::Spectra> fileSp;
     pump::freeze::Engine engine;
     pump::SafetyLimiter outLimit;
@@ -603,5 +662,6 @@ PUMP_API void psyn_process(int h, int n)
 PUMP_API int psyn_latency(int h) { SynthBase* s = at(h); return s ? s->latency() : 0; }
 PUMP_API void psyn_tempo(int h, double bpm) { if (SynthBase* s = at(h)) s->tempo(bpm); }
 namespace pumpsynth { std::vector<float> fileBuf; }
+PUMP_API int psyn_warm(int units) { return freezewarm::warm(units); }   // FREEZE's built-in spectra, a slice at a time (above): sources still to make
 PUMP_API float* psyn_buf(int n) { if (n < 1 || n > 192000 * 40) return nullptr; pumpsynth::fileBuf.assign((size_t)n, 0.0f); return pumpsynth::fileBuf.data(); }
 PUMP_API void psyn_file(int h, int n, double sr) { if (SynthBase* s = at(h)) s->file(n > 0 && n <= (int)pumpsynth::fileBuf.size() ? pumpsynth::fileBuf.data() : nullptr, n, sr, "File"); }
