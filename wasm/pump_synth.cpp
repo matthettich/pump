@@ -506,6 +506,7 @@ inline const pump::freeze::Spectra* get(int id)   // finishes `id` now if it is 
     while (!z.done) stepOne(id, 1 << 20);
     return z.done.get();
 }
+inline const pump::freeze::Spectra* ready(int id) { return valid(id) ? slots()[id].done.get() : nullptr; }   // nullptr while not ready
 inline int left()   // sources not ready
 {
     int n = 0;
@@ -525,7 +526,7 @@ inline int warm(int units)
 // step). The built-in sources are freezewarm's, above. The File source (0) is the host's sound, handed over by psyn_file.
 class SynthFreeze : public SynthBase {
 public:
-    explicit SynthFreeze(double rate) : SynthBase(kTFreeze, rate) { if (PUMP_FREEZE_EAGER) freezewarm::warm(1 << 30); }
+    explicit SynthFreeze(double rate) : SynthBase(kTFreeze, rate) { if (PUMP_FREEZE_EAGER) while (freezewarm::warm(1 << 30) > 0) {} }   // all seven, to the end (warm() can stop at a stage's end)
     static constexpr float kTrimDb = -8.0f;   // PluginFreeze::kTrimDb
     void activate() override { sync(); engine.prepare(sr, kMaxBlock); outLimit.prepare(sr); sync(); anyChanged = false; }
     void sync() override
@@ -553,7 +554,16 @@ public:
     {
         const int a = (int)pv(pump::freeze::kSource);
         if (a == 0 && fileSp && fileSp->root != (int)pv(pump::freeze::kRoot)) fileSp->root = (int)pv(pump::freeze::kRoot);   // ROOT is read again (the plugin's rootNow)
-        engine.setSource(a == 0 ? fileSp.get() : source(a));
+        // a built-in source is finished here only when it is about to be heard (a note on in this block, or voices still
+        // sounding); a silent block leaves it to psyn_warm, so a FREEZE that only exists costs nothing on the audio thread
+        const pump::freeze::Spectra* sp = fileSp.get();
+        if (a != 0)
+        {
+            bool need = engine.voicesNow() > 0;
+            for (int i = 0; i < nev && !need; ++i) need = (ev[i].status & 0xF0) == 0x90 && ev[i].d2 > 0;
+            sp = need ? source(a) : freezewarm::ready(a);
+        }
+        engine.setSource(sp);
         engine.process(l, r, n, ev, nev); outLimit.process(l, r, n);
     }
 
